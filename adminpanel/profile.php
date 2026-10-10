@@ -2,9 +2,86 @@
 require_once __DIR__ . '/admin-bootstrap.php';
 require_once __DIR__ . '/ui_helpers.php'; 
 require_once __DIR__ . '/../avatar.php';
+require_once __DIR__ . '/owner-guard.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+/**
+ * Every table/column that stores a user name (same list release-username.php uses).
+ * The `users` table itself is skipped: its row is changed by the profile form.
+ */
+if (!function_exists('vs_profile_name_columns')) {
+    function vs_profile_name_columns(PDO $pdo): array
+    {
+        $names = ['username', 'user_name', 'uploader', 'channel', 'channel_name', 'subscriber', 'subscriber_name',
+                  'author', 'owner', 'commenter', 'posted_by', 'created_by'];
+        $in = implode(',', array_map(static fn($c) => "'" . $c . "'", $names));
+        $rows = $pdo->query(
+            "SELECT c.TABLE_NAME, c.COLUMN_NAME
+             FROM information_schema.COLUMNS c
+             JOIN information_schema.TABLES t
+               ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_TYPE = 'BASE TABLE'
+             WHERE c.TABLE_SCHEMA = DATABASE()
+               AND c.DATA_TYPE IN ('varchar','char','tinytext','text','mediumtext','longtext')
+               AND c.COLUMN_NAME IN ($in)"
+        )->fetchAll(PDO::FETCH_NUM);
+        $out = [];
+        foreach ($rows as [$t, $c]) {
+            if (strcasecmp((string)$t, 'users') !== 0) {
+                $out[] = [(string)$t, (string)$c];
+            }
+        }
+        return $out;
+    }
+}
+
+/** Returns '' when $new is a free, valid user name, otherwise a message to show. */
+if (!function_exists('vs_profile_check_username')) {
+    function vs_profile_check_username(PDO $pdo, string $new, string $old, string $unameCol, string $matchCol, $matchVal): string
+    {
+        if (!preg_match('/^[A-Za-z0-9_.-]{3,30}$/', $new)) {
+            return 'User name must be 3 to 30 characters: letters, numbers, dot, dash or underscore.';
+        }
+        if (stripos($new, 'deleted_') === 0) {
+            return 'That user name is not allowed.';
+        }
+        if (strcasecmp($new, $old) === 0) {
+            return ''; // only the letter case changes
+        }
+        $st = $pdo->prepare(
+            'SELECT 1 FROM `users` WHERE LOWER(' . vs_q($unameCol) . ') = LOWER(?) AND ' . vs_q($matchCol) . ' <> ? LIMIT 1'
+        );
+        $st->execute([$new, $matchVal]);
+        if ($st->fetchColumn()) {
+            return 'That user name is already taken.';
+        }
+        // A deleted account may have left videos, comments... under this name.
+        foreach (vs_profile_name_columns($pdo) as [$t, $c]) {
+            try {
+                $st = $pdo->prepare('SELECT 1 FROM ' . vs_q($t) . ' WHERE LOWER(' . vs_q($c) . ') = LOWER(?) LIMIT 1');
+                $st->execute([$new]);
+                if ($st->fetchColumn()) {
+                    return 'That user name is still attached to old content. Ask the owner to free it first.';
+                }
+            } catch (Throwable $e) {
+                // a column we cannot read cannot clash
+            }
+        }
+        return '';
+    }
+}
+
+/** Renames the user everywhere (videos, shorts, comments, subscriptions, ...). */
+if (!function_exists('vs_profile_rename_everywhere')) {
+    function vs_profile_rename_everywhere(PDO $pdo, string $old, string $new): void
+    {
+        foreach (vs_profile_name_columns($pdo) as [$t, $c]) {
+            $st = $pdo->prepare('UPDATE ' . vs_q($t) . ' SET ' . vs_q($c) . ' = ? WHERE LOWER(' . vs_q($c) . ') = LOWER(?)');
+            $st->execute([$new, $old]);
+        }
+    }
 }
 
 $successMsg = '';
@@ -93,9 +170,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($pdo) && $pdo instanceof PDO 
     $newName  = trim($_POST['name'] ?? '');
     $newEmail = trim($_POST['email'] ?? '');
     $newPass  = trim($_POST['password'] ?? '');
+    $newUser  = trim($_POST['username'] ?? '');
 
     $setParts = [];
     $params   = [':val' => $matchVal];
+
+    // Check everything first: if anything is wrong, nothing is saved.
+    $blocked  = false;
+    $renameTo = null;
+
+    if ($unameCol && $newUser !== '' && $avatarUser !== '' && $newUser !== $avatarUser) {
+        $problem = vs_profile_check_username($pdo, $newUser, $avatarUser, $unameCol, $matchCol, $matchVal);
+        if ($problem !== '') {
+            $errorMsg = $problem;
+            $blocked  = true;
+        } else {
+            $renameTo = $newUser;
+            $setParts[] = "`$unameCol` = :uname";
+            $params[':uname'] = $renameTo;
+        }
+    }
+
+    if (!$blocked && $emailCol && $newEmail !== '') {
+        $ownerMail  = strtolower(VS_OWNER_EMAIL);
+        $isOwnerNow = vs_is_owner($pdo);
+        $emailLower = strtolower($newEmail);
+        if (!filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+            $errorMsg = 'That email address is not valid.';
+            $blocked  = true;
+        } elseif ($isOwnerNow && $emailLower !== $ownerMail) {
+            $errorMsg = 'The owner email cannot be changed.';
+            $blocked  = true;
+        } elseif (!$isOwnerNow && $emailLower === $ownerMail) {
+            $errorMsg = 'That email belongs to the owner.';
+            $blocked  = true;
+        } else {
+            try {
+                $st = $pdo->prepare(
+                    'SELECT 1 FROM `users` WHERE LOWER(TRIM(' . vs_q($emailCol) . ')) = ? AND ' . vs_q($matchCol) . ' <> ? LIMIT 1'
+                );
+                $st->execute([$emailLower, $matchVal]);
+                if ($st->fetchColumn()) {
+                    $errorMsg = 'That email is already used by another account.';
+                    $blocked  = true;
+                }
+            } catch (Throwable $e) {
+                // the database lock still protects the owner email
+            }
+        }
+    }
 
     if ($nameCol && $newName !== '') {
         $setParts[] = "`$nameCol` = :name";
@@ -112,7 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($pdo) && $pdo instanceof PDO 
 
 
     $avatarSaved = false;
-    if (!empty($_FILES['avatar']['name']) && $_FILES['avatar']['error'] === UPLOAD_ERR_OK) {
+    if (!$blocked && !empty($_FILES['avatar']['name']) && $_FILES['avatar']['error'] === UPLOAD_ERR_OK) {
         $saveError = $avatarUser !== '' ? avatar_save($avatarUser, $_FILES['avatar']) : 'Your account name could not be found.';
         if ($saveError === '') {
             $avatarSaved = true;
@@ -126,11 +249,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($pdo) && $pdo instanceof PDO 
         }
     }
 
-    if (!empty($setParts)) {
+    if ($blocked) {
+        // $errorMsg already says why; nothing was changed.
+    } elseif (!empty($setParts)) {
         try {
             $sql = "UPDATE `users` SET " . implode(', ', $setParts) . " WHERE `$matchCol` = :val";
+            $pdo->beginTransaction();
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
+
+            if ($renameTo !== null) {
+                vs_profile_rename_everywhere($pdo, $avatarUser, $renameTo);
+            }
+            $pdo->commit();
 
             if ($nameCol && $newName !== '') {
                 $adminDisplayName = $newName;
@@ -138,7 +269,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($pdo) && $pdo instanceof PDO 
             }
 
             $successMsg = 'Profile updated successfully.';
+
+            if ($renameTo !== null) {
+                // Move the profile picture to the new name and keep the session in sync.
+                $oldKey = md5(mb_strtolower($avatarUser));
+                $newKey = md5(mb_strtolower($renameTo));
+                $movedFile = '';
+                if ($oldKey !== $newKey) {
+                    foreach (['jpg', 'png', 'webp', 'gif'] as $ext) {
+                        $from = __DIR__ . '/../uploads/avatars/' . $oldKey . '.' . $ext;
+                        $to   = __DIR__ . '/../uploads/avatars/' . $newKey . '.' . $ext;
+                        if (is_file($from) && @rename($from, $to)) {
+                            $movedFile = $newKey . '.' . $ext;
+                        }
+                    }
+                }
+
+                $newMatchVal = ($matchCol === $unameCol) ? $renameTo : $matchVal;
+                if ($avatarCol && $movedFile !== '') {
+                    try {
+                        $up = $pdo->prepare("UPDATE `users` SET `$avatarCol` = :avatar WHERE `$matchCol` = :val");
+                        $up->execute([':avatar' => 'uploads/avatars/' . $movedFile, ':val' => $newMatchVal]);
+                    } catch (Throwable $e) {
+                        // the picture file is moved; the database copy is optional
+                    }
+                }
+
+                $matchVal = $newMatchVal;
+                $_SESSION['username'] = $renameTo;
+                if ($matchCol === $unameCol || strcasecmp((string)($_SESSION['AdminSession'] ?? ''), $avatarUser) === 0) {
+                    $_SESSION['AdminSession'] = $renameTo;
+                }
+                $avatarUser = $renameTo;
+                $adminAvatarPath = avatar_url($avatarUser);
+                $successMsg = 'Profile updated successfully. Your user name is now "' . $renameTo . '".';
+            }
         } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             $errorMsg = 'Could not update profile. Please try again.';
         }
     } elseif ($avatarSaved) {
@@ -188,6 +357,15 @@ require_once __DIR__ . '/header.php';
                   <input class="form-control form-control-sm" type="file" id="avatar" name="avatar" accept=".jpg,.jpeg,.png,.webp">
                 </div>
               </div>
+
+              <?php if ($unameCol): ?>
+              <div class="mb-3">
+                <label for="username" class="form-label">User name</label>
+                <input type="text" class="form-control" id="username" name="username"
+                       value="<?php echo htmlspecialchars($avatarUser); ?>" placeholder="User name" autocomplete="off">
+                <div class="form-text">Changing it also renames your videos, shorts, comments and profile picture.</div>
+              </div>
+              <?php endif; ?>
 
               <div class="mb-3">
                 <label for="name" class="form-label">Display name</label>

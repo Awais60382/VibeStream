@@ -378,9 +378,11 @@ if ($video) {
     <meta name="vs-default-theme" content="<?= htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8') ?>">
     <meta name="theme-color" content="<?= $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff' ?>">
     <meta name="description" content="<?= htmlspecialchars(vs_branding_app_description(), ENT_QUOTES, 'UTF-8') ?>">
+    <link rel="icon" type="image/png" sizes="96x96" href="branding-icon.php?size=96">
+    <link rel="shortcut icon" type="image/png" href="branding-icon.php?size=96">
     <link rel="manifest" href="manifest.php">
     <link rel="apple-touch-icon" href="branding-icon.php">
-    <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?> Shorts</title>
+    <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?></title>
     <link rel="stylesheet" href="style.css?v=5">
     <script src="theme.js?v=3"></script>
     <style>
@@ -735,6 +737,7 @@ if ($video) {
     </style>
     <link rel="stylesheet" href="sidebar.css">
     <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="navbar-fix.css?v=3">
     <link rel="stylesheet" href="comments.css?v=1">
 </head>
 <body>
@@ -802,6 +805,7 @@ if ($video) {
                             <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
                             <span id="viewCount"><?= short_num($views) ?></span>
                         </div>
+                        <?php if (!$noVideo && !empty($video['id'])) { $reportContentId = (string)$video['id']; $reportKind = 'short'; if (is_file(__DIR__ . '/report-widget.php')) { include __DIR__ . '/report-widget.php'; } } ?>
                     </div>
 
                     <!-- far right: previous / next -->

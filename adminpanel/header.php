@@ -184,6 +184,8 @@ if ($vsCurrent === 'editvideos.php') { $vsCurrent = 'videos.php'; }
   <meta name="theme-color" content="<?php echo $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff'; ?>">
   <meta name="vs-default-theme" content="<?php echo htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8'); ?>">
   <link rel="manifest" href="../manifest.php">
+  <link rel="icon" type="image/png" href="<?php echo htmlspecialchars($siteLogoUrl, ENT_QUOTES, 'UTF-8'); ?>">
+  <link rel="shortcut icon" type="image/png" href="<?php echo htmlspecialchars($siteLogoUrl, ENT_QUOTES, 'UTF-8'); ?>">
   <link rel="apple-touch-icon" href="../branding-icon.php">
   <title>Admin | <?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
 
@@ -249,6 +251,11 @@ if ($vsCurrent === 'editvideos.php') { $vsCurrent = 'videos.php'; }
           <span class="nav-text">Categories</span>
         </a>
 
+        <a class="nav-link<?php echo $vsCurrent === 'reported.php' ? ' active' : ''; ?>" href="reported.php"<?php echo $vsCurrent === 'reported.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><i class="bi bi-flag" aria-hidden="true"></i></span>
+          <span class="nav-text">Reported content</span>
+        </a>
+
         <div class="sidebar-section-title">USERS</div>
         <a class="nav-link<?php echo $vsCurrent === 'Users.php' ? ' active' : ''; ?>" href="Users.php"<?php echo $vsCurrent === 'Users.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><i class="bi bi-people" aria-hidden="true"></i></span>
@@ -269,6 +276,11 @@ if ($vsCurrent === 'editvideos.php') { $vsCurrent = 'videos.php'; }
           <span class="nav-icon"><i class="bi bi-chat-dots" aria-hidden="true"></i></span>
           <span class="nav-text">Messages</span>
           <?php if ($adminMsgUnread > 0): ?><span class="badge rounded-pill bg-danger ms-auto"><?php echo $adminMsgUnread > 99 ? '99+' : (int)$adminMsgUnread; ?></span><?php endif; ?>
+        </a>
+
+        <a class="nav-link<?php echo $vsCurrent === 'premium.php' ? ' active' : ''; ?>" href="premium.php"<?php echo $vsCurrent === 'premium.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><i class="bi bi-gem" aria-hidden="true"></i></span>
+          <span class="nav-text">Premium</span>
         </a>
 
         <div class="sidebar-section-title">SYSTEM</div>

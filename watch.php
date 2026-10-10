@@ -348,16 +348,26 @@ if ($id !== 0 && !empty($_SESSION['username'])) {
     }
 }
 
-if (!isset($_SESSION['viewed_videos']) || !is_array($_SESSION['viewed_videos'])) {
-    $_SESSION['viewed_videos'] = [];
+// Count a view every time the video is opened (same as shorts.php).
+// Raise this number (seconds) if you want repeat opens by the same person to count less often.
+$WATCH_VIEW_COOLDOWN_SECONDS = 0;
+if (!isset($_SESSION['view_times']) || !is_array($_SESSION['view_times'])) {
+    $_SESSION['view_times'] = [];
 }
-if ($id !== 0 && !in_array($id, $_SESSION['viewed_videos'], true)) {
-    $upd = $conn->prepare("UPDATE videos SET views = COALESCE(views,0) + 1 WHERE id = ?");
-    $upd->bind_param("s", $id);
-    $upd->execute();
-    $upd->close();
-    $_SESSION['viewed_videos'][] = $id;
-    $video['views'] = (int)($video['views'] ?? 0) + 1;
+if ($id !== 0 && $id !== '0' && $id !== '') {
+    $nowTs = time();
+    $lastViewTs = isset($_SESSION['view_times'][$id]) ? (int)$_SESSION['view_times'][$id] : 0;
+    if ($lastViewTs === 0 || ($nowTs - $lastViewTs) >= $WATCH_VIEW_COOLDOWN_SECONDS) {
+        $upd = $conn->prepare("UPDATE videos SET views = COALESCE(views,0) + 1 WHERE id = ?");
+        if ($upd) {
+            $upd->bind_param("s", $id);
+            if ($upd->execute()) {
+                $_SESSION['view_times'][$id] = $nowTs;
+                $video['views'] = (int)($video['views'] ?? 0) + 1;
+            }
+            $upd->close();
+        }
+    }
 }
 
 $title = $video['title'] ?? 'Video not found';
@@ -429,6 +439,8 @@ if ($stmt = $conn->prepare($relSql)) {
     <meta name="vs-default-theme" content="<?php echo htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8'); ?>">
     <meta name="theme-color" content="<?php echo $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff'; ?>">
     <meta name="description" content="<?php echo htmlspecialchars(vs_branding_app_description(), ENT_QUOTES, 'UTF-8'); ?>">
+    <link rel="icon" type="image/png" sizes="96x96" href="branding-icon.php?size=96">
+    <link rel="shortcut icon" type="image/png" href="branding-icon.php?size=96">
     <link rel="manifest" href="manifest.php">
     <link rel="apple-touch-icon" href="branding-icon.php">
     <title><?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?> - <?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
@@ -824,6 +836,7 @@ if ($stmt = $conn->prepare($relSql)) {
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
     <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="navbar-fix.css?v=3">
     <link rel="stylesheet" href="comments.css?v=1">
 </head>
 <body>
@@ -898,6 +911,7 @@ if ($stmt = $conn->prepare($relSql)) {
                                     <button class="btn-pill" type="button">Share</button>
                                     <button class="btn-pill" type="button">Download</button>
                                     <button class="btn-pill" type="button">Save</button>
+                                    <?php if (!empty($id)) { $reportContentId = (string)$id; $reportKind = 'video'; if (is_file(__DIR__ . '/report-widget.php')) { include __DIR__ . '/report-widget.php'; } } ?>
                                 </div>
                             </div>
                         </div>
@@ -929,7 +943,13 @@ if ($stmt = $conn->prepare($relSql)) {
                                 $rec_ytid = $rec_src !== '' ? extract_youtube_id($rec_src, true) : null;
                                 $rec_thumb = thumb_for($rec, $rec_src, $rec_ytid);
                             ?>
-                                <a href="watch.php?id=<?php echo urlencode($rec['id']); ?>" class="video-card compact">
+                                <a href="watch.php?id=<?php echo urlencode($rec['id']); ?>" class="video-card compact"
+                                   data-vm-id="<?php echo htmlspecialchars((string)$rec['id']); ?>"
+                                   data-vm-title="<?php echo htmlspecialchars((string)($rec['title'] ?? 'Untitled')); ?>"
+                                   data-vm-channel="<?php echo htmlspecialchars((string)($rec['channel_name'] ?? $rec['username'] ?? '')); ?>"
+                                   data-vm-kind="video"
+                                   data-vm-url="watch.php?id=<?php echo urlencode($rec['id']); ?>"<?php if ($rec_ytid === null && $rec_src !== '') { ?>
+                                   data-vm-download="<?php echo htmlspecialchars((string)$rec_src); ?>"<?php } ?>>
                                     <div class="thumbnail">
                                         <img src="<?php echo htmlspecialchars($rec_thumb); ?>" alt="Thumbnail" loading="lazy">
                                     </div>
@@ -952,6 +972,7 @@ if ($stmt = $conn->prepare($relSql)) {
     <div class="toast" id="toast"></div>
 
     <script src="sidebar.js"></script>
+    <script src="video-menu.js?v=3"></script>
 
     <script src="comments.js?v=1"></script>
     <script>

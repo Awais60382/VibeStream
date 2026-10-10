@@ -11,6 +11,12 @@ if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecm
 include_once "../connection.php";
 include_once "ui_helpers.php";
 require_once __DIR__ . '/../avatar.php';
+require_once __DIR__ . '/owner-guard.php';
+
+if (empty($_SESSION['admin_csrf'])) {
+    $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
+}
+$adminCsrf = $_SESSION['admin_csrf'];
 
 $USERS_TABLE = 'users';
 $ADMIN_ROLE  = 'Admin';
@@ -22,10 +28,14 @@ $q      = trim((string)($_GET['q'] ?? ''));
 $fatal  = '';
 $admins = [];
 $totalAdmins = 0;
+$isOwner = false;
 
 if (!isset($pdo) || !($pdo instanceof PDO)) {
     $fatal = 'No database connection found. Check that ../connection.php creates $pdo.';
 } else {
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $isOwner = vs_is_owner($pdo);
+
     $stats = vs_uploader_stats($pdo);
     $byKey = [];
     foreach ($stats['rows'] as $r) {
@@ -51,6 +61,53 @@ if (!isset($pdo) || !($pdo instanceof PDO)) {
         if (!$map['role']) {
             $fatal = 'The "' . $USERS_TABLE . '" table has no role column, so admins cannot be told apart from users.';
         } else {
+            // Delete an admin account. ONLY the owner email (VS_OWNER_EMAIL) may do this.
+            if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_admin') {
+                $code  = 'failed';
+                $delId = trim((string)($_POST['id'] ?? ''));
+                if (!hash_equals($adminCsrf, (string)($_POST['csrf'] ?? ''))) {
+                    $code = 'expired';
+                } elseif (!$isOwner) {
+                    $code = 'denied';
+                } elseif (!$map['id'] || $delId === '') {
+                    $code = 'failed';
+                } else {
+                    try {
+                        $emailSel = $map['email'] ? vs_q($map['email']) : "''";
+                        $find = $pdo->prepare(
+                            'SELECT ' . $emailSel . ' AS e FROM ' . vs_q($USERS_TABLE)
+                            . ' WHERE ' . vs_q($map['id']) . ' = :i AND LOWER(TRIM(' . vs_q($map['role']) . ')) = :role LIMIT 1'
+                        );
+                        $find->execute([':i' => $delId, ':role' => mb_strtolower($ADMIN_ROLE)]);
+                        $target = $find->fetch(PDO::FETCH_ASSOC);
+                        if (!$target) {
+                            $code = 'missing';
+                        } elseif (strtolower(trim((string)$target['e'])) === strtolower(VS_OWNER_EMAIL)) {
+                            $code = 'protected';
+                        } elseif ($myId !== null && (string)$myId === $delId) {
+                            $code = 'self';
+                        } else {
+                            $del = $pdo->prepare(
+                                'DELETE FROM ' . vs_q($USERS_TABLE)
+                                . ' WHERE ' . vs_q($map['id']) . ' = :i AND LOWER(TRIM(' . vs_q($map['role']) . ')) = :role LIMIT 1'
+                            );
+                            // Tell the database lock (install-owner-lock.php) this delete is from the verified owner.
+                            $pdo->exec('SET @vs_owner_ok = 1');
+                            try {
+                                $del->execute([':i' => $delId, ':role' => mb_strtolower($ADMIN_ROLE)]);
+                            } finally {
+                                $pdo->exec('SET @vs_owner_ok = 0');
+                            }
+                            $code = $del->rowCount() > 0 ? 'deleted' : 'missing';
+                        }
+                    } catch (Throwable $e) {
+                        $code = 'failed';
+                    }
+                }
+                header('Location: admins.php?msg=' . urlencode($code));
+                exit;
+            }
+
             $select = [];
             foreach ($map as $alias => $col) {
                 if ($col) {
@@ -117,6 +174,7 @@ if (!isset($pdo) || !($pdo instanceof PDO)) {
                     'views'    => $up ? (int)$up['views'] : 0,
                     'key'      => $up ? $up['key'] : '',
                     'is_me'    => $isMe,
+                    'is_owner' => strtolower($email) === strtolower(VS_OWNER_EMAIL),
                 ];
             }
 
@@ -129,6 +187,17 @@ if (!isset($pdo) || !($pdo instanceof PDO)) {
         }
     }
 }
+
+$msgs = [
+    'deleted'   => 'Admin account deleted.',
+    'denied'    => 'Only the owner can delete admin accounts.',
+    'protected' => 'The owner account cannot be deleted.',
+    'self'      => 'You cannot delete your own account here.',
+    'missing'   => 'That admin was not found.',
+    'expired'   => 'Session expired. Try again.',
+    'failed'    => 'Could not delete that admin.',
+];
+$flash = $msgs[$_GET['msg'] ?? ''] ?? '';
 
 include "header.php";
 vs_print_styles();
@@ -148,8 +217,15 @@ vs_print_styles();
             <div class="heading-actions">
               <a class="btn btn-outline-secondary btn-sm" href="index.php"><i class="bi bi-arrow-left" aria-hidden="true"></i> Back to Dashboard</a>
               <a class="btn btn-primary btn-sm" href="Users.php"><i class="bi bi-people" aria-hidden="true"></i> All Users</a>
+              <?php if ($isOwner): ?>
+                <a class="btn btn-outline-danger btn-sm" href="free-name.php"><i class="bi bi-person-x" aria-hidden="true"></i> Delete names</a>
+              <?php endif; ?>
             </div>
           </div>
+
+          <?php if ($flash !== ''): ?>
+            <div class="alert alert-info mt-3 mb-0" role="status"><?php echo vs_e($flash); ?></div>
+          <?php endif; ?>
 
           <?php if ($fatal !== ''): ?>
             <div class="alert alert-warning mt-3"><?php echo vs_e($fatal); ?></div>
@@ -181,6 +257,7 @@ vs_print_styles();
                     <div class="min-w-0">
                       <p class="fw-semibold mb-0"><?php echo vs_e($a['name']); ?>
                         <?php if ($a['is_me']): ?><span class="badge text-bg-secondary">You</span><?php endif; ?>
+                        <?php if ($a['is_owner']): ?><span class="badge text-bg-warning">Owner</span><?php endif; ?>
                       </p>
                       <?php if ($a['username'] !== ''): ?><p class="text-muted small mb-0">@<?php echo vs_e($a['username']); ?></p><?php endif; ?>
                       <?php if ($a['email'] !== ''): ?><p class="text-muted small mb-0 vs-mail"><?php echo vs_e($a['email']); ?></p><?php endif; ?>
@@ -215,6 +292,14 @@ vs_print_styles();
                       <a class="btn btn-primary btn-sm" href="profile.php">My profile</a>
                     <?php elseif ($a['id'] !== ''): ?>
                       <a class="btn btn-primary btn-sm" href="user_profile.php?id=<?php echo urlencode($a['id']); ?>">Update admin</a>
+                    <?php endif; ?>
+                    <?php if ($isOwner && !$a['is_me'] && !$a['is_owner'] && $a['id'] !== ''): ?>
+                      <form method="post" action="admins.php" class="d-inline" onsubmit="return confirm('Delete this admin account? This cannot be undone.');">
+                        <input type="hidden" name="csrf" value="<?php echo vs_e($adminCsrf); ?>">
+                        <input type="hidden" name="action" value="delete_admin">
+                        <input type="hidden" name="id" value="<?php echo vs_e($a['id']); ?>">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">Delete admin</button>
+                      </form>
                     <?php endif; ?>
                   </div>
                 </div>

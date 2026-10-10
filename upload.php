@@ -143,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $chk = $conn->prepare('SELECT 1 FROM `videos` WHERE `id` = ? LIMIT 1');
             $chk->bind_param('s', $sourceValue);
             $chk->execute();
-            if ($chk->get_result()->fetch_row()) $errors[] = 'This video is already on VibeStream.';
+            if ($chk->get_result()->fetch_row()) $errors[] = 'This video is already on ' . vs_branding_app_name() . '.';
             $chk->close();
         }
 

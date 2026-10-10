@@ -10,6 +10,7 @@ if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecm
 
 include_once "../connection.php";
 include_once "ui_helpers.php";
+require_once __DIR__ . '/release-username.php';
 
 $USERS_TABLE  = 'users';
 $VIDEOS_TABLE = 'videos';
@@ -173,9 +174,15 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         @unlink($p);
                     }
                 }
+                // Free the name everywhere so it can be used again.
+                try {
+                    vs_release_username($pdo, $username, 'deleted_' . preg_replace('/\W/', '', $id));
+                } catch (Throwable $releaseError) {
+                    error_log('Could not free user name: ' . $releaseError->getMessage());
+                }
             }
             $deleted = ($username !== '' ? $username : 'The account') . ' was deleted. '
-                . ($alsoVideos ? 'Their ' . $removedVideos . ' upload(s) were deleted too.' : 'Their uploads were kept.');
+                . ($alsoVideos ? 'Their ' . $removedVideos . ' upload(s) were deleted too.' : 'Their uploads were kept and now show under the name deleted_' . preg_replace('/\\W/', '', $id) . '.');
             $user = null;
         }
     } catch (InvalidArgumentException $e) {

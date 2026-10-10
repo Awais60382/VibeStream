@@ -220,7 +220,7 @@ $stmt->execute();
 $videos = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-$shortsPerPage = 18;   // shorts loaded per page (3 rows of 6, shown between the videos)
+$shortsPerPage = 48;   // shorts loaded per page (2 shorts after every video, so 2 x the videos per page)
 $shorts = [];
 if ($hasTypeColumn) {
     $shortOrder = $search === '' ? "RAND($feedSeed)" : 'created_at DESC';
@@ -258,6 +258,8 @@ $categories = array_values(array_unique($categories));
     <meta name="theme-color" content="<?php echo $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff'; ?>">
     <meta name="vs-default-theme" content="<?php echo htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8'); ?>">
     <meta name="description" content="<?php echo htmlspecialchars(vs_branding_app_description(), ENT_QUOTES, 'UTF-8'); ?>">
+    <link rel="icon" type="image/png" sizes="96x96" href="branding-icon.php?size=96">
+    <link rel="shortcut icon" type="image/png" href="branding-icon.php?size=96">
     <link rel="manifest" href="manifest.php">
     <link rel="apple-touch-icon" href="branding-icon.php">
     <title><?php echo $search !== '' ? 'Search: ' . htmlspecialchars($search, ENT_QUOTES, 'UTF-8') . ' - ' : ''; ?><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
@@ -1009,6 +1011,17 @@ $categories = array_values(array_unique($categories));
             .chips-bar { margin: 0 -12px 14px; padding: 10px 12px; }
             .feed-shorts .shorts-grid { grid-auto-columns: minmax(140px, 42%); }
         }
+        /* ---------- Feed: desktop keeps the grid; phones get 1 video, then 2 shorts, repeat ---------- */
+        .feed-mobile { display: none; }
+        @media (max-width: 767px) {
+            .feed-desktop { display: none; }
+            .feed-mobile { display: block; }
+            #videos-grid .feed-block.video-grid { grid-template-columns: 1fr; }
+            #videos-grid .feed-shorts .shorts-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row; grid-auto-columns: auto;
+                overflow: visible; padding-bottom: 0;
+            }
+        }
     </style>
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
@@ -1050,9 +1063,10 @@ $categories = array_values(array_unique($categories));
 
                     <?php
                     // ----- Feed layout: videos, shorts, videos, shorts ... ending with videos -----
-                    $firstVideoBlock = 4;  // videos shown BEFORE the first Shorts row (1 row of 4)
-                    $videosPerBlock = 8;   // videos in each later block (2 rows of 4) - change this to move the Shorts rows up or down
-                    $shortsPerRow   = 6;   // shorts in each shorts row
+                    // Desktop: a row of 4 videos, then a row of 6 shorts, repeat.
+                    // Phone / mobile app: 1 video, then 2 shorts, repeat.
+                    $desktopFeed = ['first' => 4, 'per' => 4, 'shortsRow' => 6, 'shortsMax' => 36];
+                    $mobileFeed  = ['first' => 1, 'per' => 1, 'shortsRow' => 2, 'shortsMax' => 48];
 
                     $renderVideo = function (array $row) {
                         $title = htmlspecialchars($row['title'] ?? 'Untitled');
@@ -1068,7 +1082,13 @@ $categories = array_values(array_unique($categories));
                         $thumb = thumb_for($row, $src, $realYt);
                         $watchHref = "watch.php?id=" . urlencode($row['id']);
                         ?>
-                        <div class="video-card" data-category="<?php echo htmlspecialchars($category); ?>">
+                        <div class="video-card" data-category="<?php echo htmlspecialchars($category); ?>"
+                             data-vm-id="<?php echo htmlspecialchars((string)$row['id']); ?>"
+                             data-vm-title="<?php echo htmlspecialchars((string)($row['title'] ?? 'Untitled')); ?>"
+                             data-vm-channel="<?php echo $username; ?>"
+                             data-vm-kind="video"
+                             data-vm-url="<?php echo htmlspecialchars($watchHref); ?>"<?php if ($realYt === null && $src !== '') { ?>
+                             data-vm-download="<?php echo htmlspecialchars((string)$src); ?>"<?php } ?>>
                             <a href="<?php echo htmlspecialchars($watchHref); ?>" class="video-card-link">
                                 <div class="thumbnail">
                                     <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
@@ -1102,7 +1122,12 @@ $categories = array_values(array_unique($categories));
                         $ytId = $src !== '' ? extract_youtube_id($src, true) : null;
                         $thumb = thumb_for($row, $src, $ytId);
                         ?>
-                        <div class="short-card">
+                        <div class="short-card"
+                             data-vm-id="<?php echo htmlspecialchars((string)$row['id']); ?>"
+                             data-vm-title="<?php echo htmlspecialchars((string)($row['title'] ?? 'Untitled')); ?>"
+                             data-vm-channel="<?php echo htmlspecialchars(trim((string)($row['username'] ?? $row['channel_name'] ?? ''))); ?>"
+                             data-vm-kind="short"
+                             data-vm-url="shorts.php?id=<?php echo urlencode($row['id']); ?>">
                             <a href="shorts.php?id=<?php echo urlencode($row['id']); ?>" class="short-card-link">
                                 <div class="short-card-thumb">
                                     <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
@@ -1117,14 +1142,21 @@ $categories = array_values(array_unique($categories));
                     };
 
                     // build the order: V S V S V S V ...
-                    $feedBlocks = [];
-                    $vi = 0; $si = 0;
-                    $vCount = count($videos); $sCount = count($shorts);
-                    while ($vi < $vCount || $si < $sCount) {
-                        if ($vi < $vCount) { $take = ($vi === 0) ? $firstVideoBlock : $videosPerBlock; $feedBlocks[] = ['v', array_slice($videos, $vi, $take)]; $vi += $take; }
-                        if ($si < $sCount) { $feedBlocks[] = ['s', array_slice($shorts, $si, $shortsPerRow)]; $si += $shortsPerRow; }
-                    }
-                    $firstShortsRow = true;
+                    $buildFeed = function (array $vids, array $shs, array $cfg) {
+                        $blocks = [];
+                        $shs = array_slice($shs, 0, $cfg['shortsMax']);
+                        $vi = 0; $si = 0;
+                        $vCount = count($vids); $sCount = count($shs);
+                        while ($vi < $vCount || $si < $sCount) {
+                            if ($vi < $vCount) { $take = ($vi === 0) ? $cfg['first'] : $cfg['per']; $blocks[] = ['v', array_slice($vids, $vi, $take)]; $vi += $take; }
+                            if ($si < $sCount) { $blocks[] = ['s', array_slice($shs, $si, $cfg['shortsRow'])]; $si += $cfg['shortsRow']; }
+                        }
+                        return $blocks;
+                    };
+                    $feedSets = [
+                        'feed-desktop' => $buildFeed($videos, $shorts, $desktopFeed),
+                        'feed-mobile'  => $buildFeed($videos, $shorts, $mobileFeed),
+                    ];
                     ?>
                     <section id="videos-grid">
                         <?php if (!$videos): ?>
@@ -1137,13 +1169,15 @@ $categories = array_values(array_unique($categories));
                             </section>
                         <?php endif; ?>
 
+                        <?php foreach ($feedSets as $feedClass => $feedBlocks): $firstShortsRow = true; ?>
+                        <div class="<?php echo $feedClass; ?>">
                         <?php foreach ($feedBlocks as $block): ?>
                             <?php if ($block[0] === 'v'): ?>
                                 <section class="video-grid feed-block">
                                     <?php foreach ($block[1] as $row) { $renderVideo($row); } ?>
                                 </section>
                             <?php else: ?>
-                                <section class="shorts-section feed-shorts"<?php echo $firstShortsRow ? ' id="shorts-shelf"' : ''; ?>>
+                                <section class="shorts-section feed-shorts"<?php echo ($firstShortsRow && $feedClass === 'feed-desktop') ? ' id="shorts-shelf"' : ''; ?>>
                                     <div class="feed-shorts-title">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 3-7 4a3 3 0 0 0 0 5l8 5a3 3 0 1 1-3 5"/><path d="m9 21 7-4a3 3 0 0 0 0-5L8 7a3 3 0 1 1 3-5"/></svg>
                                         Shorts
@@ -1154,6 +1188,8 @@ $categories = array_values(array_unique($categories));
                                 </section>
                                 <?php $firstShortsRow = false; ?>
                             <?php endif; ?>
+                        <?php endforeach; ?>
+                        </div>
                         <?php endforeach; ?>
                     </section>
 
@@ -1175,6 +1211,8 @@ $categories = array_values(array_unique($categories));
         </div>
     </div>
 
+    <?php $reportHideButton = true; if (is_file(__DIR__ . '/report-widget.php')) { include __DIR__ . '/report-widget.php'; } ?>
     <script src="sidebar.js"></script>
+    <script src="video-menu.js?v=3"></script>
 </body>
 </html>

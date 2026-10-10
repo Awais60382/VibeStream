@@ -39,6 +39,7 @@ function vs_render_sidebar(string $active = 'home'): void
         'upload' => $svg('<path d="M12 16V4m-5 5 5-5 5 5"/><path d="M4 16v4h16v-4"/>'),
         'trend' => $svg('<path d="M4 18 10 12l4 4 6-8"/><path d="M14 8h6v6"/>'),
         'admin' => $svg('<path d="M12 2 4 5v6c0 5 3.4 8.8 8 11 4.6-2.2 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>'),
+        'premium' => $svg('<path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M10 3 8 9l4 12 4-12-2-6"/>'),
     ];
 
     $canFilterCategories = true;
@@ -106,6 +107,7 @@ function vs_render_sidebar(string $active = 'home'): void
                 ['key' => 'history', 'label' => 'History', 'href' => 'history.php', 'icon' => 'history'],
                 ['key' => 'subscriptions', 'label' => 'All subscriptions', 'href' => 'subscriptions.php', 'icon' => 'subscriptions'],
                 ['key' => 'upload', 'label' => 'Upload Video', 'href' => 'upload.php', 'icon' => 'upload'],
+                ['key' => 'premium', 'label' => 'Premium', 'href' => 'premium.php', 'icon' => 'premium', 'color' => '#f5b942'],
             ],
         ],
         ['id' => 'explore', 'title' => 'Explore', 'items' => $exploreItems],
@@ -115,7 +117,7 @@ function vs_render_sidebar(string $active = 'home'): void
             'id' => 'admin',
             'items' => [
                 ['key' => 'adminpanel', 'label' => 'Admin Panel', 'href' => 'adminpanel/index.php', 'icon' => 'admin'],
-                ['key' => 'admincategories', 'label' => 'Categories', 'href' => 'adminpanel/categories.php', 'icon' => 'trend'],
+                ['key' => 'adminpremium', 'label' => 'Premium members', 'href' => 'adminpanel/premium.php', 'icon' => 'premium'],
             ],
         ];
     }
