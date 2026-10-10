@@ -13,7 +13,7 @@ require_once __DIR__ . '/../connection.php';
 require_once __DIR__ . '/ui_helpers.php';
 
 $uCols = null;
-$idCol = $unameCol = $nameCol = $laCol = $pwdChangedCol = $avatarCol = null;
+$idCol = $unameCol = $nameCol = $laCol = $pwdChangedCol = $avatarCol = $emailCol = null;
 $matchCol = null; $matchVal = null;
 
 if (isset($pdo) && $pdo instanceof PDO) {
@@ -25,6 +25,7 @@ if (isset($pdo) && $pdo instanceof PDO) {
         $laCol         = vs_pick($uCols, ['last_active', 'last_seen', 'last_login']);
         $pwdChangedCol = vs_pick($uCols, ['password_changed_at', 'pass_changed_at', 'pwd_changed_at', 'password_updated_at', 'credentials_changed_at']);
         $avatarCol     = vs_pick($uCols, ['avatar', 'profile_image', 'photo', 'image']);
+        $emailCol      = vs_pick($uCols, ['email', 'email_address', 'mail']);
 
         if ($idCol && !empty($_SESSION['AdminID'])) {
             $matchCol = $idCol; $matchVal = $_SESSION['AdminID'];
@@ -66,12 +67,14 @@ if (isset($pdo) && $pdo instanceof PDO) {
 
 $adminDisplayName = $_SESSION["AdminSession"];
 $adminAvatarPath  = './assets/images/avatar/avatar.jpg'; 
+$adminEmail = '';
 
 if (isset($pdo) && $pdo instanceof PDO && $uCols) {
     $selectCols = [];
     if (!empty($nameCol))   $selectCols[] = $nameCol;
     if (!empty($unameCol))  $selectCols[] = $unameCol;
     if (!empty($avatarCol)) $selectCols[] = $avatarCol;
+    if (!empty($emailCol))  $selectCols[] = $emailCol;
 
     if (!empty($matchCol) && !empty($selectCols)) {
         try {
@@ -90,8 +93,12 @@ if (isset($pdo) && $pdo instanceof PDO && $uCols) {
                 if (!empty($avatarCol) && !empty($row[$avatarCol])) {
                     $adminAvatarPath = $row[$avatarCol];
                 }
+                if (!empty($emailCol) && !empty($row[$emailCol])) {
+                    $adminEmail = (string)$row[$emailCol];
+                }
             }
         } catch (Throwable $e) {
         }
     }
+    $isSiteOwner = vs_is_site_owner_email($adminEmail);
 }

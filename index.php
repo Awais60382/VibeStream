@@ -2,6 +2,14 @@
 session_start();
 include "connection.php";
 require_once __DIR__ . '/icons.php';
+require_once __DIR__ . '/avatar.php';
+require_once __DIR__ . '/site-branding.php';
+require_once __DIR__ . '/notifications-store.php';
+require_once __DIR__ . '/user-menu.php';
+require_once __DIR__ . '/sidebar-navigation.php';
+$siteName = vs_branding_app_name();
+$defaultTheme = vs_branding_default_theme();
+vs_maintenance_gate();
 
 if (!function_exists('column_exists')) {
     function column_exists($conn, $table, $col) {
@@ -54,6 +62,36 @@ if (!function_exists('thumb_for')) {
     }
 }
 
+if (!function_exists('vs_short_views')) {
+    // 448K, 1.2M, 11M ... like YouTube
+    function vs_short_views($n) {
+        $n = (int)$n;
+        if ($n >= 1000000000) { $v = $n / 1000000000; $u = 'B'; }
+        elseif ($n >= 1000000) { $v = $n / 1000000; $u = 'M'; }
+        elseif ($n >= 1000) { $v = $n / 1000; $u = 'K'; }
+        else { return (string)$n; }
+        $txt = $v >= 10 ? (string)round($v) : rtrim(rtrim(number_format($v, 1, '.', ''), '0'), '.');
+        return $txt . $u;
+    }
+}
+
+if (!function_exists('vs_yt_time_ago')) {
+    // 3 days ago, 2 weeks ago, 1 year ago ...
+    function vs_yt_time_ago($datetime) {
+        if (empty($datetime)) return '';
+        $t = strtotime($datetime);
+        if (!$t) return '';
+        $diff = max(0, time() - $t);
+        foreach ([['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]] as $u) {
+            if ($diff >= $u[1]) {
+                $n = (int)floor($diff / $u[1]);
+                return $n . ' ' . $u[0] . ($n === 1 ? '' : 's') . ' ago';
+            }
+        }
+        return 'Just now';
+    }
+}
+
 if (!function_exists('time_ago')) {
     function time_ago($datetime) {
         if (empty($datetime)) return 'Recently';
@@ -69,10 +107,13 @@ if (!function_exists('time_ago')) {
 
 if (!function_exists('render_navbar')) {
     function render_navbar($active = 'home') {
+        $siteName = vs_branding_app_name();
         $isLoggedIn = isset($_SESSION['username']) && $_SESSION['username'] !== '';
         $username = $isLoggedIn ? $_SESSION['username'] : '';
         $searchVal = htmlspecialchars($_GET['q'] ?? '');
         $initial = $isLoggedIn ? strtoupper(substr($username, 0, 1)) : 'G';
+        $navAvatar = $isLoggedIn ? avatar_url($username) : '';
+        $siteLogoUrl = vs_branding_logo_url();
         ?>
         <header class="app-navbar">
             <div class="nav-left">
@@ -81,7 +122,10 @@ if (!function_exists('render_navbar')) {
                     <span></span>
                     <span></span>
                 </button>
-                <a class="brand" href="index.php">VibeStream</a>
+                <a class="brand" href="index.php">
+                    <img class="site-brand-icon" src="<?php echo htmlspecialchars($siteLogoUrl); ?>" alt="">
+                    <span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span>
+                </a>
             </div>
 
             <div class="nav-center">
@@ -91,13 +135,14 @@ if (!function_exists('render_navbar')) {
             </div>
 
             <div class="nav-right">
+                <button type="button" class="theme-toggle" id="themeToggle" data-vs-theme-toggle aria-label="Switch to light mode" title="Toggle light / dark theme">
+                    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                    <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                </button>
+                <?php echo vs_notification_bell_html(); ?>
                 <a href="upload.php" class="create-btn">+ Create</a>
                 <?php if ($isLoggedIn): ?>
-                    <div class="user-badge user-badge-pill">
-                        <div class="user-avatar-circle"><?php echo $initial; ?></div>
-                        <span class="user-name"><?php echo htmlspecialchars($username); ?></span>
-                        <a href="logout.php" class="logout-link">Logout</a>
-                    </div>
+                    <?php echo vs_user_menu_html($username, $navAvatar); ?>
                 <?php else: ?>
                     <a href="login.php" class="sign-in-btn">Sign In</a>
                 <?php endif; ?>
@@ -109,60 +154,23 @@ if (!function_exists('render_navbar')) {
 
 if (!function_exists('render_sidebar')) {
     function render_sidebar($active = 'home') {
-        $icons = [
-            'home' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg>',
-            'watch' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M10 8.5v7l6-3.5-6-3.5z" fill="currentColor" stroke="none"/></svg>',
-            'shorts' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16"/><path d="m5 4 3 4M11 4l3 4M17 4l2 4"/><rect x="3" y="8" width="18" height="12" rx="2"/></svg>',
-            'upload' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V4"/><path d="m6 9 6-6 6 6"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
-            'profile' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1"/></svg>',
-        ];
-        $items = [
-            ['key' => 'home',   'label' => 'Home',   'href' => 'index.php'],
-            ['key' => 'watch',  'label' => 'Watch',  'href' => 'watch.php'],
-            ['key' => 'shorts', 'label' => 'Shorts', 'href' => 'shorts.php'],
-            ['key' => 'upload', 'label' => 'Upload', 'href' => 'upload.php'],
-            ['key' => 'profile', 'label' => 'Profile', 'href' => 'profile.php'],
-        ];
-        if (isset($_SESSION['AdminSession']) || (isset($_SESSION['role']) && strcasecmp($_SESSION['role'], 'Admin') === 0)) {
-            $items[] = ['key' => 'adminpanel', 'label' => 'Admin Panel', 'href' => 'adminpanel/index.php'];
-            $icons['adminpanel'] = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
-        }
-        ?>
-        <aside class="app-sidebar" id="appSidebar">
-            <div class="sidebar-top">
-                <div class="sidebar-heading">Browse</div>
-                <button type="button" class="sidebar-close" id="sidebarClose" data-sidebar-close aria-label="Close menu">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
-                </button>
-            </div>
-            <nav class="sidebar-nav">
-                <?php foreach ($items as $item): ?>
-                    <a class="sidebar-link<?php echo $active === $item['key'] ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($item['href']); ?>">
-                        <span class="sidebar-icon"><?php echo $icons[$item['key']]; ?></span>
-                        <span class="sidebar-label"><?php echo htmlspecialchars($item['label']); ?></span>
-                    </a>
-                <?php endforeach; ?>
-            </nav>
-
-            <div class="sidebar-divider"></div>
-
-            <nav class="sidebar-nav secondary">
-                <a class="sidebar-link" href="#videos-grid">
-                    <span class="sidebar-icon"></span>
-                    <span class="sidebar-label">All Videos</span>
-                </a>
-                <a class="sidebar-link" href="#shorts-shelf">
-                    <span class="sidebar-icon"></span>
-                    <span class="sidebar-label">Shorts Shelf</span>
-                </a>
-            </nav>
-        </aside>
-        <?php
+        vs_render_sidebar((string)$active);
     }
 }
 
 $hasTypeColumn = column_exists($conn, 'videos', 'type');
+$hasCategoryColumn = column_exists($conn, 'videos', 'category');
+$selectedCategory = strtolower(trim((string)($_GET['category'] ?? '')));
+if (!preg_match('/^[a-z0-9 _-]{1,40}$/', $selectedCategory)) {
+    $selectedCategory = '';
+}
 $search = trim($_GET['q'] ?? '');
+if (!$hasCategoryColumn) {
+    if ($selectedCategory !== '' && $search === '') {
+        $search = $selectedCategory;
+    }
+    $selectedCategory = '';
+}
 
 $perPage = 24;
 $page = max(1, (int)($_GET['page'] ?? 1));
@@ -172,11 +180,17 @@ $where = $hasTypeColumn ? "(type IS NULL OR type <> 'short')" : "1=1";
 $params = [];
 $types = '';
 
+if ($selectedCategory !== '' && $hasCategoryColumn) {
+    $where .= " AND LOWER(TRIM(category)) = ?";
+    $params[] = $selectedCategory;
+    $types .= 's';
+}
+
 if ($search !== '') {
     $where .= " AND (title LIKE ? OR username LIKE ? OR channel_name LIKE ?)";
     $like = '%' . $search . '%';
-    $params = [$like, $like, $like];
-    $types = 'sss';
+    array_push($params, $like, $like, $like);
+    $types .= 'sss';
 }
 
 $countStmt = $conn->prepare("SELECT COUNT(*) AS n FROM videos WHERE $where");
@@ -190,7 +204,14 @@ if ($page > $totalPages) {
     $offset = ($page - 1) * $perPage;
 }
 
-$sql = "SELECT * FROM videos WHERE $where ORDER BY created_at DESC LIMIT ? OFFSET ?";
+// Shuffle: a new random order on every refresh of page 1; pages 2+ keep the same order while you page.
+// (Searches stay newest-first.)
+if ($page <= 1 || empty($_SESSION['feed_seed'])) {
+    $_SESSION['feed_seed'] = random_int(1, 2147483646);
+}
+$feedSeed = (int)$_SESSION['feed_seed'];
+$videoOrder = $search === '' ? "RAND($feedSeed)" : 'created_at DESC';
+$sql = "SELECT * FROM videos WHERE $where ORDER BY $videoOrder LIMIT ? OFFSET ?";
 $stmt = $conn->prepare($sql);
 $bindTypes = $types . 'ii';
 $bindParams = array_merge($params, [$perPage, $offset]);
@@ -199,11 +220,13 @@ $stmt->execute();
 $videos = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
+$shortsPerPage = 18;   // shorts loaded per page (3 rows of 6, shown between the videos)
 $shorts = [];
 if ($hasTypeColumn) {
+    $shortOrder = $search === '' ? "RAND($feedSeed)" : 'created_at DESC';
     $sSql = "SELECT * FROM videos WHERE type = 'short'";
     if ($search !== '') $sSql .= " AND (title LIKE ? OR username LIKE ? OR channel_name LIKE ?)";
-    $sSql .= " ORDER BY created_at DESC LIMIT 12";
+    $sSql .= " ORDER BY $shortOrder LIMIT " . (int)$shortsPerPage . " OFFSET " . (int)(($page - 1) * $shortsPerPage);
     $sStmt = $conn->prepare($sSql);
     if ($search !== '') {
         $like = '%' . $search . '%';
@@ -215,23 +238,31 @@ if ($hasTypeColumn) {
 }
 
 $categories = ['all'];
-if (column_exists($conn, 'videos', 'category')) {
+if ($hasCategoryColumn) {
     $catRes = $conn->query("SELECT DISTINCT LOWER(TRIM(category)) AS c FROM videos WHERE category IS NOT NULL AND category <> ''");
     while ($catRes && ($row = $catRes->fetch_assoc())) {
         if ($row['c'] !== '') $categories[] = $row['c'];
     }
+    foreach (vs_default_categories() as $defaultCategory) {
+        $categories[] = strtolower($defaultCategory);
+    }
 }
 $categories = array_values(array_unique($categories));
 
-$conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $search !== '' ? 'Search: ' . htmlspecialchars($search) . ' - ' : ''; ?>VibeStream</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="theme-color" content="<?php echo $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff'; ?>">
+    <meta name="vs-default-theme" content="<?php echo htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="description" content="<?php echo htmlspecialchars(vs_branding_app_description(), ENT_QUOTES, 'UTF-8'); ?>">
+    <link rel="manifest" href="manifest.php">
+    <link rel="apple-touch-icon" href="branding-icon.php">
+    <title><?php echo $search !== '' ? 'Search: ' . htmlspecialchars($search, ENT_QUOTES, 'UTF-8') . ' - ' : ''; ?><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
+    <script src="theme.js?v=3"></script>
+    <link rel="stylesheet" href="style.css?v=5">
     <style>
         :root {
             --bg: #0f0f0f;
@@ -528,6 +559,8 @@ $conn->close();
         .chips-bar::-webkit-scrollbar { display: none; }
 
         .chip {
+            display: inline-flex;
+            align-items: center;
             border: 1px solid #353535;
             background: var(--surface-2);
             color: var(--text);
@@ -829,9 +862,157 @@ $conn->close();
                 white-space: normal;
             }
         }
+
+        /* ---------- Theme toggle ---------- */
+        .theme-toggle {
+            width: 44px;
+            height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text);
+            border-radius: 50%;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+        .theme-toggle:hover { background: var(--surface-3); }
+        .theme-toggle:active { transform: scale(0.92); }
+        .theme-toggle svg { width: 22px; height: 22px; }
+        .theme-toggle .icon-moon { display: none; }
+        :root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
+        :root[data-theme="light"] .theme-toggle .icon-moon { display: block; }
+
+        /* ---------- Light theme ---------- */
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --bg: #ffffff;
+            --surface: #f9f9f9;
+            --surface-2: #f0f0f0;
+            --surface-3: #e9e9e9;
+            --surface-4: #f2f2f2;
+            --text: #0f0f0f;
+            --muted: #606060;
+            --border: #e0e0e0;
+            --accent-hover: #ececec;
+            --accent-soft: rgba(176, 42, 42, 0.10);
+            --blue: #065fd4;
+        }
+        :root[data-theme="dark"] { color-scheme: dark; }
+        :root[data-theme="light"] .app-navbar { background: rgba(255, 255, 255, 0.96); }
+        :root[data-theme="light"] #search-input { background: #ffffff; border-color: #ccc; }
+        :root[data-theme="light"] #search-input:focus { box-shadow: 0 0 0 3px rgba(6, 95, 212, 0.14); }
+        :root[data-theme="light"] .app-sidebar { background: #ffffff; }
+        :root[data-theme="light"] .hero-strip {
+            background: linear-gradient(135deg, #f7f7f9 0%, #ffffff 60%, #fbf1f1 100%);
+            border-color: rgba(0, 0, 0, 0.08);
+        }
+        :root[data-theme="light"] .hero-badge {
+            background: rgba(176, 42, 42, 0.08);
+            color: #9a2222;
+            border-color: rgba(176, 42, 42, 0.25);
+        }
+        :root[data-theme="light"] .user-badge-pill {
+            background: linear-gradient(180deg, #ffffff 0%, #f3f3f3 100%);
+            border-color: #d6d6d6;
+            box-shadow: none;
+        }
+        :root[data-theme="light"] .user-name { color: #0f0f0f; }
+        :root[data-theme="light"] .logout-link { color: #606060; border-left-color: #d0d0d0; }
+        :root[data-theme="light"] .logout-link:hover { color: #0f0f0f; }
+        :root[data-theme="light"] .pagination .current { color: #ffffff; }
+        :root[data-theme="light"] .empty-state {
+            background: rgba(0, 0, 0, 0.02);
+            border-color: rgba(0, 0, 0, 0.12);
+        }
+
+        /* ---------- Mixed feed: videos / shorts rows ---------- */
+        .feed-block { margin-bottom: 8px; }
+        .feed-shorts { margin: 10px 0 30px; }
+        .feed-shorts-title {
+            display: flex; align-items: center; gap: 10px; margin: 0 0 14px;
+            font-size: 20px; font-weight: 700; color: var(--text);
+        }
+        .feed-shorts-title svg { width: 24px; height: 24px; color: var(--accent); }
+        .feed-shorts .shorts-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+        @media (max-width: 1100px) {
+            .feed-shorts .shorts-grid {
+                grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(150px, 38%);
+                overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 6px;
+            }
+            .feed-shorts .short-card { scroll-snap-align: start; }
+        }
+
+        /* ---------- YouTube-style home page ---------- */
+        .content-wrap { max-width: none; padding: 0 24px 40px; }
+        .search-title { margin: 18px 0 0; font-size: 18px; font-weight: 500; }
+
+        .chips-bar {
+            position: sticky; top: var(--navbar-height); z-index: 40;
+            gap: 12px; margin: 0 -24px 20px; padding: 12px 24px;
+            background: var(--bg);
+        }
+        .chip {
+            height: 32px; padding: 0 12px; border: 0; border-radius: 8px;
+            background: rgba(255, 255, 255, 0.10); color: var(--text);
+            font-size: 14px; font-weight: 500;
+        }
+        .chip:hover { background: rgba(255, 255, 255, 0.20); }
+        .chip.active { background: #f1f1f1; color: #0f0f0f; border: 0; }
+        :root[data-theme="light"] .chips-bar { background: var(--surface-base, #ffffff); }
+        :root[data-theme="light"] .chip { background: rgba(0, 0, 0, 0.05); }
+        :root[data-theme="light"] .chip:hover { background: rgba(0, 0, 0, 0.10); }
+        :root[data-theme="light"] .chip.active { background: #0f0f0f; color: #ffffff; }
+
+        /* 4 across on wide screens, then 3 / 2 / 1 */
+        .video-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 40px 16px; }
+        @media (max-width: 1499px) { .video-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 1149px) { .video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 639px)  { .video-grid { grid-template-columns: 1fr; gap: 26px; } }
+
+        /* cards: no box, just thumbnail + text (theme.css gives cards a background, so these are stronger) */
+        html[data-theme] body .video-card,
+        html[data-theme] body .short-card {
+            background: transparent; border: 0; box-shadow: none; border-radius: 0; padding: 0;
+        }
+        .thumbnail { border-radius: 12px; box-shadow: none; }
+        .video-card-link:hover .thumbnail img,
+        .short-card-link:hover .short-card-thumb img { transform: none; }
+        .duration-badge { right: 8px; bottom: 8px; padding: 2px 5px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+
+        .video-details-flex { gap: 12px; margin-top: 12px; }
+        .channel-avatar { width: 36px; height: 36px; }
+        .video-info h3 { margin: 0 0 4px; font-size: 15px; font-weight: 500; line-height: 21px; }
+        .video-card-link:hover .video-info h3 { color: var(--text); }
+        .channel-name, .video-meta { font-size: 13px; line-height: 19px; }
+
+        /* Shorts shelf: one row of 6 tall cards */
+        .feed-shorts { margin: 8px 0 40px; }
+        .feed-shorts-title { margin: 0 0 12px; font-size: 20px; font-weight: 700; }
+        .feed-shorts .shorts-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+        .short-card-thumb { border-radius: 12px; }
+        .short-card-info { padding: 10px 0 0; }
+        .short-card-title { margin-bottom: 4px; font-size: 14px; font-weight: 500; line-height: 20px; }
+        .short-card-views { font-size: 12px; }
+        @media (max-width: 1300px) {
+            .feed-shorts .shorts-grid {
+                grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(150px, 22%);
+                overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 6px; scrollbar-width: none;
+            }
+            .feed-shorts .shorts-grid::-webkit-scrollbar { display: none; }
+            .feed-shorts .short-card { scroll-snap-align: start; }
+        }
+        @media (max-width: 639px) {
+            .content-wrap { padding: 0 12px 32px; }
+            .chips-bar { margin: 0 -12px 14px; padding: 10px 12px; }
+            .feed-shorts .shorts-grid { grid-auto-columns: minmax(140px, 42%); }
+        }
     </style>
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
+    <link rel="stylesheet" href="theme.css?v=3">
 </head>
 <body>
     <?php render_navbar('home'); ?>
@@ -844,74 +1025,136 @@ $conn->close();
 
             <main class="app-main">
                 <div class="content-wrap">
-                    <section class="hero-strip">
-                        <div class="hero-text">
-                            <h2><?php echo $search !== '' ? 'Search results for "' . htmlspecialchars($search) . '"' : 'Welcome back to VibeStream'; ?></h2>
-                            <p><?php echo $search !== '' ? 'Browse matching videos and shorts with the updated VibeStream layout.' : 'Fresh videos, quick filters, and a cleaner homepage that matches your watch and shorts pages.'; ?></p>
-                        </div>
-                        <div class="hero-badge"><?php echo number_format($totalVideos); ?> video<?php echo $totalVideos == 1 ? '' : 's'; ?> available</div>
-                    </section>
+                    <?php if ($search !== ''): ?>
+                        <h1 class="search-title">Search results for &ldquo;<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>&rdquo;</h1>
+                    <?php endif; ?>
 
                     <nav class="chips-bar" aria-label="Video categories">
                         <?php foreach ($categories as $cat): ?>
-                            <button class="chip<?php echo $cat === 'all' ? ' active' : ''; ?>" data-category="<?php echo htmlspecialchars($cat); ?>">
+                            <?php
+                                $isCategoryActive = $cat === 'all' ? $selectedCategory === '' : $selectedCategory === $cat;
+                                $categoryQuery = $_GET;
+                                unset($categoryQuery['page']);
+                                if ($cat === 'all') {
+                                    unset($categoryQuery['category']);
+                                } else {
+                                    $categoryQuery['category'] = $cat;
+                                }
+                                $categoryHref = 'index.php' . ($categoryQuery ? '?' . http_build_query($categoryQuery) : '');
+                            ?>
+                            <a class="chip<?php echo $isCategoryActive ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($categoryHref); ?>"<?php echo $isCategoryActive ? ' aria-current="page"' : ''; ?>>
                                 <?php echo htmlspecialchars(ucfirst($cat)); ?>
-                            </button>
+                            </a>
                         <?php endforeach; ?>
                     </nav>
 
-                    <section id="videos-grid">
-                        <div class="section-head">
-                            <div>
-                                <h1>Videos</h1>
-                                <p><?php echo $search !== '' ? 'Filtered by your search query.' : 'Latest uploads from your library.'; ?></p>
-                            </div>
-                        </div>
+                    <?php
+                    // ----- Feed layout: videos, shorts, videos, shorts ... ending with videos -----
+                    $firstVideoBlock = 4;  // videos shown BEFORE the first Shorts row (1 row of 4)
+                    $videosPerBlock = 8;   // videos in each later block (2 rows of 4) - change this to move the Shorts rows up or down
+                    $shortsPerRow   = 6;   // shorts in each shorts row
 
-                        <section class="video-grid">
-                            <?php if (!$videos): ?>
+                    $renderVideo = function (array $row) {
+                        $title = htmlspecialchars($row['title'] ?? 'Untitled');
+                        $uploader = trim((string)($row['username'] ?? $row['channel_name'] ?? 'Anonymous'));
+                        $username = htmlspecialchars($uploader);
+                        $uploaderAvatar = avatar_for_record($uploader, $row);
+                        $views = vs_short_views($row['views'] ?? 0);
+                        $category = strtolower(trim($row['category'] ?? 'all'));
+                        $duration = $row['duration'] ?? null;
+                        $uploaded = vs_yt_time_ago($row['created_at'] ?? null);
+                        $src = find_source($row, __DIR__);
+                        $realYt = $src !== '' ? extract_youtube_id($src, true) : null;
+                        $thumb = thumb_for($row, $src, $realYt);
+                        $watchHref = "watch.php?id=" . urlencode($row['id']);
+                        ?>
+                        <div class="video-card" data-category="<?php echo htmlspecialchars($category); ?>">
+                            <a href="<?php echo htmlspecialchars($watchHref); ?>" class="video-card-link">
+                                <div class="thumbnail">
+                                    <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
+                                    <?php if (!empty($duration)): ?>
+                                        <span class="duration-badge"><?php echo htmlspecialchars($duration); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="video-details-flex">
+                                    <div class="channel-avatar">
+                                        <?php if ($uploaderAvatar !== ''): ?>
+                                            <img src="<?php echo htmlspecialchars($uploaderAvatar); ?>" alt="<?php echo htmlspecialchars($uploader); ?> avatar" loading="lazy">
+                                        <?php else: ?>
+                                            <span class="avatar-initial"><?php echo htmlspecialchars(mb_strtoupper(mb_substr($uploader, 0, 1))); ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="video-info">
+                                        <h3><?php echo $title; ?></h3>
+                                        <p class="channel-name"><?php echo $username; ?></p>
+                                        <p class="video-meta"><?php echo $views; ?> views &bull; <?php echo $uploaded; ?></p>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                        <?php
+                    };
+
+                    $renderShort = function (array $row) {
+                        $title = htmlspecialchars($row['title'] ?? 'Untitled');
+                        $views = vs_short_views($row['views'] ?? 0);
+                        $src = find_source($row, __DIR__);
+                        $ytId = $src !== '' ? extract_youtube_id($src, true) : null;
+                        $thumb = thumb_for($row, $src, $ytId);
+                        ?>
+                        <div class="short-card">
+                            <a href="shorts.php?id=<?php echo urlencode($row['id']); ?>" class="short-card-link">
+                                <div class="short-card-thumb">
+                                    <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
+                                </div>
+                                <div class="short-card-info">
+                                    <div class="short-card-title"><?php echo $title; ?></div>
+                                    <div class="short-card-views"><?php echo $views; ?> views</div>
+                                </div>
+                            </a>
+                        </div>
+                        <?php
+                    };
+
+                    // build the order: V S V S V S V ...
+                    $feedBlocks = [];
+                    $vi = 0; $si = 0;
+                    $vCount = count($videos); $sCount = count($shorts);
+                    while ($vi < $vCount || $si < $sCount) {
+                        if ($vi < $vCount) { $take = ($vi === 0) ? $firstVideoBlock : $videosPerBlock; $feedBlocks[] = ['v', array_slice($videos, $vi, $take)]; $vi += $take; }
+                        if ($si < $sCount) { $feedBlocks[] = ['s', array_slice($shorts, $si, $shortsPerRow)]; $si += $shortsPerRow; }
+                    }
+                    $firstShortsRow = true;
+                    ?>
+                    <section id="videos-grid">
+                        <?php if (!$videos): ?>
+                            <section class="video-grid">
                                 <div class="empty-state">
                                     <?php echo $search !== ''
                                         ? 'No videos match "' . htmlspecialchars($search) . '".'
                                         : 'No videos yet — be the first to upload one!'; ?>
                                 </div>
+                            </section>
+                        <?php endif; ?>
+
+                        <?php foreach ($feedBlocks as $block): ?>
+                            <?php if ($block[0] === 'v'): ?>
+                                <section class="video-grid feed-block">
+                                    <?php foreach ($block[1] as $row) { $renderVideo($row); } ?>
+                                </section>
+                            <?php else: ?>
+                                <section class="shorts-section feed-shorts"<?php echo $firstShortsRow ? ' id="shorts-shelf"' : ''; ?>>
+                                    <div class="feed-shorts-title">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 3-7 4a3 3 0 0 0 0 5l8 5a3 3 0 1 1-3 5"/><path d="m9 21 7-4a3 3 0 0 0 0-5L8 7a3 3 0 1 1 3-5"/></svg>
+                                        Shorts
+                                    </div>
+                                    <div class="shorts-grid">
+                                        <?php foreach ($block[1] as $row) { $renderShort($row); } ?>
+                                    </div>
+                                </section>
+                                <?php $firstShortsRow = false; ?>
                             <?php endif; ?>
-
-                            <?php foreach ($videos as $row):
-                                $title = htmlspecialchars($row['title'] ?? 'Untitled');
-                                $username = htmlspecialchars($row['username'] ?? $row['channel_name'] ?? 'Anonymous');
-                                $views = number_format($row['views'] ?? 0);
-                                $category = strtolower(trim($row['category'] ?? 'all'));
-                                $duration = $row['duration'] ?? null;
-                                $uploaded = time_ago($row['created_at'] ?? null);
-
-                                $src = find_source($row, __DIR__);
-                                $realYt = $src !== '' ? extract_youtube_id($src, true) : null;
-                                $thumb = thumb_for($row, $src, $realYt);
-                                $watchHref = "watch.php?id=" . urlencode($row['id']);
-                            ?>
-                                <div class="video-card" data-category="<?php echo htmlspecialchars($category); ?>">
-                                    <a href="<?php echo htmlspecialchars($watchHref); ?>" class="video-card-link">
-                                        <div class="thumbnail">
-                                            <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
-                                            <?php if (!empty($duration)): ?>
-                                                <span class="duration-badge"><?php echo htmlspecialchars($duration); ?></span>
-                                            <?php endif; ?>
-                                        </div>
-                                        <div class="video-details-flex">
-                                            <div class="channel-avatar">
-                                                <span class="avatar-initial"><?php echo strtoupper(substr($username, 0, 1)); ?></span>
-                                            </div>
-                                            <div class="video-info">
-                                                <h3><?php echo $title; ?></h3>
-                                                <p class="channel-name"><?php echo $username; ?></p>
-                                                <p class="video-meta"><?php echo $views; ?> views • <?php echo $uploaded; ?></p>
-                                            </div>
-                                        </div>
-                                    </a>
-                                </div>
-                            <?php endforeach; ?>
-                        </section>
+                        <?php endforeach; ?>
                     </section>
 
                     <?php if ($totalPages > 1): ?>
@@ -927,64 +1170,11 @@ $conn->close();
                             <?php endfor; ?>
                         </div>
                     <?php endif; ?>
-
-                    <?php if ($shorts): ?>
-                        <section class="shorts-section" id="shorts-shelf">
-                            <div class="section-head">
-                                <div>
-                                    <h1>Shorts</h1>
-                                    <p>Quick vertical content in the same updated theme.</p>
-                                </div>
-                            </div>
-
-                            <div class="shorts-grid">
-                                <?php foreach ($shorts as $row):
-                                    $title = htmlspecialchars($row['title'] ?? 'Untitled');
-                                    $views = number_format($row['views'] ?? 0);
-                                    $src = find_source($row, __DIR__);
-                                    $ytId = $src !== '' ? extract_youtube_id($src, true) : null;
-                                    $thumb = thumb_for($row, $src, $ytId);
-                                ?>
-                                    <div class="short-card">
-                                        <a href="shorts.php?id=<?php echo urlencode($row['id']); ?>" class="short-card-link">
-                                            <div class="short-card-thumb">
-                                                <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
-                                            </div>
-                                            <div class="short-card-info">
-                                                <div class="short-card-title"><?php echo $title; ?></div>
-                                                <div class="short-card-views"><?php echo $views; ?> views</div>
-                                            </div>
-                                        </a>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        </section>
-                    <?php endif; ?>
                 </div>
             </main>
         </div>
     </div>
 
     <script src="sidebar.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const chips = document.querySelectorAll('.chip');
-            const videoCards = document.querySelectorAll('.video-card');
-
-            chips.forEach(chip => {
-                chip.addEventListener('click', () => {
-                    chips.forEach(c => c.classList.remove('active'));
-                    chip.classList.add('active');
-
-                    const category = chip.getAttribute('data-category');
-
-                    videoCards.forEach(card => {
-                        const cardCategory = card.getAttribute('data-category');
-                        card.style.display = (category === 'all' || cardCategory === category) ? '' : 'none';
-                    });
-                });
-            });
-        });
-    </script>
 </body>
 </html>

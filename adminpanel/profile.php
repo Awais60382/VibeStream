@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/admin-bootstrap.php';
 require_once __DIR__ . '/ui_helpers.php'; 
+require_once __DIR__ . '/../avatar.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -47,52 +48,44 @@ if (isset($pdo) && $pdo instanceof PDO) {
     }
 }
 
+// The main site stores avatars per username, so use the real username here
+// (not the display name) to keep the admin panel, messages and main site in sync.
+$avatarUser = trim((string)($_SESSION['username'] ?? ''));
+if ($avatarUser === '' && isset($pdo) && $pdo instanceof PDO && $unameCol && $matchCol) {
+    try {
+        $unStmt = $pdo->prepare("SELECT `$unameCol` FROM `users` WHERE `$matchCol` = :val LIMIT 1");
+        $unStmt->execute([':val' => $matchVal]);
+        $avatarUser = trim((string)$unStmt->fetchColumn());
+    } catch (Throwable $e) {
+    }
+}
+if ($avatarUser === '') {
+    $avatarUser = trim((string)($_SESSION['AdminSession'] ?? ''));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_avatar') {
     header('Content-Type: application/json');
 
-    if (!(isset($pdo) && $pdo instanceof PDO && $matchCol && $avatarCol)) {
-        $missing = [];
-        if (!isset($pdo) || !($pdo instanceof PDO)) $missing[] = 'database connection ($pdo)';
-        if (!$matchCol) $missing[] = 'admin identity ($matchCol — session/users table mismatch)';
-        if (!$avatarCol) $missing[] = 'avatar column ($avatarCol — no matching column found on users table)';
-        echo json_encode(['ok' => false, 'error' => 'Avatar upload is not available right now. Missing: ' . implode(', ', $missing)]);
+    if ($avatarUser === '') {
+        echo json_encode(['ok' => false, 'error' => 'Avatar upload is not available right now. Your account name could not be found.']);
         exit;
     }
 
-    if (empty($_FILES['avatar']['name']) || $_FILES['avatar']['error'] !== UPLOAD_ERR_OK) {
-        echo json_encode(['ok' => false, 'error' => 'No file received.']);
+    $saveError = avatar_save($avatarUser, $_FILES['avatar'] ?? null);
+    if ($saveError !== '') {
+        echo json_encode(['ok' => false, 'error' => $saveError]);
         exit;
     }
 
-    $allowed = ['jpg', 'jpeg', 'png', 'webp'];
-    $ext = strtolower(pathinfo($_FILES['avatar']['name'], PATHINFO_EXTENSION));
-
-    if (!in_array($ext, $allowed, true)) {
-        echo json_encode(['ok' => false, 'error' => 'Avatar must be jpg, jpeg, png, or webp.']);
-        exit;
+    if (isset($pdo) && $pdo instanceof PDO && $matchCol && $avatarCol) {
+        try {
+            $upd = $pdo->prepare("UPDATE `users` SET `$avatarCol` = :avatar WHERE `$matchCol` = :val");
+            $upd->execute([':avatar' => 'uploads/avatars/' . basename(avatar_path($avatarUser)), ':val' => $matchVal]);
+        } catch (Throwable $e) {
+            // the picture itself is saved; the database copy is optional
+        }
     }
-
-    $uploadDir = __DIR__ . '/assets/images/avatar/';
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
-    }
-
-    $newFileName = 'avatar_' . preg_replace('/[^a-zA-Z0-9_]/', '_', (string)$matchVal) . '_' . time() . '.' . $ext;
-
-    if (!move_uploaded_file($_FILES['avatar']['tmp_name'], $uploadDir . $newFileName)) {
-        echo json_encode(['ok' => false, 'error' => 'Avatar upload failed. Please check folder permissions.']);
-        exit;
-    }
-
-    $relativePath = './assets/images/avatar/' . $newFileName;
-
-    try {
-        $upd = $pdo->prepare("UPDATE `users` SET `$avatarCol` = :avatar WHERE `$matchCol` = :val");
-        $upd->execute([':avatar' => $relativePath, ':val' => $matchVal]);
-        echo json_encode(['ok' => true, 'path' => $relativePath]);
-    } catch (Throwable $e) {
-        echo json_encode(['ok' => false, 'error' => 'Could not save avatar. Please try again.']);
-    }
+    echo json_encode(['ok' => true, 'path' => avatar_url($avatarUser)]);
     exit;
 }
 
@@ -118,25 +111,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($pdo) && $pdo instanceof PDO 
     }
 
 
-    if ($avatarCol && !empty($_FILES['avatar']['name']) && $_FILES['avatar']['error'] === UPLOAD_ERR_OK) {
-        $allowed = ['jpg', 'jpeg', 'png', 'webp'];
-        $ext = strtolower(pathinfo($_FILES['avatar']['name'], PATHINFO_EXTENSION));
-        if (in_array($ext, $allowed, true)) {
-            $uploadDir = __DIR__ . '/assets/images/avatar/';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
-            $newFileName = 'avatar_' . preg_replace('/[^a-zA-Z0-9_]/', '_', (string)$matchVal) . '_' . time() . '.' . $ext;
-            if (move_uploaded_file($_FILES['avatar']['tmp_name'], $uploadDir . $newFileName)) {
-                $relativePath = './assets/images/avatar/' . $newFileName;
+    $avatarSaved = false;
+    if (!empty($_FILES['avatar']['name']) && $_FILES['avatar']['error'] === UPLOAD_ERR_OK) {
+        $saveError = $avatarUser !== '' ? avatar_save($avatarUser, $_FILES['avatar']) : 'Your account name could not be found.';
+        if ($saveError === '') {
+            $avatarSaved = true;
+            if ($avatarCol) {
                 $setParts[] = "`$avatarCol` = :avatar";
-                $params[':avatar'] = $relativePath;
-                $adminAvatarPath = $relativePath;
-            } else {
-                $errorMsg = 'Avatar upload failed. Please check folder permissions.';
+                $params[':avatar'] = 'uploads/avatars/' . basename(avatar_path($avatarUser));
             }
+            $adminAvatarPath = avatar_url($avatarUser);
         } else {
-            $errorMsg = 'Avatar must be jpg, jpeg, png, or webp.';
+            $errorMsg = $saveError;
         }
     }
 
@@ -155,6 +141,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($pdo) && $pdo instanceof PDO 
         } catch (Throwable $e) {
             $errorMsg = 'Could not update profile. Please try again.';
         }
+    } elseif ($avatarSaved) {
+        $successMsg = 'Profile updated successfully.';
     } elseif ($errorMsg === '') {
         $errorMsg = 'No changes submitted.';
     }

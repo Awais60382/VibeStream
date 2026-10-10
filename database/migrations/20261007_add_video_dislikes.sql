@@ -1,0 +1,2 @@
+ALTER TABLE `videos`
+    ADD COLUMN `dislikes` INT NOT NULL DEFAULT 0;

@@ -27,6 +27,121 @@ if (empty($_SESSION['csrf'])) {
 }
 $csrf = $_SESSION['csrf'];
 
+/**
+ * Renames a user everywhere the old name is stored.
+ * Returns '' on success, or an error message to show the user.
+ */
+function vs_rename_user(mysqli $conn, string $old, string $new): string
+{
+    $new = trim($new);
+    if ($new === $old) {
+        return 'That is already your name.';
+    }
+    if (!preg_match('/^[\p{L}\p{N}_.-]{3,30}$/u', $new)) {
+        return 'Use 3-30 characters: letters, numbers, dot, dash or underscore (no spaces).';
+    }
+    $isAdmin = strcasecmp((string)($_SESSION['role'] ?? ''), 'admin') === 0;
+    if (!$isAdmin && in_array(mb_strtolower($new), ['admin', 'administrator', 'root', 'system', 'support', 'guest'], true)) {
+        return 'That name is reserved. Please choose another one.';
+    }
+
+    // Every text column that stores a user name (found automatically).
+    $nameColumns = ['username', 'user_name', 'uploader', 'channel', 'channel_name', 'subscriber', 'subscriber_name',
+                    'author', 'owner', 'commenter', 'posted_by', 'created_by'];
+    $in = implode(',', array_map(static fn($c) => "'" . $c . "'", $nameColumns));
+    $sql = "SELECT c.TABLE_NAME, c.COLUMN_NAME
+            FROM information_schema.COLUMNS c
+            JOIN information_schema.TABLES t
+              ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_TYPE = 'BASE TABLE'
+            WHERE c.TABLE_SCHEMA = DATABASE()
+              AND c.DATA_TYPE IN ('varchar','char','tinytext','text','mediumtext','longtext')
+              AND c.COLUMN_NAME IN ($in)";
+    $targets = [];
+    $res = $conn->query($sql);
+    if (!$res) {
+        error_log('Rename: could not inspect tables: ' . $conn->error);
+        return 'Could not change your name right now. Please try again later.';
+    }
+    while ($row = $res->fetch_row()) {
+        $targets[] = [$row[0], $row[1]];
+    }
+    $res->close();
+    if (!in_array(['users', 'username'], $targets, true)) {
+        return 'Could not change your name right now. Please try again later.';
+    }
+
+    $q = static function (string $id): string { return '`' . str_replace('`', '``', $id) . '`'; };
+    $run = static function (string $sql, string $a, string $b) use ($conn): int {
+        $st = $conn->prepare($sql);
+        if (!$st) {
+            throw new RuntimeException($conn->error);
+        }
+        $st->bind_param('ss', $a, $b);
+        if (!$st->execute()) {
+            $err = $st->error;
+            $st->close();
+            throw new RuntimeException($err);
+        }
+        $n = $st->affected_rows;
+        $st->close();
+        return $n;
+    };
+
+    try {
+        // Refuse a name that is already used anywhere (this also protects other people's uploads).
+        foreach ($targets as [$table, $column]) {
+            $st = $conn->prepare('SELECT 1 FROM ' . $q($table) . ' WHERE ' . $q($column) . ' = ? AND BINARY ' . $q($column) . ' <> BINARY ? LIMIT 1');
+            if (!$st) {
+                throw new RuntimeException($conn->error);
+            }
+            $st->bind_param('ss', $new, $old);
+            $st->execute();
+            $st->store_result();
+            $taken = $st->num_rows > 0;
+            $st->close();
+            if ($taken) {
+                return 'That name is already taken. Please choose another one.';
+            }
+        }
+
+        $conn->begin_transaction();
+        if ($run('UPDATE `users` SET `username` = ? WHERE `username` = ?', $new, $old) < 1) {
+            $conn->rollback();
+            return 'Could not find your account to update.';
+        }
+        foreach ($targets as [$table, $column]) {
+            if ($table === 'users' && $column === 'username') {
+                continue;
+            }
+            $run('UPDATE ' . $q($table) . ' SET ' . $q($column) . ' = ? WHERE ' . $q($column) . ' = ?', $new, $old);
+        }
+        $conn->commit();
+    } catch (Throwable $e) {
+        try { $conn->rollback(); } catch (Throwable $ignored) {}
+        error_log('Rename failed: ' . $e->getMessage());
+        return 'Could not change your name right now. Please try again later.';
+    }
+    return '';
+}
+
+/** Keeps the profile picture when a user is renamed (avatar files are stored under a key made from the name). */
+function vs_move_avatar(string $old, string $new): void
+{
+    if (avatar_key($old) === avatar_key($new)) {
+        return;
+    }
+    $from = avatar_path($old);
+    if ($from === '') {
+        return;
+    }
+    $ext = strtolower(pathinfo($from, PATHINFO_EXTENSION));
+    avatar_delete($new); // clear any leftover file from a previous owner of that name
+    $to = AVATAR_DIR . '/' . avatar_key($new) . '.' . $ext;
+    if (!@rename($from, $to)) {
+        error_log('Could not move the avatar from ' . $from . ' to ' . $to);
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $flash = ['type' => 'err', 'text' => 'That request was not allowed.'];
 
@@ -43,6 +158,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             avatar_delete($viewer);
             $flash = ['type' => 'ok', 'text' => 'Avatar removed.'];
 
+        } elseif ($action === 'rename') {
+            $newName = trim((string)($_POST['new_name'] ?? ''));
+            $err = vs_rename_user($conn, $viewer, $newName);
+            if ($err === '') {
+                vs_move_avatar($viewer, $newName);
+                foreach (['username', 'UserSession', 'AdminSession'] as $sessionKey) {
+                    if (isset($_SESSION[$sessionKey]) && $_SESSION[$sessionKey] === $viewer) {
+                        $_SESSION[$sessionKey] = $newName;
+                    }
+                }
+                $flash = ['type' => 'ok', 'text' => 'Your name was changed to ' . $newName . '.'];
+            } else {
+                $flash = ['type' => 'err', 'text' => $err];
+            }
         }
     }
 
@@ -191,6 +320,17 @@ img.profile-avatar { object-fit: cover; }
 }
 .empty-state .btn { margin-top: 14px; }
 [hidden] { display: none !important; }
+.name-form {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    margin: 14px 0 0; padding: 16px 18px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+}
+.name-form label { font-size: 14px; font-weight: 600; }
+.name-form input[type="text"] {
+    flex: 1; min-width: 200px; padding: 10px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px;
+}
+.name-form small { flex-basis: 100%; color: var(--muted); font-size: 12px; }
 @media (max-width: 640px) {
     .profile-head { padding: 20px; gap: 16px; }
     .profile-avatar { width: 80px; height: 80px; font-size: 34px; }
@@ -243,11 +383,24 @@ vs_page_start($profileUser !== '' ? '@' . $profileUser : 'Profile', 'profile', $
                         <button type="submit" class="btn">Remove avatar</button>
                     </form>
                 <?php endif; ?>
+                <button type="button" class="btn" id="nameToggle"><?= vs_icon('contact', 16) ?> Change name</button>
                 <a class="btn primary" href="upload.php"><?= vs_icon('plus-square', 16) ?> Upload</a>
                 <a class="btn" href="logout.php">Logout</a>
             </div>
         <?php endif; ?>
     </section>
+
+    <?php if ($isMe): ?>
+        <form class="name-form" id="nameForm" method="post" action="profile.php" hidden>
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf) ?>">
+            <input type="hidden" name="action" value="rename">
+            <label for="newName">New name</label>
+            <input type="text" id="newName" name="new_name" value="<?= htmlspecialchars($profileUser) ?>" minlength="3" maxlength="30" required autocomplete="off">
+            <button type="submit" class="btn primary">Save</button>
+            <button type="button" class="btn" id="nameCancel">Cancel</button>
+            <small>3-30 characters: letters, numbers, dot, dash or underscore. Your videos, shorts and channel will move to the new name.</small>
+        </form>
+    <?php endif; ?>
 
     <div class="tabs" role="tablist">
         <button type="button" class="tab<?= $defaultTab === 'videos' ? ' active' : '' ?>" role="tab" data-tab="videos">Videos<span class="count"><?= count($videos) ?></span></button>
@@ -308,6 +461,16 @@ document.addEventListener('DOMContentLoaded', function () {
             panels.forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
         });
     });
+
+    var nameToggle = document.getElementById('nameToggle');
+    var nameForm = document.getElementById('nameForm');
+    if (nameToggle && nameForm) {
+        nameToggle.addEventListener('click', function () {
+            nameForm.hidden = !nameForm.hidden;
+            if (!nameForm.hidden) { document.getElementById('newName').focus(); }
+        });
+        document.getElementById('nameCancel').addEventListener('click', function () { nameForm.hidden = true; });
+    }
 
     var input = document.getElementById('avatarInput');
     if (input) {

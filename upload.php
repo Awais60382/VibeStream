@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/layout.php';  
 include __DIR__ . '/connection.php';
+require_once __DIR__ . '/helpers.php';
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     try {
@@ -65,10 +66,16 @@ $old = ['type' => 'short', 'title' => '', 'description' => '', 'mode' => 'link',
 $flash = $_SESSION['upload_flash'] ?? null;
 unset($_SESSION['upload_flash']);
 
+$uploadsOn = vs_uploads_enabled();
+$maxBytes = vs_max_upload_bytes();
+$categoryChoices = vs_default_categories();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $savedFile = null;
 
-    if (empty($_POST) && empty($_FILES) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    if (!$uploadsOn) {
+        $errors[] = 'Uploads are turned off right now. Please try again later.';
+    } elseif (empty($_POST) && empty($_FILES) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
         $errors[] = 'That upload is bigger than PHP allows (post_max_size = ' . ini_get('post_max_size') . '). Raise it in php.ini or paste a link instead.';
     } elseif (!hash_equals($_SESSION['csrf'], (string)($_POST['csrf'] ?? ''))) {
         $errors[] = 'Your session expired. Reload the page and try again.';
@@ -97,6 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $errors[] = 'Choose a video file to upload.';
                 } elseif ($f['error'] !== UPLOAD_ERR_OK) {
                     $errors[] = upload_error_text($f['error']);
+                } elseif ((int)($f['size'] ?? 0) > $maxBytes) {
+                    $errors[] = 'That file is ' . vs_format_bytes((int)$f['size']) . '. The maximum upload size is ' . vs_format_bytes($maxBytes) . '. Choose a smaller file or paste a link instead.';
                 } else {
                     $uploadExt = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
                     if (!in_array($uploadExt, ['mp4', 'webm', 'ogg', 'ogv', 'm4v', 'mov'], true)) {
@@ -206,6 +215,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($newId === null) $newId = (string)$conn->insert_id;
                 $stmt->close();
 
+                if ($username !== '') {
+                    vs_notify_subscribers($conn, $poster, $old['type'], (string)$newId, $old['title']);
+                }
+
                 $_SESSION['upload_flash'] = ['type' => $old['type'], 'id' => $newId, 'title' => $old['title']];
                 header('Location: upload.php');
                 exit;
@@ -244,11 +257,12 @@ $extraCss = <<<'CSS'
 .field label, .field .label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
 .field .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
 .field input[type=text], .field input[type=url], .field textarea, .field input[type=file] {
-    width: 100%; background: #0d0d0f; border: 1px solid #3d3d46; border-radius: 12px;
-    padding: 12px 14px; color: #ffffff; outline: none;
+    width: 100%; background: var(--surface-raised, #0d0d0f); border: 1px solid var(--border-strong, #3d3d46); border-radius: 12px;
+    padding: 12px 14px; color: var(--text-primary, #ffffff); outline: none;
 }
+.field input::placeholder, .field textarea::placeholder { color: var(--text-tertiary, #8a8a94); }
 .field textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
-.field input:focus, .field textarea:focus { border-color: #6b6b78; }
+.field input:focus, .field textarea:focus { border-color: #5b8cff; box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.18); }
 .field input[type=file] { padding: 10px; }
 .seg { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 4px; gap: 4px; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
@@ -284,6 +298,12 @@ vs_page_start('Upload', 'upload', $extraCss);
                     <a href="watch.php?id=<?= urlencode($flash['id']) ?>">Watch the video</a>
                 <?php endif; ?>
                 &middot; <a href="profile.php">Open your profile</a>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!$uploadsOn): ?>
+            <div class="notice warn">
+                <strong>Uploads are turned off.</strong> New videos and shorts cannot be added right now. Please check back later.
             </div>
         <?php endif; ?>
 
@@ -342,18 +362,23 @@ vs_page_start('Upload', 'upload', $extraCss);
             <div class="field" id="fileField" hidden>
                 <label for="video_file">Video file</label>
                 <input type="file" id="video_file" name="video_file" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.ogg,.ogv,.m4v,.mov">
-                <div class="hint">Max size: <?= htmlspecialchars(ini_get('upload_max_filesize')) ?> (set by PHP). mp4, webm, ogg, m4v or mov.</div>
+                <div class="hint">Max size: <?= htmlspecialchars(vs_format_bytes($maxBytes)) ?>. mp4, webm, ogg, m4v or mov.</div>
             </div>
 
             <?php if ($showCategory): ?>
                 <div class="field">
                     <label for="category">Category <span style="color:var(--muted);font-weight:400">(optional)</span></label>
-                    <input type="text" id="category" name="category" maxlength="60" value="<?= htmlspecialchars($old['category']) ?>">
+                    <input type="text" id="category" name="category" maxlength="60" list="categoryList" value="<?= htmlspecialchars($old['category']) ?>">
+                    <datalist id="categoryList">
+                        <?php foreach ($categoryChoices as $choice): ?>
+                            <option value="<?= htmlspecialchars($choice) ?>"></option>
+                        <?php endforeach; ?>
+                    </datalist>
                 </div>
             <?php endif; ?>
 
             <div>
-                <button type="submit" class="submit-btn" id="submitBtn"<?= $srcCol === null ? ' disabled' : '' ?>>Upload</button>
+                <button type="submit" class="submit-btn" id="submitBtn"<?= ($srcCol === null || !$uploadsOn) ? ' disabled' : '' ?>>Upload</button>
                 <?php if ($username !== ''): ?>
                     <span class="posting-as">Posting as @<?= htmlspecialchars($username) ?></span>
                 <?php else: ?>

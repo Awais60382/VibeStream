@@ -173,6 +173,18 @@ if (!isset($pdo) || !($pdo instanceof PDO)) {
 }
 
 
+// Admins are listed on admins.php, so keep them out of this users list.
+$adminTotal = 0;
+if ($mode === 'users') {
+    $people = array_values(array_filter($people, function ($p) use (&$adminTotal) {
+        if (!empty($p['is_admin'])) {
+            $adminTotal++;
+            return false;
+        }
+        return true;
+    }));
+}
+
 $countPeople    = count($people);
 $countUploaders = 0;
 foreach ($people as $p) {
@@ -297,7 +309,14 @@ vs_print_styles();
               </div>
             </div>
 
-            <form class="row g-2 align-items-center mb-3" method="get" action="users.php">
+            <?php if ($mode === 'users' && $show['role']): ?>
+            <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Switch list">
+              <a class="btn btn-primary" href="Users.php" aria-current="true">Users (<?php echo (int)$countPeople; ?>)</a>
+              <a class="btn btn-outline-primary" href="admins.php"><i class="bi bi-shield-check" aria-hidden="true"></i> Admins (<?php echo (int)$adminTotal; ?>)</a>
+            </div>
+            <?php endif; ?>
+
+            <form class="row g-2 align-items-center mb-3" method="get" action="Users.php">
               <div class="col-12 col-md-5">
                 <input class="form-control form-control-sm" type="search" name="q" value="<?php echo vs_e($q); ?>" placeholder="Search by name, email or role" aria-label="Search users">
               </div>
@@ -319,7 +338,7 @@ vs_print_styles();
               </div>
               <div class="col-12 col-md-auto d-flex gap-2">
                 <button class="btn btn-primary btn-sm" type="submit">Filter</button>
-                <a class="btn btn-outline-secondary btn-sm" href="users.php">Reset</a>
+                <a class="btn btn-outline-secondary btn-sm" href="Users.php">Reset</a>
               </div>
             </form>
 
@@ -391,7 +410,7 @@ vs_print_styles();
                     </td>
                   </tr>
                 <?php endforeach; else: ?>
-                  <tr><td colspan="<?php echo (int)$colCount; ?>" class="text-center text-muted py-4">No users match these filters. <a href="users.php">Clear filters</a></td></tr>
+                  <tr><td colspan="<?php echo (int)$colCount; ?>" class="text-center text-muted py-4">No users match these filters. <a href="Users.php">Clear filters</a></td></tr>
                 <?php endif; ?>
                 </tbody>
               </table>

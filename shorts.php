@@ -2,7 +2,17 @@
 session_start();
 include "connection.php";
 require_once __DIR__ . '/avatar.php';   
+require_once __DIR__ . '/site-branding.php';
+require_once __DIR__ . '/notifications-store.php';
+require_once __DIR__ . '/user-menu.php';
 require_once __DIR__ . '/icons.php';    
+require_once __DIR__ . '/sidebar-navigation.php';
+require_once __DIR__ . '/subscription-store.php';
+require_once __DIR__ . '/history-store.php';
+require_once __DIR__ . '/comment-store.php';
+$siteName = vs_branding_app_name();
+$defaultTheme = vs_branding_default_theme();
+vs_maintenance_gate();
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     try {
@@ -52,17 +62,19 @@ if (!function_exists('short_num')) {
     function short_num($n) {
         $n = (int)$n;
         if ($n >= 1000000) return round($n / 1000000, 1) . 'M';
-        if ($n >= 1000) return round($n / 1000, 1) . 'K';
+        if ($n >= 1000) return round($n / 1000, 1) . 'k';
         return (string)$n;
     }
 }
 
 if (!function_exists('render_navbar')) {
     function render_navbar($active = 'shorts') {
+        $siteName = vs_branding_app_name();
         $isLoggedIn = isset($_SESSION['username']) && $_SESSION['username'] !== '';
         $username = $isLoggedIn ? $_SESSION['username'] : '';
         $initial = $isLoggedIn ? strtoupper(substr($username, 0, 1)) : 'G';
         $navAvatar = $isLoggedIn ? avatar_url($username) : '';
+        $siteLogoUrl = vs_branding_logo_url();
         ?>
         <header class="app-navbar">
             <div class="nav-left">
@@ -71,7 +83,10 @@ if (!function_exists('render_navbar')) {
                     <span></span>
                     <span></span>
                 </button>
-                <a class="brand" href="index.php">VibeStream</a>
+                <a class="brand" href="index.php">
+                    <img class="site-brand-icon" src="<?php echo htmlspecialchars($siteLogoUrl); ?>" alt="">
+                    <span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span>
+                </a>
             </div>
 
             <div class="nav-center">
@@ -80,21 +95,13 @@ if (!function_exists('render_navbar')) {
             </div>
 
             <div class="nav-right">
+                <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
+                    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                </button>
+                <?php echo vs_notification_bell_html(); ?>
                 <a href="upload.php" class="create-btn">+ Create</a>
                 <?php if ($isLoggedIn): ?>
-                    <div class="user-badge-pill">
-                        <a class="user-link" href="profile.php" title="View your profile">
-                            <div class="user-avatar-circle">
-                                <?php if ($navAvatar !== ''): ?>
-                                    <img src="<?php echo htmlspecialchars($navAvatar); ?>" alt="">
-                                <?php else: ?>
-                                    <?php echo htmlspecialchars($initial); ?>
-                                <?php endif; ?>
-                            </div>
-                            <span class="user-name"><?php echo htmlspecialchars($username); ?></span>
-                        </a>
-                        <a href="logout.php" class="logout-link">Logout</a>
-                    </div>
+                    <?php echo vs_user_menu_html($username, $navAvatar); ?>
                 <?php else: ?>
                     <a href="login.php" class="sign-in-btn">Sign In</a>
                 <?php endif; ?>
@@ -105,30 +112,8 @@ if (!function_exists('render_navbar')) {
 }
 
 if (!function_exists('render_sidebar')) {
-    function render_sidebar($active = 'shorts') {
-        $items = [
-            ['key' => 'home',   'label' => 'Home',   'href' => 'index.php', 'icon' => 'gauge'],
-            ['key' => 'watch',  'label' => 'Watch',  'href' => 'watch.php', 'icon' => 'box'],
-            ['key' => 'shorts', 'label' => 'Shorts', 'href' => 'shorts.php', 'icon' => 'box'],
-            ['key' => 'upload', 'label' => 'Upload', 'href' => 'upload.php', 'icon' => 'plus-square'],
-            ['key' => 'profile', 'label' => 'Profile', 'href' => 'profile.php', 'icon' => 'contact'],
-        ];
-        if (isset($_SESSION['AdminSession']) || (isset($_SESSION['role']) && strcasecmp($_SESSION['role'], 'Admin') === 0)) {
-            $items[] = ['key' => 'adminpanel', 'label' => 'Admin Panel', 'href' => 'adminpanel/index.php', 'icon' => 'settings'];
-        }
-        ?>
-        <aside class="app-sidebar" id="appSidebar">
-            <div class="sidebar-heading">Browse</div>
-            <nav class="sidebar-nav">
-                <?php foreach ($items as $item): ?>
-                    <a class="sidebar-link<?php echo $active === $item['key'] ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($item['href']); ?>">
-                        <span class="sidebar-icon"><?php echo vs_icon($item['icon']); ?></span>
-                        <span class="sidebar-label"><?php echo htmlspecialchars($item['label']); ?></span>
-                    </a>
-                <?php endforeach; ?>
-            </nav>
-        </aside>
-        <?php
+    function render_sidebar($active = 'home') {
+        vs_render_sidebar((string)$active);
     }
 }
 
@@ -158,23 +143,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!isset($_SESSION['liked_videos']) || !is_array($_SESSION['liked_videos'])) $_SESSION['liked_videos'] = [];
         if (!isset($_SESSION['subscribed_channels']) || !is_array($_SESSION['subscribed_channels'])) $_SESSION['subscribed_channels'] = [];
+        if ($action === 'subscribe') {
+            vs_subscription_session_sync($conn);
+        }
 
         if ($action === 'like') {
             $liked = in_array($vid, $_SESSION['liked_videos'], true);
-            if ($liked) {
-                $_SESSION['liked_videos'] = array_values(array_diff($_SESSION['liked_videos'], [$vid]));
-                $upd = $conn->prepare("UPDATE videos SET likes = GREATEST(COALESCE(likes,0) - 1, 0) WHERE id = ?");
-            } else {
-                $_SESSION['liked_videos'][] = $vid;
-                $upd = $conn->prepare("UPDATE videos SET likes = COALESCE(likes,0) + 1 WHERE id = ?");
+            $upd = $conn->prepare($liked
+                ? "UPDATE videos SET likes = GREATEST(COALESCE(likes,0) - 1, 0) WHERE id = ?"
+                : "UPDATE videos SET likes = COALESCE(likes,0) + 1 WHERE id = ?");
+            if (!$upd) {
+                throw new RuntimeException('Could not save your like. Please try again.');
             }
             $upd->bind_param("s", $vid);
-            $upd->execute();
+            if (!$upd->execute() || $upd->affected_rows !== 1) {
+                $upd->close();
+                throw new RuntimeException('Could not save your like. Please try again.');
+            }
             $upd->close();
+            $_SESSION['liked_videos'] = $liked
+                ? array_values(array_diff($_SESSION['liked_videos'], [$vid]))
+                : array_merge($_SESSION['liked_videos'], [$vid]);
 
             $stmt = $conn->prepare("SELECT COALESCE(likes,0) AS n FROM videos WHERE id = ?");
+            if (!$stmt) {
+                throw new RuntimeException('Your like was saved, but its count could not be read.');
+            }
             $stmt->bind_param("s", $vid);
-            $stmt->execute();
+            if (!$stmt->execute()) {
+                $stmt->close();
+                throw new RuntimeException('Your like was saved, but its count could not be read.');
+            }
             $likes = (int)$stmt->get_result()->fetch_assoc()['n'];
             $stmt->close();
 
@@ -183,28 +182,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'subscribe') {
-            $ch = $v['channel_name'] ?? ($v['username'] ?? 'Unknown');
-            $key = 'ch:' . mb_strtolower(trim($ch));
-            $sub = in_array($key, $_SESSION['subscribed_channels'], true);
-
-            if ($sub) {
-                $_SESSION['subscribed_channels'] = array_values(array_diff($_SESSION['subscribed_channels'], [$key]));
-                $upd = $conn->prepare("UPDATE videos SET subscribers = GREATEST(COALESCE(subscribers,0) - 1, 0) WHERE id = ?");
-            } else {
-                $_SESSION['subscribed_channels'][] = $key;
-                $upd = $conn->prepare("UPDATE videos SET subscribers = COALESCE(subscribers,0) + 1 WHERE id = ?");
-            }
-            $upd->bind_param("s", $vid);
-            $upd->execute();
-            $upd->close();
-
-            $stmt = $conn->prepare("SELECT COALESCE(subscribers,0) AS n FROM videos WHERE id = ?");
-            $stmt->bind_param("s", $vid);
-            $stmt->execute();
-            $subs = (int)$stmt->get_result()->fetch_assoc()['n'];
-            $stmt->close();
-
-            echo json_encode(['success' => true, 'subscribed' => !$sub, 'subscribers' => $subs]);
+            $channelName = trim((string)($v['channel_name'] ?? ''));
+            $channelUsername = trim((string)($v['username'] ?? ''));
+            if ($channelName === '') $channelName = $channelUsername;
+            $result = vs_subscription_change($conn, $channelName, $channelUsername, $vid);
+            echo json_encode(['success' => true] + $result);
             exit;
         }
 
@@ -224,7 +206,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $ins->bind_param("sss", $vid, $user, $text);
             $ins->execute();
+            $newCommentId = (int)$conn->insert_id;
             $ins->close();
+            vs_notify_video_event($conn, $v, 'comment', (string)$user, $text);
+            vs_notify_comment_reply($conn, $v, (string)$user, $text, $newCommentId);
 
             $stmt = $conn->prepare("SELECT COUNT(*) AS n FROM comments WHERE video_id = ?");
             $stmt->bind_param("s", $vid);
@@ -232,7 +217,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $count = (int)$stmt->get_result()->fetch_assoc()['n'];
             $stmt->close();
 
-            echo json_encode(['success' => true, 'username' => $user, 'comment_text' => $text, 'comment_count' => $count]);
+            echo json_encode([
+                'success' => true,
+                'username' => $user,
+                'comment_text' => $text,
+                'comment_count' => $count,
+                'id' => $newCommentId,
+                'html' => vs_comment_new_item_html($newCommentId, (string)$user, $text),
+                'avatar' => avatar_url($user),
+            ]);
+            exit;
+        }
+
+        $commentResult = vs_comments_handle_action($conn, (string)$action, (string)$vid);
+        if ($commentResult !== null) {
+            echo json_encode($commentResult);
             exit;
         }
 
@@ -264,18 +263,27 @@ $prev = $next = null;
 $src = '';
 $yt = null;
 $title = 'No shorts yet';
-$channel = 'VibeStream';
+$channel = $siteName;
 $likes = 0;
 $subs = 0;
 $views = 0;
 $description = 'Upload a short to get started.';
-$avatarUrl = 'https://api.dicebear.com/7.x/avataaars/svg?seed=' . urlencode($channel);
+$avatarUrl = '';
 $userLiked = false;
 $userSubbed = false;
 $noVideo = !$video;
 
 if ($video) {
     $id = $video['id'];
+
+    // Save to the signed-in user's watch history (History page)
+    if (!empty($_SESSION['username'])) {
+        try {
+            vs_history_record($conn, (string)$id);
+        } catch (Throwable $historyError) {
+            error_log('Watch history failed: ' . $historyError->getMessage());
+        }
+    }
 
     if (!isset($_SESSION['view_times']) || !is_array($_SESSION['view_times'])) {
         $_SESSION['view_times'] = [];
@@ -332,30 +340,34 @@ if ($video) {
     $yt = $src ? extract_youtube_id($src) : null;
 
     $title = $video['title'] ?? 'Untitled';
-    $channel = $video['channel_name'] ?? ($video['username'] ?? 'Unknown');
+    $channel = trim((string)($video['channel_name'] ?? ''));
+    if ($channel === '') $channel = trim((string)($video['username'] ?? 'Unknown'));
     $likes = (int)($video['likes'] ?? 0);
     $subs = (int)($video['subscribers'] ?? 0);
     $views = (int)($video['views'] ?? 0);
     $description = trim((string)($video['description'] ?? ''));
-    if ($description === '') $description = 'Enjoy this short on VibeStream.';
+    if ($description === '') $description = 'Enjoy this short on ' . $siteName . '.';
 
     $channelOwner = trim((string)($video['username'] ?? ''));
     if ($channelOwner === '') $channelOwner = $channel;
-    $avatarUrl = avatar_url($channelOwner);
+    $avatarUrl = avatar_for_record($channelOwner, $video);
     if ($avatarUrl === '' && $channelOwner !== $channel) $avatarUrl = avatar_url($channel);
-    if ($avatarUrl === '') $avatarUrl = 'https://api.dicebear.com/7.x/avataaars/svg?seed=' . urlencode($channel);
+    $channelInitial = mb_strtoupper(mb_substr(trim((string)$channel) !== '' ? trim((string)$channel) : 'V', 0, 1));
 
-    $stmt = $conn->prepare("SELECT username, comment_text FROM comments WHERE video_id = ? ORDER BY id DESC");
-    if ($stmt) {
-        $stmt->bind_param("s", $id);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        while ($r = $res->fetch_assoc()) $comments[] = $r;
-        $stmt->close();
+    try {
+        $comments = vs_comments_fetch($conn, (string)$id, trim((string)($_SESSION['username'] ?? '')));
+    } catch (Throwable $commentsError) {
+        error_log('Comments failed: ' . $commentsError->getMessage());
+        $comments = [];
     }
 
     $userLiked = in_array($id, $_SESSION['liked_videos'] ?? [], true);
-    $userSubbed = in_array('ch:' . mb_strtolower(trim($channel)), $_SESSION['subscribed_channels'] ?? [], true);
+    try {
+        vs_subscription_session_sync($conn);
+    } catch (Throwable $subscriptionError) {
+        error_log('Could not synchronize VibeStream subscriptions: ' . $subscriptionError->getMessage());
+    }
+    $userSubbed = in_array(vs_subscription_key((string)$channel), $_SESSION['subscribed_channels'] ?? [], true);
 }
 ?>
 <!DOCTYPE html>
@@ -363,8 +375,14 @@ if ($video) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($title) ?> - VibeStream Shorts</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="vs-default-theme" content="<?= htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8') ?>">
+    <meta name="theme-color" content="<?= $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff' ?>">
+    <meta name="description" content="<?= htmlspecialchars(vs_branding_app_description(), ENT_QUOTES, 'UTF-8') ?>">
+    <link rel="manifest" href="manifest.php">
+    <link rel="apple-touch-icon" href="branding-icon.php">
+    <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?> Shorts</title>
+    <link rel="stylesheet" href="style.css?v=5">
+    <script src="theme.js?v=3"></script>
     <style>
         :root {
             --bg: #0f0f0f;
@@ -409,6 +427,7 @@ if ($video) {
         .nav-right { justify-content: flex-end; }
 
         .brand { font-size: 22px; font-weight: 700; letter-spacing: 0.2px; white-space: nowrap; }
+        .brand .site-brand-icon { width: 38px; height: 38px; }
 
         .nav-toggle {
             width: 44px; height: 44px; border: none; background: transparent; border-radius: 12px;
@@ -524,9 +543,15 @@ if ($video) {
         }
         .short-overlay .subscribe-btn { pointer-events: auto; }
 
-        .meta-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-        .avatar { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: #2a2a2a; flex-shrink: 0; }
-        .avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .meta-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; min-width: 0; }
+        .short-overlay .avatar {
+            display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px;
+            overflow: hidden; border: 2px solid rgba(255,255,255,.82); border-radius: 50%;
+            background: linear-gradient(135deg, #1687ff, #a334d9); color: #ffffff;
+            box-shadow: 0 2px 10px rgba(0,0,0,.4);
+        }
+        .short-overlay .avatar img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+        .short-overlay .avatar-initial { font-size: 18px; font-weight: 800; line-height: 1; }
         .channel-stack { min-width: 0; }
         .channel-name {
             font-size: 14px; font-weight: 600; margin: 0;
@@ -569,42 +594,81 @@ if ($video) {
         .icon-btn:hover .circle, .nav-btn:hover .circle { background: #3a3a3a; transform: translateY(-1px); }
         .nav-btn.disabled { opacity: 0.45; pointer-events: none; }
 
+        /* ---- like / comment / views: outline icons + theme-aware counts ---- */
+        .actions-column .icon-btn, .actions-column .stat-item { color: var(--text, #f1f1f1); }
+        .actions-column .icon-btn > span:last-child, .actions-column .stat-item > span:last-child {
+            font-size: 13px; font-weight: 600; color: inherit;
+        }
+        .actions-column .circle svg {
+            width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8;
+            stroke-linecap: round; stroke-linejoin: round;
+        }
+        .unmute-pill {
+            position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 4;
+            background: rgba(0, 0, 0, 0.7); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .unmute-pill[hidden] { display: none; }
+        .icon-btn.liked .circle svg { fill: #ff2d55; stroke: #ff2d55; }
+        .icon-btn.liked .circle { animation: likePop 0.3s ease; }
+        @keyframes likePop { 50% { transform: scale(1.22); } }
+        /* light theme: dark numbers + dark icons (covers common theme switches) */
+        html[data-theme="light"] .actions-column .icon-btn, html[data-theme="light"] .actions-column .stat-item,
+        body[data-theme="light"] .actions-column .icon-btn, body[data-theme="light"] .actions-column .stat-item,
+        html.light .actions-column .icon-btn, html.light .actions-column .stat-item,
+        body.light .actions-column .icon-btn, body.light .actions-column .stat-item,
+        body.light-mode .actions-column .icon-btn, body.light-mode .actions-column .stat-item,
+        html.light-theme .actions-column .icon-btn, html.light-theme .actions-column .stat-item,
+        body.light-theme .actions-column .icon-btn, body.light-theme .actions-column .stat-item { color: #1a1a1a; }
+
         .comments-modal {
             position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
             background: rgba(0, 0, 0, 0.7); padding: 20px; z-index: 1100;
         }
         .comments-modal.open { display: flex; }
         .comments-box {
-            width: min(460px, 100%); max-height: min(78vh, 720px); background: #16161a; border: 1px solid #2a2a31;
-            border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+            width: min(460px, 100%); max-height: min(78vh, 720px); background: var(--surface-raised, #16161a); border: 1px solid var(--border, #2a2a31);
+            color: var(--text-primary, #f4f4f6); border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
         }
         .comments-top {
             display: flex; align-items: center; justify-content: space-between; gap: 12px;
-            padding: 18px 20px; border-bottom: 1px solid #2a2a31;
+            padding: 18px 20px; border-bottom: 1px solid var(--border, #2a2a31);
         }
-        .comments-top h3 { margin: 0; font-size: 18px; }
-        .close-btn { background: none; border: none; color: #aaaaaa; font-size: 24px; cursor: pointer; line-height: 1; }
+        .comments-top h3 { margin: 0; font-size: 18px; color: var(--text-primary, #f4f4f6); }
+        .close-btn { background: none; border: none; color: var(--text-secondary, #aaaaaa); font-size: 24px; cursor: pointer; line-height: 1; }
         .comment-list {
             flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
         }
         .comment-item {
-            background: #1e1e24; border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.5; word-break: break-word;
+            display: flex; align-items: flex-start; gap: 10px;
+            background: var(--surface-2, #1e1e24); color: var(--text-primary, #f4f4f6); border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.5; word-break: break-word;
         }
-        .comment-item strong { display: inline-block; margin-right: 6px; color: #ffffff; }
-        .empty-comments { color: #9a9aa2; text-align: center; padding: 18px 0; font-size: 14px; }
-        .comment-send { display: flex; gap: 10px; padding: 16px 20px 20px; border-top: 1px solid #2a2a31; }
+        .comment-avatar,
+        .comment-avatar-initial {
+            width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; object-fit: cover;
+        }
+        .comment-avatar-initial {
+            display: grid; place-items: center; background: linear-gradient(135deg, #1687ff, #a334d9);
+            color: #ffffff; font-weight: 800;
+        }
+        .comment-copy { display: grid; min-width: 0; gap: 3px; }
+        .comment-item strong { color: var(--text-primary, #ffffff); }
+        .comment-copy { color: var(--text-primary, #f4f4f6); }
+        .empty-comments { color: var(--text-secondary, #9a9aa2); text-align: center; padding: 18px 0; font-size: 14px; }
+        .comment-send { display: flex; gap: 10px; padding: 16px 20px 20px; border-top: 1px solid var(--border, #2a2a31); }
         .comment-send input {
-            flex: 1; background: #0d0d0f; border: 1px solid #3d3d46; border-radius: 12px;
-            padding: 10px 14px; color: #ffffff; outline: none;
+            flex: 1; background: var(--surface-base, #0d0d0f); border: 1px solid var(--border-strong, #3d3d46); border-radius: 12px;
+            padding: 10px 14px; color: var(--text-primary, #ffffff); outline: none;
         }
-        .comment-send input:focus { border-color: #575764; }
+        .comment-send input:focus { border-color: var(--text-secondary, #575764); }
+        .comment-send input::placeholder { color: var(--text-secondary, #8a8a94); }
         .comment-send button {
             background: var(--accent); border: none; color: #ffffff; padding: 10px 16px;
             border-radius: 12px; font-weight: 700; cursor: pointer;
         }
         .toast {
             position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--surface-2);
-            color: #ffffff; padding: 10px 18px; border-radius: 10px; font-size: 14px; display: none; z-index: 1200;
+            color: var(--text-primary, #ffffff); padding: 10px 18px; border-radius: 10px; font-size: 14px; display: none; z-index: 1200;
         }
         .sidebar-overlay {
             position: fixed; top: var(--navbar-height); left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.55);
@@ -637,20 +701,41 @@ if ($video) {
             .actions-column, .nav-column { flex-direction: row; gap: 18px; padding-bottom: 0; }
         }
         @media (max-width: 760px) {
-            .app-navbar { padding: 0 12px; gap: 12px; }
-            .brand { font-size: 20px; }
-            .nav-center { display: none; }
-            .create-btn { display: none; }
-            .user-name, .logout-link { display: none; }
-            .user-badge-pill { padding-right: 6px; }
+            .app-navbar, .app-sidebar, .sidebar-overlay { display: none !important; }
+            .app-layout, .app-main { min-height: 100dvh; padding: 0; margin: 0; }
+            .shorts-shell { position: fixed; inset: 0; min-height: 0; padding: 0; }
+            .shorts-stage { position: absolute; inset: 0; display: block; width: 100%; max-width: none; }
+            .short-card { width: 100%; height: 100%; min-width: 0; aspect-ratio: auto; }
+            .player-card { border: 0; border-radius: 0; box-shadow: none; }
+            .short-overlay {
+                left: 16px; right: 82px;
+                bottom: calc(20px + env(safe-area-inset-bottom));
+            }
+            .short-title { font-size: 16px; }
+            .short-description { -webkit-line-clamp: 2; }
+            .actions-column {
+                position: absolute; right: 12px;
+                bottom: calc(190px + env(safe-area-inset-bottom));
+                flex-direction: column; gap: 10px; padding: 0; z-index: 3;
+            }
+            .nav-column {
+                position: absolute; right: 15px; top: 42%;
+                flex-direction: column; gap: 8px; z-index: 3;
+            }
+            .icon-btn .circle, .nav-btn .circle, .stat-item .circle {
+                width: 44px; height: 44px; background: rgba(20, 20, 20, 0.62);
+            }
+            .actions-column .icon-btn, .actions-column .stat-item { color: #ffffff !important; }
+            .comments-box { max-height: 82dvh; }
         }
         @media (max-width: 640px) {
-            .player-card { border-radius: 20px; }
-            .icon-btn .circle, .nav-btn .circle, .stat-item .circle { width: 46px; height: 46px; }
             .comments-box { max-height: 86vh; }
             .comment-send { flex-direction: column; }
         }
     </style>
+    <link rel="stylesheet" href="sidebar.css">
+    <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="comments.css?v=1">
 </head>
 <body>
     <?php render_navbar('shorts'); ?>
@@ -668,22 +753,27 @@ if ($video) {
                         <div class="player-card">
                             <div class="player" id="playerWrap">
                                 <?php if ($yt): ?>
-                                    <iframe
-                                        src="https://www.youtube.com/embed/<?= htmlspecialchars($yt) ?>?autoplay=1&amp;mute=1&amp;loop=1&amp;playlist=<?= htmlspecialchars($yt) ?>&amp;playsinline=1&amp;rel=0"
+                                    <iframe id="ytFrame"
+                                        src="https://www.youtube.com/embed/<?= htmlspecialchars($yt) ?>?autoplay=1&amp;mute=1&amp;enablejsapi=1&amp;loop=1&amp;playlist=<?= htmlspecialchars($yt) ?>&amp;playsinline=1&amp;rel=0"
                                         allow="autoplay; encrypted-media; picture-in-picture"
                                         allowfullscreen></iframe>
                                 <?php elseif ($src): ?>
-                                    <video src="<?= htmlspecialchars($src) ?>" autoplay muted loop playsinline controls></video>
+                                    <video id="shortVideo" src="<?= htmlspecialchars($src) ?>" autoplay loop playsinline controls></video>
                                 <?php else: ?>
                                     <div class="msg"><?= $noVideo ? 'No shorts available yet. Upload one to get started.' : 'This short has no video saved.' ?></div>
                                 <?php endif; ?>
 
                                 <div class="player-gradient"></div>
+                                <button type="button" id="unmuteBtn" class="unmute-pill" hidden>&#128266; Tap to unmute</button>
 
                                 <div class="short-overlay">
                                     <div class="meta-row">
                                         <div class="avatar">
-                                            <img src="<?= htmlspecialchars($avatarUrl) ?>" alt="Channel avatar">
+                                            <?php if ($avatarUrl !== ''): ?>
+                                                <img src="<?= htmlspecialchars($avatarUrl) ?>" alt="<?= htmlspecialchars($channel) ?> channel avatar">
+                                            <?php else: ?>
+                                                <span class="avatar-initial" aria-label="<?= htmlspecialchars($channel) ?> channel avatar"><?= htmlspecialchars($channelInitial) ?></span>
+                                            <?php endif; ?>
                                         </div>
                                         <div class="channel-stack">
                                             <p class="channel-name">@<?= htmlspecialchars($channel) ?></p>
@@ -700,16 +790,16 @@ if ($video) {
 
                     <!-- right of the short: like / comments / views -->
                     <div class="actions-column">
-                        <button class="icon-btn" type="button" id="likeBtn"<?= $noVideo ? ' disabled' : '' ?>>
-                            <span class="circle" id="likeIcon"><?= $userLiked ? '❤️' : '🤍' ?></span>
+                        <button class="icon-btn<?= $userLiked ? ' liked' : '' ?>" type="button" id="likeBtn" aria-label="Like this short" aria-pressed="<?= $userLiked ? 'true' : 'false' ?>"<?= $noVideo ? ' disabled' : '' ?>>
+                            <span class="circle" id="likeIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
                             <span id="likeCount"><?= short_num($likes) ?></span>
                         </button>
                         <button class="icon-btn" type="button" id="commentBtn">
-                            <span class="circle">💬</span>
+                            <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 8h8M8 12h5"/></svg></span>
                             <span id="commentCount"><?= short_num(count($comments)) ?></span>
                         </button>
                         <div class="stat-item" title="Views">
-                            <span class="circle">👁</span>
+                            <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
                             <span id="viewCount"><?= short_num($views) ?></span>
                         </div>
                     </div>
@@ -730,29 +820,25 @@ if ($video) {
     </div>
 
     <div class="comments-modal" id="modal">
-        <div class="comments-box">
-            <div class="comments-top">
-                <h3>Comments</h3>
-                <button type="button" class="close-btn" id="closeBtn">&times;</button>
-            </div>
-            <div id="list" class="comment-list">
-                <?php if ($comments): ?>
-                    <?php foreach ($comments as $c): ?>
-                        <div class="comment-item"><strong><?= htmlspecialchars($c['username']) ?>:</strong> <?= htmlspecialchars($c['comment_text']) ?></div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <div class="empty-comments" id="emptyComments">No comments yet. Be the first one.</div>
-                <?php endif; ?>
-            </div>
-            <div class="comment-send">
-                <input type="text" id="commentInput" placeholder="Add a comment..." maxlength="500"<?= $noVideo ? ' disabled' : '' ?>>
-                <button type="button" id="postBtn"<?= $noVideo ? ' disabled' : '' ?>>Post</button>
-            </div>
-        </div>
+        <?php
+        $viewerName = trim((string)($_SESSION['username'] ?? ''));
+        echo vs_comments_panel_html([
+            'endpoint' => 'shorts.php',
+            'video_id' => (string)($video['id'] ?? ''),
+            'comments' => $comments,
+            'viewer' => $viewerName,
+            'is_admin' => vs_comments_is_admin(),
+            'viewer_avatar' => $viewerName !== '' ? avatar_url($viewerName) : '',
+            'modal' => true,
+            'disabled' => $noVideo,
+            'list_id' => 'list',
+        ]);
+        ?>
     </div>
 
     <div class="toast" id="toast"></div>
 
+    <script src="comments.js?v=1"></script>
     <script>
         const VIDEO_ID = <?= json_encode((string)($video['id'] ?? '')) ?>;
         const $ = id => document.getElementById(id);
@@ -766,8 +852,8 @@ if ($video) {
 
         function shortNum(n) {
             n = Number(n) || 0;
-            if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-            if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+            if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+            if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
             return String(n);
         }
 
@@ -799,8 +885,6 @@ if ($video) {
             const closeBtn = $('closeBtn');
             const likeBtn = $('likeBtn');
             const subBtn = $('subBtn');
-            const postBtn = $('postBtn');
-            const commentInput = $('commentInput');
             const player = $('playerWrap');
             const prevBtn = $('prevBtn');
             const nextBtn = $('nextBtn');
@@ -836,10 +920,16 @@ if ($video) {
 
             if (likeBtn && VIDEO_ID) {
                 likeBtn.addEventListener('click', async () => {
-                    const d = await send('like');
-                    if (!d.success) return toast(d.error || 'Like failed');
-                    $('likeIcon').textContent = d.liked ? '❤️' : '🤍';
-                    $('likeCount').textContent = shortNum(d.likes);
+                    likeBtn.disabled = true;
+                    try {
+                        const d = await send('like');
+                        if (!d.success) return toast(d.error || 'Like failed');
+                        likeBtn.classList.toggle('liked', !!d.liked);
+                        $('likeCount').textContent = shortNum(d.likes);
+                        likeBtn.setAttribute('aria-pressed', String(d.liked));
+                    } finally {
+                        likeBtn.disabled = false;
+                    }
                 });
             }
 
@@ -853,30 +943,11 @@ if ($video) {
                 });
             }
 
-            async function postComment() {
-                const text = commentInput.value.trim();
-                if (!text) return;
-                const d = await send('comment', { comment_text: text });
-                if (!d.success) return toast(d.error || 'Comment failed');
-
-                const empty = $('emptyComments');
-                if (empty) empty.remove();
-
-                const item = document.createElement('div');
-                item.className = 'comment-item';
-                const name = document.createElement('strong');
-                name.textContent = d.username + ':';
-                item.append(name, ' ' + d.comment_text);
-                $('list').prepend(item);
-
-                commentInput.value = '';
-                $('commentCount').textContent = shortNum(d.comment_count);
-            }
-
-            if (postBtn && commentInput && VIDEO_ID) {
-                postBtn.addEventListener('click', postComment);
-                commentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') postComment(); });
-            }
+            // keep the Shorts comment counter in sync when comments are added / deleted
+            document.addEventListener('vs-comments:count', (e) => {
+                const counter = $('commentCount');
+                if (counter) counter.textContent = shortNum(e.detail.count);
+            });
 
             document.addEventListener('keydown', (e) => {
                 if (modal && modal.classList.contains('open')) return;
@@ -895,6 +966,69 @@ if ($video) {
                 }, { passive: true });
             }
         });
+    </script>
+    <script>
+        /* Keep the short unmuted. Browsers may block sound until the first tap/click,
+           so if that happens we start muted, show a "Tap to unmute" pill, and unmute on the first interaction. */
+        (function () {
+            const pill = document.getElementById('unmuteBtn');
+            const vid = document.getElementById('shortVideo');
+            const yt = document.getElementById('ytFrame');
+            if (!pill || (!vid && !yt)) return;
+
+            const showPill = () => { pill.hidden = false; };
+            const hidePill = () => { pill.hidden = true; };
+            const ytCmd = (func, args) => {
+                if (yt && yt.contentWindow) {
+                    yt.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: args || [] }), '*');
+                }
+            };
+
+            function unmute() {
+                if (vid) {
+                    vid.muted = false;
+                    vid.volume = 1;
+                    const p = vid.play();
+                    if (p && p.catch) p.catch(() => { vid.muted = true; vid.play().catch(() => {}); showPill(); });
+                    if (!vid.muted) hidePill();
+                }
+                if (yt) {
+                    ytCmd('unMute');
+                    ytCmd('setVolume', [100]);
+                    ytCmd('playVideo');
+                }
+            }
+
+            if (vid) {
+                vid.muted = false;
+                const p = vid.play();
+                if (p && p.catch) p.catch(() => { vid.muted = true; vid.play().catch(() => {}); showPill(); });
+            }
+
+            if (yt) {
+                showPill();
+                yt.addEventListener('load', () => {
+                    yt.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
+                    setTimeout(unmute, 600);
+                });
+                window.addEventListener('message', (e) => {
+                    if (!/youtube\.com$/.test(new URL(e.origin).hostname)) return;
+                    let d = e.data;
+                    if (typeof d === 'string') { try { d = JSON.parse(d); } catch (err) { return; } }
+                    if (d && d.event === 'infoDelivery' && d.info && typeof d.info.muted === 'boolean') {
+                        d.info.muted ? showPill() : hidePill();
+                    }
+                });
+            }
+
+            pill.addEventListener('click', unmute);
+            ['pointerdown', 'keydown', 'touchend'].forEach((ev) => {
+                document.addEventListener(ev, function once() {
+                    document.removeEventListener(ev, once, true);
+                    unmute();
+                }, true);
+            });
+        })();
     </script>
 </body>
 </html>

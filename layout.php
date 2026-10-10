@@ -1,5 +1,14 @@
 <?php
+require_once __DIR__ . '/avatar.php';
+require_once __DIR__ . '/site-branding.php';
+require_once __DIR__ . '/notifications-store.php';
+require_once __DIR__ . '/user-menu.php';
+require_once __DIR__ . '/sidebar-navigation.php';
+$siteName = vs_branding_app_name();
+$defaultTheme = vs_branding_default_theme();
+
 if (session_status() === PHP_SESSION_NONE) session_start();
+vs_maintenance_gate();
 
 if (!function_exists('extract_youtube_id')) {
     function extract_youtube_id($raw, $allowBare = true) {
@@ -50,6 +59,8 @@ if (!function_exists('render_navbar')) {
         $isLoggedIn = isset($_SESSION['username']) && $_SESSION['username'] !== '';
         $username = $isLoggedIn ? $_SESSION['username'] : '';
         $initial = $isLoggedIn ? strtoupper(substr($username, 0, 1)) : 'G';
+        $siteLogoUrl = vs_branding_logo_url();
+        $siteName = vs_branding_app_name();
         ?>
         <header class="app-navbar">
             <div class="nav-left">
@@ -58,7 +69,10 @@ if (!function_exists('render_navbar')) {
                     <span></span>
                     <span></span>
                 </button>
-                <a class="brand" href="index.php">VibeStream</a>
+                <a class="brand" href="index.php">
+                    <img class="site-brand-icon" src="<?php echo htmlspecialchars($siteLogoUrl); ?>" alt="">
+                    <span><?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?></span>
+                </a>
             </div>
 
             <div class="nav-center">
@@ -67,15 +81,13 @@ if (!function_exists('render_navbar')) {
             </div>
 
             <div class="nav-right">
+                <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
+                    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                </button>
+                <?php echo vs_notification_bell_html(); ?>
                 <a href="upload.php" class="create-btn">+ Create</a>
                 <?php if ($isLoggedIn): ?>
-                    <div class="user-badge-pill">
-                        <a class="user-link" href="profile.php" title="View your profile">
-                            <span class="user-avatar-circle"><?php echo htmlspecialchars($initial); ?></span>
-                            <span class="user-name"><?php echo htmlspecialchars($username); ?></span>
-                        </a>
-                        <a href="logout.php" class="logout-link">Logout</a>
-                    </div>
+                    <?php echo vs_user_menu_html($username, avatar_url($username)); ?>
                 <?php else: ?>
                     <a href="login.php" class="sign-in-btn">Sign In</a>
                 <?php endif; ?>
@@ -86,43 +98,8 @@ if (!function_exists('render_navbar')) {
 }
 
 if (!function_exists('render_sidebar')) {
-    function render_sidebar($active = '') {
-        $icons = [
-            'home'    => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></svg>',
-            'watch'   => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M10 8.5v7l6-3.5-6-3.5z" fill="currentColor" stroke="none"/></svg>',
-            'shorts'  => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16"/><path d="m5 4 3 4M11 4l3 4M17 4l2 4"/><rect x="3" y="8" width="18" height="12" rx="2"/></svg>',
-            'upload'  => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V4"/><path d="m6 9 6-6 6 6"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
-            'profile' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1"/></svg>',
-        ];
-        $items = [
-            ['key' => 'home',    'label' => 'Home',    'href' => 'index.php'],
-            ['key' => 'watch',   'label' => 'Watch',   'href' => 'watch.php'],
-            ['key' => 'shorts',  'label' => 'Shorts',  'href' => 'shorts.php'],
-            ['key' => 'upload',  'label' => 'Upload',  'href' => 'upload.php'],
-            ['key' => 'profile', 'label' => 'Profile', 'href' => 'profile.php'],
-        ];
-        if (isset($_SESSION['AdminSession']) || (isset($_SESSION['role']) && strcasecmp($_SESSION['role'], 'Admin') === 0)) {
-            $items[] = ['key' => 'adminpanel', 'label' => 'Admin Panel', 'href' => 'adminpanel/index.php'];
-            $icons['adminpanel'] = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
-        }
-        ?>
-        <aside class="app-sidebar" id="appSidebar">
-            <div class="sidebar-top">
-                <div class="sidebar-heading">Browse</div>
-                <button type="button" class="sidebar-close" id="sidebarClose" data-sidebar-close aria-label="Close menu">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
-                </button>
-            </div>
-            <nav class="sidebar-nav">
-                <?php foreach ($items as $item): ?>
-                    <a class="sidebar-link<?php echo $active === $item['key'] ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($item['href']); ?>">
-                        <span class="sidebar-icon"><?php echo $icons[$item['key']]; ?></span>
-                        <span class="sidebar-label"><?php echo htmlspecialchars($item['label']); ?></span>
-                    </a>
-                <?php endforeach; ?>
-            </nav>
-        </aside>
-        <?php
+    function render_sidebar($active = 'home') {
+        vs_render_sidebar((string)$active);
     }
 }
 
@@ -164,7 +141,8 @@ button, input, textarea, select { font: inherit; }
 .nav-left, .nav-center, .nav-right { display: flex; align-items: center; gap: 14px; }
 .nav-center { justify-content: center; }
 .nav-right { justify-content: flex-end; }
-.brand { font-size: 22px; font-weight: 700; letter-spacing: 0.2px; white-space: nowrap; }
+.brand { display: inline-flex; align-items: center; gap: 9px; font-size: 22px; font-weight: 700; letter-spacing: 0.2px; white-space: nowrap; }
+.brand .site-brand-icon { width: 38px; height: 38px; border-radius: 8px; object-fit: cover; flex: 0 0 auto; }
 .nav-toggle {
     width: 44px; height: 44px; border: 1px solid var(--border); background: transparent; border-radius: 12px;
     display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 10px; cursor: pointer;
@@ -266,15 +244,24 @@ JS;
 
 if (!function_exists('vs_page_start')) {
     function vs_page_start($title, $active = '', $extraCss = '') {
+        $siteName = vs_branding_app_name();
+        $defaultTheme = vs_branding_default_theme();
         ?><!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($title) ?> - VibeStream</title>
+    <meta name="theme-color" content="<?= $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff' ?>">
+    <meta name="vs-default-theme" content="<?= htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8') ?>">
+    <meta name="description" content="<?= htmlspecialchars(vs_branding_app_description(), ENT_QUOTES, 'UTF-8') ?>">
+    <link rel="manifest" href="manifest.php">
+    <link rel="apple-touch-icon" href="branding-icon.php">
+    <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?></title>
+    <script src="theme.js?v=3"></script>
     <style><?= vs_base_css() ?>
 <?= $extraCss ?></style>
     <link rel="stylesheet" href="sidebar.css">
+    <link rel="stylesheet" href="theme.css?v=3">
 </head>
 <body>
     <?php render_navbar($active); ?>
@@ -295,6 +282,15 @@ if (!function_exists('vs_page_end')) {
     </div>
     <div class="toast" id="toast"></div>
     <script src="sidebar.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('sw.js').catch(function (error) {
+                    console.error('VibeStream offline support could not be enabled.', error);
+                });
+            });
+        }
+    </script>
     <script><?= vs_base_js() ?>
 <?= $extraJs ?></script>
 </body>

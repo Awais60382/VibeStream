@@ -2,7 +2,7 @@
 
 (function () {
   var sidebarStorageKey = "adminHMD.sidebarMini";
-  var themeStorageKey = "adminHMD.colorTheme";
+  var themeStorageKey = "vs-theme";
   var desktopMedia = "(min-width: 992px)";
 
   function onReady(callback) {
@@ -50,11 +50,8 @@
       return savedTheme;
     }
 
-    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      return "dark";
-    }
-
-    return "light";
+    var configured = document.querySelector('meta[name="vs-default-theme"]');
+    return configured && configured.content === "light" ? "light" : "dark";
   }
 
   onReady(function () {
@@ -119,11 +116,13 @@
       });
     }
 
-    function applyTheme(theme) {
+    function applyTheme(theme, savePreference) {
       document.documentElement.setAttribute("data-theme", theme);
       document.documentElement.setAttribute("data-bs-theme", theme);
+      var themeColor = document.querySelector('meta[name="theme-color"]');
+      if (themeColor) themeColor.setAttribute("content", theme === "dark" ? "#b02a2a" : "#ffffff");
 
-      if (storageAvailable) {
+      if (storageAvailable && savePreference) {
         window.localStorage.setItem(themeStorageKey, theme);
       }
 
@@ -131,12 +130,12 @@
     }
 
     function initThemeToggle() {
-      applyTheme(getPreferredTheme(storageAvailable));
+      applyTheme(getPreferredTheme(storageAvailable), false);
 
       Array.prototype.forEach.call(themeToggles, function (button) {
         button.addEventListener("click", function () {
           var currentTheme = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
-          applyTheme(currentTheme === "dark" ? "light" : "dark");
+          applyTheme(currentTheme === "dark" ? "light" : "dark", true);
         });
       });
     }

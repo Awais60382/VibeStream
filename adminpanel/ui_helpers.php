@@ -37,6 +37,17 @@ function vs_pick(array $cols, array $candidates): ?string
     return null;
 }
 
+function vs_is_site_owner_email(string $email): bool
+{
+    $ownerEmail = getenv('VIBESTREAM_OWNER_EMAIL');
+    if (!is_string($ownerEmail) || trim($ownerEmail) === '') {
+        $ownerEmail = 'muhammadawaiscom0@gmail.com';
+    }
+
+    return $email !== ''
+        && hash_equals(strtolower(trim($ownerEmail)), strtolower(trim($email)));
+}
+
 function vs_ago(?string $when): string
 {
     if (!$when) {
@@ -83,6 +94,9 @@ function vs_avatar_src(?string $v, string $base = '../'): string
         return '';
     }
     if (preg_match('#^(https?:)?//|^/|^data:#i', $v)) {
+        return $v;
+    }
+    if (str_starts_with($v, './')) {
         return $v;
     }
     return $base . ltrim($v, '/');
@@ -205,5 +219,80 @@ function vs_uploader_stats(PDO $pdo, string $table = 'videos'): array
         $res['error'] = 'Could not load uploaders: ' . $e->getMessage();
     }
 
+    return $res;
+}
+
+
+/**
+ * Number of comments per video id, e.g. ['abc123' => 4]. Returns [] if there is no comments table.
+ */
+function vs_comment_counts(PDO $pdo, string $table = 'comments'): array
+{
+    $out = [];
+    $c = vs_cols($pdo, $table);
+    $vid = $c ? vs_pick($c, ['video_id', 'vid', 'content_id']) : null;
+    if (!$vid) {
+        return $out;
+    }
+    try {
+        $stmt = $pdo->query('SELECT ' . vs_q($vid) . ' AS vid, COUNT(*) AS n FROM ' . vs_q($table) . ' GROUP BY ' . vs_q($vid));
+        if ($stmt) {
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $out[(string)$r['vid']] = (int)$r['n'];
+            }
+        }
+    } catch (Throwable $e) {
+        return [];
+    }
+    return $out;
+}
+
+/** True when a videos.type value means "short". */
+function vs_is_short($type): bool
+{
+    return strncasecmp(trim((string)$type), 'short', 5) === 0;
+}
+
+/**
+ * How many videos and shorts have been liked / commented on, and the totals.
+ * Result: ['video' => [...], 'short' => [...], 'error' => ''] where each kind has
+ * items, liked_items, likes, commented_items, comments.
+ */
+function vs_engagement_stats(PDO $pdo, string $table = 'videos'): array
+{
+    $blank = ['items' => 0, 'liked_items' => 0, 'likes' => 0, 'commented_items' => 0, 'comments' => 0];
+    $res = ['video' => $blank, 'short' => $blank, 'error' => ''];
+
+    $c = vs_cols($pdo, $table);
+    if (!$c) {
+        $res['error'] = 'The "' . $table . '" table was not found.';
+        return $res;
+    }
+    $idCol    = vs_pick($c, ['id', 'video_id']);
+    $typeCol  = vs_pick($c, ['type', 'video_type']);
+    $likesCol = vs_pick($c, ['likes', 'like_count']);
+    if (!$idCol) {
+        $res['error'] = 'The "' . $table . '" table has no id column.';
+        return $res;
+    }
+
+    $comments = vs_comment_counts($pdo);
+    $select = [vs_q($idCol) . ' AS id'];
+    $select[] = $typeCol ? vs_q($typeCol) . ' AS type' : "'video' AS type";
+    $select[] = $likesCol ? 'COALESCE(' . vs_q($likesCol) . ', 0) AS likes' : '0 AS likes';
+
+    try {
+        $stmt = $pdo->query('SELECT ' . implode(', ', $select) . ' FROM ' . vs_q($table));
+        foreach ($stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [] as $r) {
+            $k = vs_is_short($r['type']) ? 'short' : 'video';
+            $likes = max(0, (int)$r['likes']);
+            $cm    = (int)($comments[(string)$r['id']] ?? 0);
+            $res[$k]['items']++;
+            if ($likes > 0) { $res[$k]['liked_items']++; $res[$k]['likes'] += $likes; }
+            if ($cm > 0)    { $res[$k]['commented_items']++; $res[$k]['comments'] += $cm; }
+        }
+    } catch (Throwable $e) {
+        $res['error'] = 'Could not read likes and comments: ' . $e->getMessage();
+    }
     return $res;
 }

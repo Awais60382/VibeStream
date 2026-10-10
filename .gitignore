@@ -1,2 +1,10 @@
 connection.php
+google-oauth.local.php
 uploads/
+.vscode/
+
+# Local Netlify folder
+.netlify
+client_secret_*.json
+node_modules/
+.env

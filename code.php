@@ -2,18 +2,15 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-$servername = "localhost";
-$username   = "root";
-$password   = "";
-$dbname     = "vibestream";
+require_once __DIR__ . '/avatar.php';
+require_once __DIR__ . '/connection.php';
+require_once __DIR__ . '/site-branding.php';
+require_once __DIR__ . '/notifications-store.php';
+$siteName = vs_branding_app_name();
 
-$conn = new mysqli($servername,$username, $password,$dbname);
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
+if (!defined('YOUTUBE_API_KEY')) {
+    define('YOUTUBE_API_KEY', getenv('YOUTUBE_API_KEY') ?: 'YOUR_YOUTUBE_API_KEY');
 }
-
-define('YOUTUBE_API_KEY', 'YOUR_YOUTUBE_API_KEY');
 
 function getYouTubeDetails($videoId) {
     if (empty(YOUTUBE_API_KEY) || YOUTUBE_API_KEY === 'YOUR_YOUTUBE_API_KEY') {
@@ -48,6 +45,153 @@ function getYouTubeDetails($videoId) {
 
 $action =$_GET['action'] ?? '';
 $page   =$_GET['page'] ?? '';
+
+if ($action === 'google_login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $respond = static function (int $status, array $body): void {
+        http_response_code($status);
+        echo json_encode($body);
+        exit;
+    };
+    require_once __DIR__ . '/google-oauth.php';
+    if (!GOOGLE_OAUTH_ENABLED || GOOGLE_OAUTH_CLIENT_ID === '') {
+        $respond(503, ['success' => false, 'message' => 'Google sign-in is coming soon. Please use your email and password for now.']);
+    }
+    $credential = trim((string)($_POST['credential'] ?? ''));
+    $nonce = (string)($_SESSION['google_oauth_nonce'] ?? '');
+    unset($_SESSION['google_oauth_nonce']);
+
+    if ($credential === '' || $nonce === '') {
+        $respond(400, ['success' => false, 'message' => 'Your sign-in session expired. Refresh the page and try again.']);
+    }
+
+    $curl = curl_init('https://oauth2.googleapis.com/tokeninfo?id_token=' . rawurlencode($credential));
+    curl_setopt_array($curl, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 8,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+    $tokenResponse = curl_exec($curl);
+    $tokenStatus = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    $tokenError = curl_error($curl);
+    curl_close($curl);
+
+    if ($tokenResponse === false || $tokenStatus !== 200) {
+        error_log('Google token verification failed: ' . ($tokenError !== '' ? $tokenError : 'HTTP ' . $tokenStatus));
+        $respond(502, ['success' => false, 'message' => 'Google could not verify your sign-in. Please try again.']);
+    }
+
+    $claims = json_decode($tokenResponse, true);
+    $issuer = $claims['iss'] ?? '';
+    $verifiedEmail = filter_var($claims['email'] ?? '', FILTER_VALIDATE_EMAIL);
+    if (
+        !is_array($claims)
+        || !hash_equals(GOOGLE_OAUTH_CLIENT_ID, (string)($claims['aud'] ?? ''))
+        || !in_array($issuer, ['accounts.google.com', 'https://accounts.google.com'], true)
+        || (int)($claims['exp'] ?? 0) <= time()
+        || !hash_equals($nonce, (string)($claims['nonce'] ?? ''))
+        || !in_array($claims['email_verified'] ?? false, [true, 'true', 1, '1'], true)
+        || !$verifiedEmail
+        || empty($claims['sub'])
+    ) {
+        $respond(401, ['success' => false, 'message' => 'Google returned an invalid or expired sign-in. Please try again.']);
+    }
+
+    $userColumns = [];
+    $columnResult = $conn->query('SHOW COLUMNS FROM `users`');
+    if (!$columnResult) {
+        error_log('Google sign-in could not inspect users table: ' . $conn->error);
+        $respond(500, ['success' => false, 'message' => 'Sign-in is temporarily unavailable. Please try again later.']);
+    }
+    while ($column = $columnResult->fetch_assoc()) {
+        $userColumns[strtolower($column['Field'])] = $column;
+    }
+    foreach (['username', 'email', 'role'] as $requiredColumn) {
+        if (!isset($userColumns[$requiredColumn])) {
+            $respond(500, ['success' => false, 'message' => 'Google sign-in needs username, email, and role fields in the users table.']);
+        }
+    }
+
+    $email = strtolower($verifiedEmail);
+    $stmt = $conn->prepare('SELECT * FROM `users` WHERE `email` = ? LIMIT 1');
+    if (!$stmt) {
+        error_log('Google sign-in could not prepare user lookup: ' . $conn->error);
+        $respond(500, ['success' => false, 'message' => 'Sign-in is temporarily unavailable. Please try again later.']);
+    }
+    $stmt->bind_param('s', $email);
+    if (!$stmt->execute()) {
+        error_log('Google sign-in user lookup failed: ' . $stmt->error);
+        $stmt->close();
+        $respond(500, ['success' => false, 'message' => 'Sign-in is temporarily unavailable. Please try again later.']);
+    }
+    $user = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$user) {
+        $displayName = trim((string)($claims['name'] ?? ''));
+        $fallbackName = strstr($email, '@', true);
+        $baseUsername = preg_replace('/[^\p{L}\p{N}_.-]+/u', '_', $displayName !== '' ? $displayName : $fallbackName);
+        $baseUsername = trim((string)$baseUsername, '_.-');
+        $baseUsername = mb_substr($baseUsername !== '' ? $baseUsername : 'GoogleUser', 0, 20);
+        $newUser = [
+            'username' => $baseUsername . '_' . substr(hash('sha256', (string)$claims['sub']), 0, 8),
+            'email' => $email,
+            'role' => 'user',
+        ];
+        foreach (['password', 'pass', 'user_password'] as $passwordColumn) {
+            if (isset($userColumns[$passwordColumn])) {
+                $newUser[$passwordColumn] = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
+                break;
+            }
+        }
+
+        $fields = array_keys($newUser);
+        $quotedFields = implode(', ', array_map(static fn($field) => '`' . $field . '`', $fields));
+        $placeholders = implode(', ', array_fill(0, count($fields), '?'));
+        $insert = $conn->prepare('INSERT INTO `users` (' . $quotedFields . ') VALUES (' . $placeholders . ')');
+        if (!$insert) {
+            error_log('Google sign-in could not prepare account creation: ' . $conn->error);
+            $respond(500, ['success' => false, 'message' => 'Could not create your account. Please try again later.']);
+        }
+        $values = array_values($newUser);
+        $types = str_repeat('s', count($values));
+        $insert->bind_param($types, ...$values);
+        if (!$insert->execute()) {
+            error_log('Google sign-in account creation failed: ' . $insert->error);
+            $insert->close();
+            $respond(500, ['success' => false, 'message' => 'Could not create your account. Please try again later.']);
+        }
+        $insert->close();
+        $user = $newUser;
+        $user['id'] = $conn->insert_id;
+    }
+
+    $username = (string)$user['username'];
+    if (!empty($claims['picture']) && avatar_path($username) === '') {
+        if (!avatar_import_google($username, (string)$claims['picture'])) {
+            error_log('Could not import a verified Google profile avatar.');
+        }
+    }
+
+    session_regenerate_id(true);
+    $_SESSION['user_id'] = $user['id'] ?? null;
+    $_SESSION['username'] = $username;
+    $_SESSION['role'] = $user['role'] ?? 'user';
+    $_SESSION['UserSession'] = $username;
+    $_SESSION['UserId'] = $user['id'] ?? null;
+    $redirect = 'index.php';
+    if (strcasecmp((string)$_SESSION['role'], 'admin') === 0) {
+        $_SESSION['AdminSession'] = $username;
+        $_SESSION['AdminID'] = $user['id'] ?? null;
+        $_SESSION['AdminId'] = $user['id'] ?? null;
+        $redirect = 'adminpanel/index.php';
+    }
+
+    $respond(200, ['success' => true, 'redirect' => $redirect]);
+}
 
 if ($action === 'get_all') {
     header('Content-Type: application/json');
@@ -189,12 +333,12 @@ if (isset($_POST['login']) || isset($_POST['login_submit']) ||$action === 'login
 if (isset($_POST['signup']) || isset($_POST['signup_submit']) || $action === 'signup_form') {$username = trim($_POST['username'] ?? '');$email = trim($_POST['email'] ?? '');$password = $_POST['password'] ?? '';$confirm_password = $_POST['confirmpassword'] ?? ($_POST['confirm_password'] ?? '');
 
     if (empty($username) || empty($password)) {
-        echo "<script>alert('Username and password are required!'); window.location.href='signup.php';</script>";
+        echo "<script>alert('Username and password are required!'); window.location.href='Signup.php';</script>";
         exit;
     }
 
     if ($password !==$confirm_password) {
-        echo "<script>alert('Passwords do not match!'); window.location.href='signup.php';</script>";
+        echo "<script>alert('Passwords do not match!'); window.location.href='Signup.php';</script>";
         exit;
     }
 
@@ -212,7 +356,7 @@ if (isset($_POST['signup']) || isset($_POST['signup_submit']) || $action === 'si
     $check->execute();$check->store_result();
 
     if ($check->num_rows > 0) {
-        echo "<script>alert('Username or Email already exists!'); window.location.href='signup.php';</script>";
+        echo "<script>alert('Username or Email already exists!'); window.location.href='Signup.php';</script>";
         exit;
     }
     $check->close();
@@ -231,7 +375,7 @@ if (isset($_POST['signup']) || isset($_POST['signup_submit']) || $action === 'si
         echo "<script>alert('Account created successfully! Please login.'); window.location.href='login.php';</script>";
         exit;
     } else {
-        echo "<script>alert('Error registering account. Please try again.'); window.location.href='signup.php';</script>";
+        echo "<script>alert('Error registering account. Please try again.'); window.location.href='Signup.php';</script>";
         exit;
     }
     $stmt->close();
@@ -243,6 +387,11 @@ if (isset($_POST['post_type']) ||$action === 'upload') {
         session_start();
     }
     
+    if (!vs_uploads_enabled()) {
+        echo "<script>alert('Uploads are turned off right now. Please try again later.'); window.location.href='index.php';</script>";
+        exit;
+    }
+
     $username =$_SESSION['username'] ?? ('Guest_' . rand(1000, 9999));
     $title = trim($_POST['title'] ?? '');
     $video_url = trim($_POST['video_url'] ?? ''); 
@@ -268,6 +417,9 @@ if (isset($_POST['post_type']) ||$action === 'upload') {
     }
 
     if ($stmt->execute()) {
+        if (!$alreadyExists && isset($_SESSION['username'])) {
+            vs_notify_subscribers($conn, (string)$username, $type, (string)$video_url, $title);
+        }
         echo "<script>alert('Published successfully!'); window.location.href='index.php';</script>";
     } else {
         echo "<script>alert('Error publishing video. Please check database columns.'); window.location.href='upload.php';</script>";
@@ -366,13 +518,13 @@ if ($page === 'watch') {
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title><?php echo htmlspecialchars($title); ?> - VibeStream</title>
-        <link rel="stylesheet" href="style.css">
+        <title><?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?> - <?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
+        <link rel="stylesheet" href="style.css?v=5">
     </head>
     <body>
         <header class="navbar">
             <div class="nav-left">
-                <a href="index.php" style="text-decoration: none;"><h1>VibeStream</h1></a>
+                <a class="site-brand" href="index.php"><img class="site-brand-icon" src="<?php echo htmlspecialchars(vs_branding_logo_url(), ENT_QUOTES, 'UTF-8'); ?>" alt=""><span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span></a>
             </div>
             <div class="nav-center">
                 <input type="text" placeholder="Search">
@@ -455,7 +607,7 @@ if ($page === 'shorts') {
     <head>
         <meta charset="UTF-8">
         <title><?php echo htmlspecialchars($title); ?> - Shorts</title>
-        <link rel="stylesheet" href="style.css">
+        <link rel="stylesheet" href="style.css?v=5">
         <style>
             .shorts-page { display: flex; justify-content: center; align-items: center; height: calc(100vh - var(--nav-height)); background: #000; position: relative; gap: 20px; }
             .short-player-wrapper { position: relative; width: 320px; height: 570px; background: #111; border-radius: 16px; overflow: hidden; display: flex; justify-content: center; align-items: center; }
@@ -481,7 +633,7 @@ if ($page === 'shorts') {
     <body>
         <header class="navbar">
             <div class="nav-left">
-                <a href="index.php" style="text-decoration: none;"><h1>VibeStream</h1></a>
+                <a class="site-brand" href="index.php"><img class="site-brand-icon" src="<?php echo htmlspecialchars(vs_branding_logo_url(), ENT_QUOTES, 'UTF-8'); ?>" alt=""><span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span></a>
             </div>
         </header>
 

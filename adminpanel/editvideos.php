@@ -22,51 +22,65 @@ if (!$row) {
     exit;
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit Video/Short - VibeStream</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
-</head>
-<body>
-    <div class="container my-5">
-        <h2 class="text-center">Edit Video / Short</h2>
-        <hr class="w-50 mx-auto">
-        <div class="w-50 mx-auto">
+
+<?php include "header.php"; ?>
+
+      <main class="dashboard-content">
+        <div class="container-fluid px-3 px-lg-4 py-4">
+          <div class="page-heading">
+            <div class="page-heading-copy">
+              <span class="page-icon"><i class="bi bi-pencil-square" aria-hidden="true"></i></span>
+              <div>
+                <h1>Edit Video / Short</h1>
+                <p class="text-muted mb-0">Update the title or type of this upload.</p>
+              </div>
+            </div>
+            <div class="heading-actions">
+              <a href="videos.php" class="btn btn-light"><i class="bi bi-arrow-left"></i> Back to Manage Videos</a>
+            </div>
+          </div>
+
+          <section class="panel vs-form-card">
             <form action="code.php" method="POST">
-                <!-- The ID is the record key, so it is sent as hidden and shown read-only -->
-                <input type="hidden" name="id" value="<?php echo htmlspecialchars($row['id']); ?>">
-                <div class="mb-3">
-                    <label>Video ID / URL</label>
-                    <input type="text" value="<?php echo htmlspecialchars($row['id']); ?>" class="form-control" readonly>
-                </div>
-                <div class="mb-3">
-                    <label>Video Title</label>
-                    <input type="text" value="<?php echo htmlspecialchars($row['title']); ?>" name="title" class="form-control" required>
-                </div>
-                <div class="mb-3">
-                    <label>Type</label>
-                    <?php $currentType = $row['type'] ?? 'video'; ?>
-                    <select name="type" class="form-select">
-                        <option value="video" <?php echo ($currentType === 'video') ? 'selected' : ''; ?>>Video</option>
-                        <option value="short" <?php echo ($currentType === 'short') ? 'selected' : ''; ?>>Short</option>
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label>Uploader</label>
-                    <input type="text" value="<?php echo htmlspecialchars($row['username'] ?? 'Admin'); ?>" class="form-control" readonly>
-                </div>
-                <div class="text-center">
-                    <input type="submit" value="Update" name="update_video" class="btn btn-dark w-50">
-                </div>
+              <!-- The ID is the record key, so it is sent as hidden and shown read-only -->
+              <input type="hidden" name="id" value="<?php echo htmlspecialchars($row['id']); ?>">
+              <div class="mb-3">
+                <label class="form-label">Video ID / URL</label>
+                <input type="text" value="<?php echo htmlspecialchars($row['id']); ?>" class="form-control" readonly>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Video Title</label>
+                <input type="text" value="<?php echo htmlspecialchars($row['title']); ?>" name="title" class="form-control" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Type</label>
+                <?php $currentType = $row['type'] ?? 'video'; ?>
+                <select name="type" class="form-select">
+                  <option value="video" <?php echo ($currentType === 'video') ? 'selected' : ''; ?>>Video</option>
+                  <option value="short" <?php echo ($currentType === 'short') ? 'selected' : ''; ?>>Short</option>
+                </select>
+              </div>
+              <div class="mb-4">
+                <label class="form-label">Uploader</label>
+                <input type="text" value="<?php echo htmlspecialchars($row['username'] ?? 'Admin'); ?>" class="form-control" readonly>
+              </div>
+              <div class="text-center">
+                <input type="submit" value="Update" name="update_video" class="btn btn-primary w-50">
+              </div>
             </form>
+          </section>
         </div>
-        <div class="text-center mt-4">
-            <a href="videos.php" class="btn btn-secondary">Back to Manage Videos</a>
+      </main>
+
+      <footer class="admin-footer">
+        <div class="container-fluid px-3 px-lg-4">
+          <span>VibeStream Admin Panel</span>
         </div>
+      </footer>
     </div>
+  </div>
+
+  <script src="./assets/js/bootstrap.bundle.min.js"></script>
+  <script src="./assets/js/main.js"></script>
 </body>
 </html>

@@ -27,6 +27,11 @@ if (isset($_POST['create_video'])) {
         );
         $stmt->execute([$id, $title, $type, $username]);
 
+        if (isset($conn) && $conn instanceof mysqli) {
+            require_once __DIR__ . '/../notifications-store.php';
+            vs_notify_subscribers($conn, $username, $type, $id, $title);
+        }
+
         echo "<script>alert('Video added successfully'); window.location.href='index.php';</script>";
         exit;
     } catch (PDOException $e) {

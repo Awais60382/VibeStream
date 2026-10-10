@@ -65,6 +65,7 @@ body {
     font-size: var(--text-md);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
 }
 
 img {
@@ -113,6 +114,25 @@ img {
     color: var(--accent);
     cursor: pointer;
     white-space: nowrap;
+}
+
+.site-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--accent);
+    font-size: var(--text-xl);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+}
+
+.site-brand-icon {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    object-fit: cover;
 }
 
 .nav-center {
@@ -408,6 +428,269 @@ img {
     height: 40px;
     border-radius: 50%;
     object-fit: cover;
+}
+
+.channel-avatar img {
+    display: block;
+}
+
+.auth-layout {
+    min-height: calc(100vh - var(--nav-height, 56px));
+    display: grid;
+    place-items: center;
+    padding: var(--space-6, 32px) var(--space-4, 16px);
+}
+
+.auth-card {
+    width: min(100%, 440px);
+    min-width: 0;
+    padding: clamp(24px, 5vw, 40px);
+    border: 1px solid var(--border, #303030);
+    border-radius: var(--radius-lg, 14px);
+    background: var(--surface-raised, #181818);
+    box-shadow: var(--shadow-overlay, 0 12px 32px rgba(0, 0, 0, 0.55));
+}
+
+.auth-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 28px;
+    color: var(--accent, #b02a2a);
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}
+
+.auth-eyebrow {
+    margin: 0 0 6px;
+    color: var(--accent-hover, #ff6b63);
+    font-size: var(--text-sm, 12px);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.auth-card h1 {
+    margin: 0;
+    color: var(--text-primary, #f4f4f6);
+    font-size: clamp(24px, 5vw, 30px);
+    letter-spacing: -0.04em;
+}
+
+.auth-description {
+    margin: 8px 0 24px;
+    color: var(--text-secondary, #a1a1ab);
+}
+
+#google-signin {
+    max-width: 100%;
+    min-height: 44px;
+    display: flex;
+    justify-content: center;
+}
+
+#google-signin iframe {
+    max-width: 100%;
+}
+
+.google-coming-soon {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border: 1px solid var(--border, #303030);
+    border-radius: var(--radius-pill, 999px);
+    background: var(--surface-base, #0d0d0f);
+    color: var(--text-secondary, #a1a1ab);
+    font-size: var(--text-md, 14px);
+    font-weight: 600;
+}
+
+.google-coming-soon-icon {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    flex: 0 0 28px;
+    place-items: center;
+    border-radius: 50%;
+    background: #fff;
+    color: #4285f4;
+    font-family: Arial, sans-serif;
+    font-size: 19px;
+    font-weight: 700;
+}
+
+.google-coming-soon-badge {
+    margin-left: auto;
+    padding: 4px 8px;
+    border: 1px solid rgba(255, 107, 99, 0.28);
+    border-radius: var(--radius-pill, 999px);
+    background: rgba(255, 78, 69, 0.12);
+    color: var(--accent-hover, #ff6b63);
+    font-size: var(--text-xs, 11px);
+    white-space: nowrap;
+}
+
+.google-coming-soon-note {
+    margin: 8px 4px 0;
+    color: var(--text-tertiary, #6f6f7a);
+    font-size: var(--text-sm, 12px);
+    text-align: center;
+}
+
+.google-setup {
+    margin-top: 12px;
+    color: var(--text-secondary, #a1a1ab);
+    font-size: var(--text-sm, 12px);
+}
+
+.google-setup summary {
+    width: fit-content;
+    color: var(--text-tertiary, #6f6f7a);
+    cursor: pointer;
+}
+
+.google-setup-content {
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid var(--border, #303030);
+    border-radius: var(--radius-md, 10px);
+    background: var(--surface-base, #0d0d0f);
+    overflow-wrap: anywhere;
+}
+
+.google-setup p {
+    margin: 0 0 8px;
+}
+
+.google-setup-origin {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.google-setup code {
+    color: var(--text-primary, #f4f4f6);
+}
+
+.google-setup-origin button {
+    flex: 0 0 auto;
+    padding: 5px 10px;
+    border: 1px solid var(--border, #303030);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--surface-raised, #181818);
+    color: var(--text-primary, #f4f4f6);
+    cursor: pointer;
+    font: inherit;
+}
+
+.google-setup .google-setup-client {
+    margin: 8px 0;
+}
+
+.google-setup-content > a {
+    color: var(--accent-hover, #ff6b63);
+    font-weight: 600;
+}
+
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0;
+    color: var(--text-tertiary, #6f6f7a);
+    font-size: var(--text-sm, 12px);
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    height: 1px;
+    flex: 1;
+    background: var(--border, #303030);
+    content: "";
+}
+
+.auth-card .form-group {
+    margin-bottom: 16px;
+}
+
+.auth-card .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--text-secondary, #a1a1ab);
+    font-size: var(--text-base, 13px);
+}
+
+.auth-card .form-group input {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid var(--border, #303030);
+    border-radius: var(--radius-md, 10px);
+    background: var(--surface-base, #0d0d0f);
+    color: var(--text-primary, #f4f4f6);
+    font: inherit;
+}
+
+.show-password {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 18px;
+    color: var(--text-secondary, #a1a1ab);
+    font-size: var(--text-base, 13px);
+}
+
+.show-password input {
+    width: auto;
+    accent-color: var(--accent, #b02a2a);
+}
+
+.auth-card .submit-btn {
+    width: 100%;
+    min-height: 44px;
+    border-radius: var(--radius-md, 10px);
+}
+
+.auth-footer {
+    margin: 20px 0 0;
+    color: var(--text-secondary, #a1a1ab);
+    font-size: var(--text-base, 13px);
+    text-align: center;
+}
+
+.auth-footer a {
+    color: var(--accent-hover, #ff6b63);
+    font-weight: 600;
+}
+
+.auth-error {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border: 1px solid #9b3732;
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(255, 78, 69, 0.12);
+    color: #ffaaa5;
+    font-size: var(--text-base, 13px);
+}
+
+.nav-avatar {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.nav-avatar-fallback {
+    display: inline-grid;
+    place-items: center;
+    background: var(--accent, #b02a2a);
+    color: white;
+    font-weight: 700;
 }
 
 .channel-metadata {

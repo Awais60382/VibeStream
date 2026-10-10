@@ -10,6 +10,7 @@ if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecm
 
 include_once "../connection.php";
 include_once "ui_helpers.php";
+require_once __DIR__ . '/../avatar.php';
 
 
 $USERS_TABLE = 'users';
@@ -29,6 +30,54 @@ if ($uploaderStats['has_date']) {
     usort($uploaderRows, fn($a, $b) => strcmp((string)$b['last'], (string)$a['last']));
 }
 $uploaderRows = array_slice($uploaderRows, 0, 5);
+
+$recentContent = [];
+$recentContentError = '';
+if (isset($pdo) && $pdo instanceof PDO) {
+    foreach (['videos', 'shorts'] as $contentTable) {
+        $contentCols = vs_cols($pdo, $contentTable);
+        if (!$contentCols) {
+            continue;
+        }
+        $titleCol = vs_pick($contentCols, ['title', 'name']);
+        $dateCol = vs_pick($contentCols, ['created_at', 'uploaded_at', 'upload_date', 'date_added', 'created_on', 'added_at']);
+        $viewsCol = vs_pick($contentCols, ['views', 'view_count']);
+        $authorCol = vs_pick($contentCols, ['username', 'user_name', 'uploader', 'uploaded_by', 'author', 'channel_name']);
+        $typeCol = vs_pick($contentCols, ['type', 'video_type']);
+        if (!$titleCol || !$dateCol) {
+            continue;
+        }
+        try {
+            $fields = [
+                vs_q($titleCol) . ' AS content_title',
+                vs_q($dateCol) . ' AS content_date',
+                $viewsCol ? vs_q($viewsCol) . ' AS content_views' : '0 AS content_views',
+                $authorCol ? vs_q($authorCol) . ' AS content_author' : "'' AS content_author",
+                $typeCol ? vs_q($typeCol) . ' AS content_type' : "'' AS content_type",
+            ];
+            $query = 'SELECT ' . implode(', ', $fields) . ' FROM ' . vs_q($contentTable)
+                   . ' ORDER BY ' . vs_q($dateCol) . ' DESC LIMIT 8';
+            foreach ($pdo->query($query)->fetchAll(PDO::FETCH_ASSOC) as $content) {
+                $type = $contentTable === 'shorts' || stripos((string)$content['content_type'], 'short') === 0
+                    ? 'Short'
+                    : 'Video';
+                $recentContent[] = [
+                    'title' => trim((string)$content['content_title']) ?: 'Untitled upload',
+                    'date' => (string)$content['content_date'],
+                    'views' => max(0, (int)$content['content_views']),
+                    'author' => trim((string)$content['content_author']) ?: 'Unknown creator',
+                    'type' => $type,
+                ];
+            }
+        } catch (Throwable $e) {
+            $recentContentError = 'Recent uploads could not be loaded.';
+        }
+    }
+    usort($recentContent, static function (array $a, array $b): int {
+        return (strtotime($b['date']) ?: 0) <=> (strtotime($a['date']) ?: 0);
+    });
+    $recentContent = array_slice($recentContent, 0, 6);
+}
 
 $cardUsers  = null; 
 $cardOnline = null; 
@@ -321,6 +370,52 @@ $actRender = function (string $kind) use ($actDays) {
     echo '</p>';
 };
 
+$download = (string)($_GET['download'] ?? '');
+if ($download === 'activity.csv') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="vibestream-activity-' . date('Y-m-d') . '.csv"');
+    $output = fopen('php://output', 'wb');
+    if ($output === false) {
+        throw new RuntimeException('Could not create the activity export.');
+    }
+    fputcsv($output, ['Date', 'Active users', 'Active admins', 'User uploads', 'Admin uploads']);
+    foreach ($actDays as $date => $row) {
+        fputcsv($output, [
+            $date,
+            $row['active']['user'],
+            $row['active']['admin'],
+            $row['upload']['user'],
+            $row['upload']['admin'],
+        ]);
+    }
+    fclose($output);
+    exit;
+}
+if ($download === 'report.txt') {
+    header('Content-Type: text/plain; charset=utf-8');
+    header('Content-Disposition: attachment; filename="vibestream-dashboard-report-' . date('Y-m-d') . '.txt"');
+    echo "VibeStream dashboard report\n";
+    echo 'Generated: ' . date('Y-m-d H:i:s T') . "\n\n";
+    echo 'Registered users: ' . ($cardUsers === null ? 'unavailable' : $cardUsers) . "\n";
+    echo 'Currently online: ' . ($cardOnline === null ? 'unavailable' : $cardOnline) . "\n";
+    echo 'Uploaders: ' . (int)$uploaderStats['totals']['uploaders'] . "\n";
+    echo 'Videos: ' . (int)$uploaderStats['totals']['videos'] . "\n";
+    echo 'Shorts: ' . (int)$uploaderStats['totals']['shorts'] . "\n";
+    echo 'Views: ' . (int)$uploaderStats['totals']['views'] . "\n\n";
+    echo "Activity and uploads by day (last 7 days)\n";
+    echo "Date | Active users | Active admins | User uploads | Admin uploads\n";
+    foreach ($actDays as $date => $row) {
+        echo implode(' | ', [
+            $date,
+            $row['active']['user'],
+            $row['active']['admin'],
+            $row['upload']['user'],
+            $row['upload']['admin'],
+        ]) . "\n";
+    }
+    exit;
+}
+
 include "header.php";
 ?>
 
@@ -331,13 +426,13 @@ include "header.php";
               <span class="page-icon"><i class="bi bi-speedometer2" aria-hidden="true"></i></span>
               <div>
                 <p class="eyebrow mb-1">Overview</p>
-                <h1 class="h3 mb-1">Dashboard</h1>
-                <p class="text-muted mb-0">Monitor performance, sales, users, and support from one clean workspace.</p>
+                <h1 class="h3 mb-1">Welcome back, <?php echo vs_e($_SESSION['AdminSession'] ?? 'Admin'); ?></h1>
+                <p class="text-muted mb-0">Here is what is happening across your VibeStream community.</p>
               </div>
             </div>
             <div class="heading-actions">
-              <button class="btn btn-outline-secondary btn-sm" type="button"><i class="bi bi-download" aria-hidden="true"></i> Export</button>
-              <button class="btn btn-primary btn-sm" type="button"><i class="bi bi-file-earmark-plus" aria-hidden="true"></i> Create Report</button>
+              <a class="btn btn-outline-secondary btn-sm" href="?download=activity.csv"><i class="bi bi-download" aria-hidden="true"></i> Export CSV</a>
+              <a class="btn btn-primary btn-sm" href="?download=report.txt"><i class="bi bi-file-earmark-plus" aria-hidden="true"></i> Create Report</a>
             </div>
           </div>
 
@@ -474,15 +569,16 @@ include "header.php";
               <div class="panel h-100">
                 <div class="panel-header">
                   <div>
-                    <h2 class="h5 mb-1 section-title"><i class="bi bi-activity" aria-hidden="true"></i><span>Team Activity</span></h2>
-                    <p class="text-muted mb-0">Recent operational updates.</p>
+                    <h2 class="h5 mb-1 section-title"><i class="bi bi-lightning-charge" aria-hidden="true"></i><span>Quick actions</span></h2>
+                    <p class="text-muted mb-0">Common admin tasks.</p>
                   </div>
                 </div>
-
-                <div class="activity-list">
-                  <div class="activity-item"><span class="activity-dot bg-primary"></span><div><p class="mb-1 fw-semibold">New campaign launched</p><p class="text-muted small mb-0">Marketing team published the May offer.</p></div></div>
-                  <div class="activity-item"><span class="activity-dot bg-success"></span><div><p class="mb-1 fw-semibold">Payment batch cleared</p><p class="text-muted small mb-0">246 invoices were processed successfully.</p></div></div>
-                  <div class="activity-item"><span class="activity-dot bg-warning"></span><div><p class="mb-1 fw-semibold">Support queue rising</p><p class="text-muted small mb-0">Average first response time is 18 minutes.</p></div></div>
+                <div class="quick-action-list">
+                  <a class="quick-action" href="addvideos.php"><span class="quick-action-icon"><i class="bi bi-cloud-upload" aria-hidden="true"></i></span><span><strong>Add a video</strong><small>Publish new content</small></span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+                  <a class="quick-action" href="videos.php"><span class="quick-action-icon"><i class="bi bi-collection-play" aria-hidden="true"></i></span><span><strong>Manage videos</strong><small>Review and edit uploads</small></span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+                  <a class="quick-action" href="Users.php"><span class="quick-action-icon"><i class="bi bi-people" aria-hidden="true"></i></span><span><strong>Manage users</strong><small>View community accounts</small></span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+                  <a class="quick-action" href="categories.php"><span class="quick-action-icon"><i class="bi bi-tags" aria-hidden="true"></i></span><span><strong>Categories</strong><small>Home chips and sidebar menu</small></span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+                  <a class="quick-action" href="platform-settings.php"><span class="quick-action-icon"><i class="bi bi-sliders" aria-hidden="true"></i></span><span><strong>App settings</strong><small>Logo, uploads, maintenance</small></span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
                 </div>
               </div>
             </div>
@@ -492,10 +588,95 @@ include "header.php";
           <section class="panel mt-3">
             <div class="panel-header">
               <div>
+                <h2 class="h5 mb-1 section-title"><i class="bi bi-clock-history" aria-hidden="true"></i><span>Recent uploads</span></h2>
+                <p class="text-muted mb-0">Latest videos and Shorts published to VibeStream.</p>
+              </div>
+              <a class="btn btn-outline-secondary btn-sm" href="videos.php">View all videos</a>
+            </div>
+            <?php if ($recentContentError !== ''): ?>
+              <div class="vs-empty text-muted"><?php echo vs_e($recentContentError); ?></div>
+            <?php elseif (!$recentContent): ?>
+              <div class="vs-empty text-muted">No uploaded content is available yet.</div>
+            <?php else: ?>
+              <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                  <thead><tr><th scope="col">Content</th><th scope="col">Creator</th><th scope="col">Type</th><th scope="col" class="text-end">Views</th><th scope="col" class="text-end">Published</th></tr></thead>
+                  <tbody>
+                    <?php foreach ($recentContent as $content): ?>
+                      <tr>
+                        <td><div class="table-media"><span class="content-type-icon"><i class="bi <?php echo $content['type'] === 'Short' ? 'bi-lightning-charge' : 'bi-play-btn'; ?>" aria-hidden="true"></i></span><strong class="content-title"><?php echo vs_e($content['title']); ?></strong></div></td>
+                        <td><?php echo vs_e($content['author']); ?></td>
+                        <td><span class="content-type-badge"><?php echo vs_e($content['type']); ?></span></td>
+                        <td class="text-end"><?php echo number_format($content['views']); ?></td>
+                        <td class="text-end text-muted"><?php echo vs_e(vs_ago($content['date'])); ?></td>
+                      </tr>
+                    <?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+            <?php endif; ?>
+          </section>
+
+          <?php $eng = (isset($pdo) && $pdo instanceof PDO) ? vs_engagement_stats($pdo) : null; ?>
+          <section class="panel mt-3">
+            <div class="panel-header">
+              <div>
+                <h2 class="h5 mb-1 section-title"><i class="bi bi-hand-thumbs-up" aria-hidden="true"></i><span>Likes &amp; Comments</span></h2>
+                <p class="text-muted mb-0">How many videos and shorts have been liked and commented on.</p>
+              </div>
+              <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary btn-sm" href="videos.php">Videos</a>
+                <a class="btn btn-outline-secondary btn-sm" href="shorts.php">Shorts</a>
+              </div>
+            </div>
+            <?php if ($eng === null || $eng['error'] !== ''): ?>
+              <div class="vs-empty text-muted"><?php echo vs_e($eng['error'] ?? 'No database connection found.'); ?></div>
+            <?php else:
+                $engTotal = [
+                    'items' => $eng['video']['items'] + $eng['short']['items'],
+                    'liked_items' => $eng['video']['liked_items'] + $eng['short']['liked_items'],
+                    'likes' => $eng['video']['likes'] + $eng['short']['likes'],
+                    'commented_items' => $eng['video']['commented_items'] + $eng['short']['commented_items'],
+                    'comments' => $eng['video']['comments'] + $eng['short']['comments'],
+                ];
+                $engRows = ['Videos' => $eng['video'], 'Shorts' => $eng['short'], 'Total' => $engTotal];
+            ?>
+              <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col">Type</th>
+                      <th scope="col" class="text-end">Uploaded</th>
+                      <th scope="col" class="text-end">Liked</th>
+                      <th scope="col" class="text-end">Total likes</th>
+                      <th scope="col" class="text-end">Commented</th>
+                      <th scope="col" class="text-end">Total comments</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  <?php foreach ($engRows as $engLabel => $e): ?>
+                    <tr<?php echo $engLabel === 'Total' ? ' class="fw-semibold"' : ''; ?>>
+                      <td><?php echo vs_e($engLabel); ?></td>
+                      <td class="text-end vs-num"><?php echo number_format($e['items']); ?></td>
+                      <td class="text-end vs-num"><?php echo number_format($e['liked_items']); ?> <span class="text-muted small">of <?php echo number_format($e['items']); ?></span></td>
+                      <td class="text-end vs-num"><?php echo number_format($e['likes']); ?></td>
+                      <td class="text-end vs-num"><?php echo number_format($e['commented_items']); ?> <span class="text-muted small">of <?php echo number_format($e['items']); ?></span></td>
+                      <td class="text-end vs-num"><?php echo number_format($e['comments']); ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+            <?php endif; ?>
+          </section>
+
+          <section class="panel mt-3">
+            <div class="panel-header">
+              <div>
                 <h2 class="h5 mb-1 section-title"><i class="bi bi-cloud-arrow-up" aria-hidden="true"></i><span><?php echo $uploaderStats['has_date'] ? 'Recent Uploaders' : 'Top Uploaders'; ?></span></h2>
                 <p class="text-muted mb-0">People who upload videos and shorts to VibeStream.</p>
               </div>
-              <a class="btn btn-outline-secondary btn-sm" href="users.php">Manage Users</a>
+              <a class="btn btn-outline-secondary btn-sm" href="Users.php">Manage Users</a>
             </div>
 
             <?php if ($uploaderStats['error'] !== ''): ?>
@@ -540,7 +721,7 @@ include "header.php";
                     <tr>
                       <td>
                         <div class="d-flex align-items-center gap-2">
-                          <?php echo vs_avatar($r['name']); ?>
+                          <?php echo vs_avatar($r['name'], function_exists('avatar_url') ? avatar_url($r['name']) : ''); ?>
                           <div>
                             <p class="fw-semibold mb-0"><?php echo vs_e($r['name']); ?></p>
                             <p class="text-muted small mb-0"><?php echo (int)$r['total']; ?> upload<?php echo $r['total'] === 1 ? '' : 's'; ?></p>

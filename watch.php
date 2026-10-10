@@ -2,6 +2,17 @@
 session_start();
 require_once __DIR__ . '/avatar.php';   
 require_once __DIR__ . '/icons.php';    
+require_once __DIR__ . '/site-branding.php';
+require_once __DIR__ . '/notifications-store.php';
+require_once __DIR__ . '/user-menu.php';
+require_once __DIR__ . '/sidebar-navigation.php';
+require_once __DIR__ . '/subscription-store.php';
+require_once __DIR__ . '/history-store.php';
+require_once __DIR__ . '/comment-store.php';
+require_once __DIR__ . '/helpers.php';
+$siteName = vs_branding_app_name();
+$defaultTheme = vs_branding_default_theme();
+vs_maintenance_gate();
 include "connection.php";
 
 if (!function_exists('column_exists')) {
@@ -15,6 +26,8 @@ if (!function_exists('column_exists')) {
         return $cache[$key] = ($r && $r->num_rows > 0);
     }
 }
+$hasLikesColumn = column_exists($conn, 'videos', 'likes');
+$hasDislikesColumn = column_exists($conn, 'videos', 'dislikes');
 
 if (!function_exists('extract_youtube_id')) {
     function extract_youtube_id($raw, $allowBare = false) {
@@ -78,10 +91,12 @@ if (!function_exists('avatar_or_cartoon')) {
 
 if (!function_exists('render_navbar')) {
     function render_navbar($active = 'watch') {
+        $siteName = vs_branding_app_name();
         $isLoggedIn = isset($_SESSION['username']) && $_SESSION['username'] !== '';
         $username = $isLoggedIn ? $_SESSION['username'] : '';
         $initial = $isLoggedIn ? strtoupper(substr($username, 0, 1)) : 'G';
         $navAvatar = $isLoggedIn ? avatar_url($username) : '';
+        $siteLogoUrl = vs_branding_logo_url();
         ?>
         <header class="app-navbar">
             <div class="nav-left">
@@ -90,7 +105,10 @@ if (!function_exists('render_navbar')) {
                     <span></span>
                     <span></span>
                 </button>
-                <a class="brand" href="index.php">VibeStream</a>
+                <a class="brand" href="index.php">
+                    <img class="site-brand-icon" src="<?php echo htmlspecialchars($siteLogoUrl); ?>" alt="">
+                    <span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span>
+                </a>
             </div>
 
             <div class="nav-center">
@@ -99,19 +117,13 @@ if (!function_exists('render_navbar')) {
             </div>
 
             <div class="nav-right">
+                <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
+                    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                </button>
+                <?php echo vs_notification_bell_html(); ?>
                 <a href="upload.php" class="create-btn">+ Create</a>
                 <?php if ($isLoggedIn): ?>
-                    <div class="user-badge-pill">
-                        <div class="user-avatar-circle">
-                            <?php if ($navAvatar !== ''): ?>
-                                <img src="<?php echo htmlspecialchars($navAvatar); ?>" alt="">
-                            <?php else: ?>
-                                <?php echo htmlspecialchars($initial); ?>
-                            <?php endif; ?>
-                        </div>
-                        <span class="user-name"><?php echo htmlspecialchars($username); ?></span>
-                        <a href="logout.php" class="logout-link">Logout</a>
-                    </div>
+                    <?php echo vs_user_menu_html($username, $navAvatar); ?>
                 <?php else: ?>
                     <a href="login.php" class="sign-in-btn">Sign In</a>
                 <?php endif; ?>
@@ -122,35 +134,8 @@ if (!function_exists('render_navbar')) {
 }
 
 if (!function_exists('render_sidebar')) {
-    function render_sidebar($active = 'watch') {
-        $items = [
-            ['key' => 'home', 'label' => 'Home', 'href' => 'index.php', 'icon' => 'gauge'],
-            ['key' => 'watch', 'label' => 'Watch', 'href' => 'watch.php', 'icon' => 'box'],
-            ['key' => 'shorts', 'label' => 'Shorts', 'href' => 'shorts.php', 'icon' => 'box'],
-            ['key' => 'upload', 'label' => 'Upload', 'href' => 'upload.php', 'icon' => 'plus-square'],
-            ['key' => 'profile', 'label' => 'Profile', 'href' => 'profile.php', 'icon' => 'contact'],
-        ];
-        if (isset($_SESSION['AdminSession']) || (isset($_SESSION['role']) && strcasecmp($_SESSION['role'], 'Admin') === 0)) {
-            $items[] = ['key' => 'adminpanel', 'label' => 'Admin Panel', 'href' => 'adminpanel/index.php', 'icon' => 'settings'];
-        }
-        ?>
-        <aside class="app-sidebar" id="appSidebar">
-            <div class="sidebar-top">
-                <div class="sidebar-heading">Browse</div>
-                <button type="button" class="sidebar-close" id="sidebarClose" data-sidebar-close aria-label="Close menu">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
-                </button>
-            </div>
-            <nav class="sidebar-nav">
-                <?php foreach ($items as $item): ?>
-                    <a class="sidebar-link<?php echo $active === $item['key'] ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($item['href']); ?>">
-                        <span class="sidebar-icon"><?php echo vs_icon($item['icon']); ?></span>
-                        <span class="sidebar-label"><?php echo htmlspecialchars($item['label']); ?></span>
-                    </a>
-                <?php endforeach; ?>
-            </nav>
-        </aside>
-        <?php
+    function render_sidebar($active = 'home') {
+        vs_render_sidebar((string)$active);
     }
 }
 
@@ -178,43 +163,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach (['liked_videos', 'disliked_videos', 'subscribed_channels'] as $k) {
             if (!isset($_SESSION[$k]) || !is_array($_SESSION[$k])) $_SESSION[$k] = [];
         }
+        if ($action === 'subscribe') {
+            vs_subscription_session_sync($conn);
+        }
+        if (!$hasDislikesColumn) {
+            $_SESSION['disliked_videos'] = [];
+        }
 
-        $counts = function () use ($conn, $vid) {
-            $stmt = $conn->prepare("SELECT COALESCE(likes,0) AS l, COALESCE(dislikes,0) AS d FROM videos WHERE id = ?");
+        $counts = function () use ($conn, $vid, $hasLikesColumn, $hasDislikesColumn) {
+            if (!$hasLikesColumn) {
+                throw new RuntimeException('Likes are not available because the videos table has no likes column.');
+            }
+            $dislikesSelect = $hasDislikesColumn ? 'COALESCE(dislikes,0)' : '0';
+            $stmt = $conn->prepare("SELECT COALESCE(likes,0) AS l, $dislikesSelect AS d FROM videos WHERE id = ?");
+            if (!$stmt) {
+                throw new RuntimeException('Could not read the video vote counts.');
+            }
             $stmt->bind_param("s", $vid);
-            $stmt->execute();
+            if (!$stmt->execute()) {
+                $stmt->close();
+                throw new RuntimeException('Could not read the video vote counts.');
+            }
             $result = $stmt->get_result()->fetch_assoc();
             $stmt->close();
+            if (!$result) {
+                throw new RuntimeException('Could not read the video vote counts.');
+            }
             return $result;
         };
 
         if ($action === 'like' || $action === 'dislike') {
             $isLike = ($action === 'like');
+            if (!$hasLikesColumn) {
+                throw new RuntimeException('Likes are not available because the videos table has no likes column.');
+            }
+            if (!$isLike && !$hasDislikesColumn) {
+                json_out([
+                    'success' => false,
+                    'error' => 'Dislikes are not enabled in this database. Likes are available.',
+                ]);
+            }
             $mine = $isLike ? 'liked_videos' : 'disliked_videos';
             $other = $isLike ? 'disliked_videos' : 'liked_videos';
             $myCol = $isLike ? 'likes' : 'dislikes';
             $otherCol = $isLike ? 'dislikes' : 'likes';
 
-            if (in_array($vid, $_SESSION[$mine], true)) {
-                $_SESSION[$mine] = array_values(array_diff($_SESSION[$mine], [$vid]));
-                $upd = $conn->prepare("UPDATE videos SET $myCol = GREATEST(COALESCE($myCol,0) - 1, 0) WHERE id = ?");
-                $upd->bind_param("s", $vid);
-                $upd->execute();
-                $upd->close();
+            $mineActive = in_array($vid, $_SESSION[$mine], true);
+            $otherActive = in_array($vid, $_SESSION[$other], true);
+            if ($mineActive) {
+                $sql = "UPDATE videos SET $myCol = GREATEST(COALESCE($myCol,0) - 1, 0) WHERE id = ?";
+            } elseif ($otherActive) {
+                $sql = "UPDATE videos SET $myCol = COALESCE($myCol,0) + 1, $otherCol = GREATEST(COALESCE($otherCol,0) - 1, 0) WHERE id = ?";
             } else {
-                $_SESSION[$mine][] = $vid;
-                $upd = $conn->prepare("UPDATE videos SET $myCol = COALESCE($myCol,0) + 1 WHERE id = ?");
-                $upd->bind_param("s", $vid);
-                $upd->execute();
-                $upd->close();
+                $sql = "UPDATE videos SET $myCol = COALESCE($myCol,0) + 1 WHERE id = ?";
+            }
 
-                if (in_array($vid, $_SESSION[$other], true)) {
-                    $_SESSION[$other] = array_values(array_diff($_SESSION[$other], [$vid]));
-                    $upd2 = $conn->prepare("UPDATE videos SET $otherCol = GREATEST(COALESCE($otherCol,0) - 1, 0) WHERE id = ?");
-                    $upd2->bind_param("s", $vid);
-                    $upd2->execute();
-                    $upd2->close();
-                }
+            $upd = $conn->prepare($sql);
+            if (!$upd) {
+                throw new RuntimeException('Could not save your video vote. Please try again.');
+            }
+            $upd->bind_param("s", $vid);
+            if (!$upd->execute() || $upd->affected_rows !== 1) {
+                $upd->close();
+                throw new RuntimeException('Could not save your video vote. Please try again.');
+            }
+            $upd->close();
+
+            $_SESSION[$mine] = $mineActive
+                ? array_values(array_diff($_SESSION[$mine], [$vid]))
+                : array_merge($_SESSION[$mine], [$vid]);
+            if (!$mineActive && $otherActive) {
+                $_SESSION[$other] = array_values(array_diff($_SESSION[$other], [$vid]));
+            }
+
+            // Tell the uploader someone liked their video (only when a like was added).
+            if ($isLike && !$mineActive && !empty($_SESSION['username'])) {
+                vs_notify_video_event($conn, $v, 'like', (string)$_SESSION['username']);
             }
 
             $c = $counts();
@@ -228,29 +252,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'subscribe') {
-            $ch = $v['channel_name'] ?? ($v['username'] ?? '');
-            $key = trim($ch) !== '' ? 'ch:' . mb_strtolower(trim($ch)) : 'id:' . $vid;
-            $was = in_array($key, $_SESSION['subscribed_channels'], true);
-
-            if ($was) {
-                $_SESSION['subscribed_channels'] = array_values(array_diff($_SESSION['subscribed_channels'], [$key]));
-                $upd = $conn->prepare("UPDATE videos SET subscribers = GREATEST(COALESCE(subscribers,0) - 1, 0) WHERE id = ?");
-            } else {
-                $_SESSION['subscribed_channels'][] = $key;
-                $upd = $conn->prepare("UPDATE videos SET subscribers = COALESCE(subscribers,0) + 1 WHERE id = ?");
-            }
-
-            $upd->bind_param("s", $vid);
-            $upd->execute();
-            $upd->close();
-
-            $stmt = $conn->prepare("SELECT COALESCE(subscribers,0) AS n FROM videos WHERE id = ?");
-            $stmt->bind_param("s", $vid);
-            $stmt->execute();
-            $n = (int)$stmt->get_result()->fetch_assoc()['n'];
-            $stmt->close();
-
-            json_out(['success' => true, 'subscribed' => !$was, 'subscribers' => $n]);
+            $channelName = trim((string)($v['channel_name'] ?? ''));
+            $channelUsername = trim((string)($v['username'] ?? ''));
+            if ($channelName === '') $channelName = $channelUsername;
+            $result = vs_subscription_change($conn, $channelName, $channelUsername, $vid);
+            json_out(['success' => true] + $result);
         }
 
         if ($action === 'comment') {
@@ -261,7 +267,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ins = $conn->prepare("INSERT INTO comments (video_id, username, comment_text) VALUES (?, ?, ?)");
             $ins->bind_param("sss", $vid, $user, $text);
             $ins->execute();
+            $newCommentId = (int)$conn->insert_id;
             $ins->close();
+            vs_notify_video_event($conn, $v, 'comment', (string)$user, $text);
+            vs_notify_comment_reply($conn, $v, (string)$user, $text, $newCommentId);
 
             $stmt = $conn->prepare("SELECT COUNT(*) AS n FROM comments WHERE video_id = ?");
             $stmt->bind_param("s", $vid);
@@ -274,9 +283,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'username' => $user,
                 'comment_text' => $text,
                 'comment_count' => $n,
+                'id' => $newCommentId,
+                'html' => vs_comment_new_item_html($newCommentId, (string)$user, $text),
                 'avatar' => avatar_or_cartoon($user), 
             ]);
         }
+
+        $commentResult = vs_comments_handle_action($conn, (string)$action, $vid);
+        if ($commentResult !== null) json_out($commentResult);
 
         json_out(['success' => false, 'error' => 'Unknown action']);
     } catch (Throwable $e) {
@@ -306,8 +320,8 @@ if (!$video) {
 if (!$video) {
     $video = [
         'id' => 0,
-        'title' => 'Welcome to VibeStream',
-        'channel_name' => 'VibeStream',
+        'title' => 'Welcome to ' . $siteName,
+        'channel_name' => $siteName,
         'subscribers' => 0,
         'upload_date' => 'just now',
         'description' => 'Upload your first video to get started.',
@@ -325,6 +339,15 @@ if ($hasTypeColumn && ($video['type'] ?? '') === 'short') {
 
 $id = $video['id'];
 
+// Save to the signed-in user's watch history (History page)
+if ($id !== 0 && !empty($_SESSION['username'])) {
+    try {
+        vs_history_record($conn, (string)$id);
+    } catch (Throwable $historyError) {
+        error_log('Watch history failed: ' . $historyError->getMessage());
+    }
+}
+
 if (!isset($_SESSION['viewed_videos']) || !is_array($_SESSION['viewed_videos'])) {
     $_SESSION['viewed_videos'] = [];
 }
@@ -339,12 +362,16 @@ if ($id !== 0 && !in_array($id, $_SESSION['viewed_videos'], true)) {
 
 $title = $video['title'] ?? 'Video not found';
 $views = (int)($video['views'] ?? 0);
-$channel = $video['channel_name'] ?? ($video['username'] ?? 'Unknown channel');
+$channel = trim((string)($video['channel_name'] ?? ''));
+if ($channel === '') $channel = trim((string)($video['username'] ?? 'Unknown channel'));
 $subs = (int)($video['subscribers'] ?? 0);
 $upload_date = $video['upload_date'] ?? 'Recently';
 $description = $video['description'] ?? '';
 $likes = (int)($video['likes'] ?? 0);
 $dislikes = (int)($video['dislikes'] ?? 0);
+if (!$hasDislikesColumn) {
+    $dislikes = 0;
+}
 
 $src = find_source($video, __DIR__);
 $yt_id = $src !== '' ? extract_youtube_id($src, true) : null;
@@ -352,26 +379,33 @@ $is_direct = $src !== '' && !$yt_id;
 
 $channelOwner = trim((string)($video['username'] ?? ''));
 if ($channelOwner === '') $channelOwner = $channel;
-$avatar_url = avatar_url($channelOwner);
+$avatar_url = avatar_for_record($channelOwner, $video);
 if ($avatar_url === '' && $channelOwner !== $channel) $avatar_url = avatar_url($channel);
-if ($avatar_url === '') $avatar_url = 'https://api.dicebear.com/7.x/avataaars/svg?seed=' . urlencode($channel);
 $user_avatar = avatar_or_cartoon($_SESSION['username'] ?? '');
+$channelInitial = mb_strtoupper(mb_substr(trim((string)$channel) !== '' ? trim((string)$channel) : 'V', 0, 1));
 
 foreach (['liked_videos', 'disliked_videos', 'subscribed_channels'] as $k) {
     if (!isset($_SESSION[$k]) || !is_array($_SESSION[$k])) $_SESSION[$k] = [];
 }
+try {
+    vs_subscription_session_sync($conn);
+} catch (Throwable $subscriptionError) {
+    error_log('Could not synchronize VibeStream subscriptions: ' . $subscriptionError->getMessage());
+}
+if (!$hasDislikesColumn) {
+    $_SESSION['disliked_videos'] = [];
+}
 $userHasLiked = in_array($id, $_SESSION['liked_videos'], true);
 $userHasDisliked = in_array($id, $_SESSION['disliked_videos'], true);
-$channelKey = trim($channel) !== '' ? 'ch:' . mb_strtolower(trim($channel)) : 'id:' . $id;
+$channelKey = vs_subscription_key($channel);
 $userHasSubscribed = in_array($channelKey, $_SESSION['subscribed_channels'], true);
 
-$comments = [];
-if ($stmt = $conn->prepare("SELECT * FROM comments WHERE video_id = ? ORDER BY created_at DESC")) {
-    $stmt->bind_param("s", $id);
-    $stmt->execute();
-    $cres = $stmt->get_result();
-    while ($crow = $cres->fetch_assoc()) $comments[] = $crow;
-    $stmt->close();
+$viewerName = trim((string)($_SESSION['username'] ?? ''));
+try {
+    $comments = vs_comments_fetch($conn, (string)$id, $viewerName);
+} catch (Throwable $commentsError) {
+    error_log('Comments failed: ' . $commentsError->getMessage());
+    $comments = [];
 }
 $commentCount = count($comments);
 
@@ -392,8 +426,15 @@ if ($stmt = $conn->prepare($relSql)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($title); ?> - VibeStream</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="vs-default-theme" content="<?php echo htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="theme-color" content="<?php echo $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff'; ?>">
+    <meta name="description" content="<?php echo htmlspecialchars(vs_branding_app_description(), ENT_QUOTES, 'UTF-8'); ?>">
+    <link rel="manifest" href="manifest.php">
+    <link rel="apple-touch-icon" href="branding-icon.php">
+    <title><?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?> - <?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
+    <script src="theme.js?v=3"></script>
+    <link rel="stylesheet" href="style.css?v=5">
+
     <style>
         :root {
             --bg: #0f0f0f;
@@ -452,11 +493,13 @@ if ($stmt = $conn->prepare($relSql)) {
         .nav-right { justify-content: flex-end; }
 
         .brand {
-            font-size: 22px;
+                    display: inline-flex; align-items: center; gap: 9px;
+                    font-size: 22px;
             font-weight: 700;
             letter-spacing: 0.2px;
             white-space: nowrap;
         }
+        .brand .site-brand-icon { width: 38px; height: 38px; border-radius: 8px; object-fit: cover; flex: 0 0 auto; }
 
         .nav-toggle {
             width: 44px;
@@ -647,10 +690,15 @@ if ($stmt = $conn->prepare($relSql)) {
         }
         .channel-info { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
         .channel-avatar {
-            width: 40px; height: 40px; border-radius: 50%; background-color: #333333;
-            overflow: hidden; flex-shrink: 0;
+            display: grid; place-items: center;
+            width: 44px; height: 44px; border: 2px solid rgba(255,255,255,.78);
+            border-radius: 50%; background: linear-gradient(135deg, #1687ff, #a334d9);
+            color: #ffffff; overflow: hidden; flex: 0 0 44px;
+            box-shadow: 0 2px 9px rgba(0,0,0,.32);
         }
-        .channel-avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .channel-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+        .channel-avatar .avatar-initial { font-size: 17px; font-weight: 800; line-height: 1; }
+        .channel-text { min-width: 0; }
         .channel-text h3 { margin: 0; font-size: 16px; font-weight: 600; }
         .channel-text p { margin: 2px 0 0 0; font-size: 12px; color: var(--muted); }
 
@@ -674,11 +722,14 @@ if ($stmt = $conn->prepare($relSql)) {
         .like-dislike-group { display: flex; background-color: var(--surface-2); border-radius: 18px; overflow: hidden; }
         .like-dislike-group button {
             background: none; border: none; color: var(--text); padding: 8px 14px;
-            font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+            font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 7px;
             transition: background 0.2s ease, color 0.2s ease;
         }
-        .like-dislike-group button:hover { background-color: #3f3f3f; }
-        .like-dislike-group button.active { background-color: rgba(255, 255, 255, 0.12); color: var(--blue); }
+        .like-dislike-group button svg { width: 18px; height: 18px; flex: 0 0 18px; }
+        .like-dislike-group button:hover:not(:disabled) { background-color: #3f3f3f; }
+        .like-dislike-group #like-btn.active { background-color: rgba(62, 166, 255, 0.14); color: var(--blue); }
+        .like-dislike-group #dislike-btn.active { background-color: rgba(255, 107, 99, 0.14); color: #ff8a83; }
+        .like-dislike-group button:disabled { color: #777777; cursor: not-allowed; opacity: .55; }
         .like-dislike-group .divider { width: 1px; background-color: #3f3f3f; margin: 6px 0; }
 
         .description-box {
@@ -759,7 +810,12 @@ if ($stmt = $conn->prepare($relSql)) {
 
         @media (max-width: 640px) {
             .channel-bar { align-items: flex-start; }
-            .action-buttons { width: 100%; }
+            .channel-info { width: 100%; flex-wrap: nowrap; gap: 9px; }
+            .channel-text { flex: 1 1 auto; }
+            .subscribe-btn { margin-left: auto; padding: 8px 13px; }
+            .action-buttons { width: 100%; gap: 6px; }
+            .like-dislike-group button { padding: 8px 10px; }
+            .btn-pill { padding: 8px 10px; }
             .video-card.compact .thumbnail {
                 width: 140px; min-width: 140px; height: 78px;
             }
@@ -767,6 +823,8 @@ if ($stmt = $conn->prepare($relSql)) {
     </style>
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
+    <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="comments.css?v=1">
 </head>
 <body>
     <?php render_navbar('watch'); ?>
@@ -810,7 +868,11 @@ if ($stmt = $conn->prepare($relSql)) {
                             <div class="channel-bar">
                                 <div class="channel-info">
                                     <div class="channel-avatar">
-                                        <img id="main-avatar" src="<?php echo htmlspecialchars($avatar_url); ?>" alt="Channel Avatar">
+                                        <?php if ($avatar_url !== ''): ?>
+                                            <img id="main-avatar" src="<?php echo htmlspecialchars($avatar_url); ?>" alt="<?php echo htmlspecialchars($channel); ?> channel avatar">
+                                        <?php else: ?>
+                                            <span class="avatar-initial" aria-label="<?php echo htmlspecialchars($channel); ?> channel avatar"><?php echo htmlspecialchars($channelInitial); ?></span>
+                                        <?php endif; ?>
                                     </div>
                                     <div class="channel-text">
                                         <h3 id="main-channel"><?php echo htmlspecialchars($channel); ?></h3>
@@ -823,12 +885,14 @@ if ($stmt = $conn->prepare($relSql)) {
 
                                 <div class="action-buttons">
                                     <div class="like-dislike-group">
-                                        <button id="like-btn" type="button" class="<?php echo $userHasLiked ? 'active' : ''; ?>">
-                                            &#128077; <span id="main-likes"><?php echo $likes; ?></span>
+                                        <button id="like-btn" type="button" aria-label="Like video" aria-pressed="<?php echo $userHasLiked ? 'true' : 'false'; ?>" class="<?php echo $userHasLiked ? 'active' : ''; ?>">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7l-3.7-.92A2 2 0 0 1 1.8 19.14v-6.28a2 2 0 0 1 1.5-1.94L7 10l4.7-7.06A2 2 0 0 1 15 5.88Z"/></svg>
+                                            <span id="main-likes"><?php echo number_format($likes); ?></span>
                                         </button>
                                         <div class="divider"></div>
-                                        <button id="dislike-btn" type="button" class="<?php echo $userHasDisliked ? 'active' : ''; ?>">
-                                            &#128078; <span id="main-dislikes"><?php echo $dislikes; ?></span>
+                                        <button id="dislike-btn" type="button" aria-label="Dislike video" aria-pressed="<?php echo $userHasDisliked ? 'true' : 'false'; ?>" class="<?php echo $userHasDisliked ? 'active' : ''; ?>"<?php echo $hasDislikesColumn ? '' : ' disabled title="Dislikes are not enabled in this database"'; ?>>
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17l3.7.92a2 2 0 0 1 1.5 1.94v6.28a2 2 0 0 1-1.5 1.94L17 14l-4.7 7.06A2 2 0 0 1 9 18.12Z"/></svg>
+                                            <span id="main-dislikes"><?php echo number_format($dislikes); ?></span>
                                         </button>
                                     </div>
                                     <button class="btn-pill" type="button">Share</button>
@@ -846,41 +910,15 @@ if ($stmt = $conn->prepare($relSql)) {
                             <div id="main-description"><?php echo htmlspecialchars($description); ?></div>
                         </div>
 
-                        <div class="comments-section">
-                            <div class="comments-header">
-                                <h3><span id="comment-count"><?php echo $commentCount; ?></span> Comments</h3>
-                            </div>
-
-                            <div class="add-comment-box">
-                                <div class="channel-avatar">
-                                    <img src="<?php echo htmlspecialchars($user_avatar); ?>" alt="User Avatar">
-                                </div>
-                                <div class="comment-input-container">
-                                    <input type="text" id="comment-input" class="comment-input-line" placeholder="Add a comment..." maxlength="500">
-                                    <button id="comment-btn" type="button" class="comment-submit-btn" disabled>Comment</button>
-                                </div>
-                            </div>
-
-                            <div id="comment-list" class="comment-list">
-                                <?php foreach ($comments as $c):
-                                    $cTime = !empty($c['created_at']) ? date('M j, Y', strtotime($c['created_at'])) : '';
-                                    $cAvatar = avatar_or_cartoon($c['username'] ?? '');
-                                ?>
-                                    <div class="comment-item">
-                                        <div class="channel-avatar">
-                                            <img src="<?php echo htmlspecialchars($cAvatar); ?>" alt="Avatar">
-                                        </div>
-                                        <div class="comment-body">
-                                            <div class="comment-author">
-                                                <?php echo htmlspecialchars($c['username'] ?? ''); ?>
-                                                <span class="comment-time"><?php echo htmlspecialchars($cTime); ?></span>
-                                            </div>
-                                            <div class="comment-text"><?php echo htmlspecialchars($c['comment_text'] ?? ''); ?></div>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        </div>
+                        <?php echo vs_comments_panel_html([
+                            'endpoint' => 'watch.php',
+                            'video_id' => (string)$id,
+                            'comments' => $comments,
+                            'viewer' => $viewerName,
+                            'is_admin' => vs_comments_is_admin(),
+                            'viewer_avatar' => $viewerName !== '' ? avatar_url($viewerName) : '',
+                            'list_id' => 'comment-list',
+                        ]); ?>
                     </div>
 
                     <aside class="recommendations-section">
@@ -914,6 +952,8 @@ if ($stmt = $conn->prepare($relSql)) {
     <div class="toast" id="toast"></div>
 
     <script src="sidebar.js"></script>
+
+    <script src="comments.js?v=1"></script>
     <script>
         const VIDEO_ID = <?php echo json_encode((string)$id); ?>;
 
@@ -943,29 +983,34 @@ if ($stmt = $conn->prepare($relSql)) {
         document.addEventListener('DOMContentLoaded', () => {
             const likeBtn = document.getElementById('like-btn');
             const dislikeBtn = document.getElementById('dislike-btn');
+            const dislikesAvailable = !dislikeBtn.disabled;
             const subBtn = document.getElementById('subscribe-btn');
             const subsText = document.getElementById('main-subs');
-            const input = document.getElementById('comment-input');
-            const commentBtn = document.getElementById('comment-btn');
 
             function applyVotes(data) {
-                document.getElementById('main-likes').textContent = data.likes;
-                document.getElementById('main-dislikes').textContent = data.dislikes;
+                const formatCount = (count) => (Number(count) || 0).toLocaleString();
+                document.getElementById('main-likes').textContent = formatCount(data.likes);
+                document.getElementById('main-dislikes').textContent = formatCount(data.dislikes ?? 0);
                 likeBtn.classList.toggle('active', !!data.liked);
                 dislikeBtn.classList.toggle('active', !!data.disliked);
+                likeBtn.setAttribute('aria-pressed', String(!!data.liked));
+                dislikeBtn.setAttribute('aria-pressed', String(!!data.disliked));
             }
 
-            likeBtn.addEventListener('click', async () => {
-                const data = await postAction('like');
-                if (!data.success) return toast(data.error || 'Like failed');
-                applyVotes(data);
-            });
-
-            dislikeBtn.addEventListener('click', async () => {
-                const data = await postAction('dislike');
-                if (!data.success) return toast(data.error || 'Dislike failed');
-                applyVotes(data);
-            });
+            async function updateVote(action) {
+                likeBtn.disabled = true;
+                dislikeBtn.disabled = true;
+                try {
+                    const data = await postAction(action);
+                    if (!data.success) return toast(data.error || 'Vote failed');
+                    applyVotes(data);
+                } finally {
+                    likeBtn.disabled = false;
+                    dislikeBtn.disabled = !dislikesAvailable;
+                }
+            }
+            likeBtn.addEventListener('click', () => updateVote('like'));
+            dislikeBtn.addEventListener('click', () => updateVote('dislike'));
 
             subBtn.addEventListener('click', async () => {
                 subBtn.disabled = true;
@@ -977,61 +1022,8 @@ if ($stmt = $conn->prepare($relSql)) {
                 subBtn.classList.toggle('subscribed', data.subscribed);
                 subsText.textContent = data.subscribers + (data.subscribers == 1 ? ' subscriber' : ' subscribers');
             });
-
-            function refreshCommentBtn() {
-                commentBtn.disabled = input.value.trim() === '';
-            }
-
-            input.addEventListener('input', refreshCommentBtn);
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') addComment();
-            });
-            commentBtn.addEventListener('click', addComment);
-
-            async function addComment() {
-                const text = input.value.trim();
-                if (text === '') return;
-
-                const data = await postAction('comment', { comment_text: text });
-                if (!data.success) return toast(data.error || 'Comment failed');
-
-                document.getElementById('comment-count').textContent = data.comment_count;
-
-                const item = document.createElement('div');
-                item.className = 'comment-item';
-
-                const av = document.createElement('div');
-                av.className = 'channel-avatar';
-                const img = document.createElement('img');
-                img.src = data.avatar || ('https://api.dicebear.com/7.x/avataaars/svg?seed=' + encodeURIComponent(data.username));
-                img.alt = 'Avatar';
-                av.appendChild(img);
-
-                const body = document.createElement('div');
-                body.className = 'comment-body';
-
-                const author = document.createElement('div');
-                author.className = 'comment-author';
-                author.appendChild(document.createTextNode(data.username));
-
-                const time = document.createElement('span');
-                time.className = 'comment-time';
-                time.textContent = 'Just now';
-                author.appendChild(time);
-
-                const txt = document.createElement('div');
-                txt.className = 'comment-text';
-                txt.textContent = data.comment_text;
-
-                body.append(author, txt);
-                item.append(av, body);
-                document.getElementById('comment-list').prepend(item);
-
-                input.value = '';
-                refreshCommentBtn();
-            }
         });
     </script>
 </body>
 </html>
-<?php if (isset($conn)) { $conn->close(); } ?>
+<?php if (isset($conn)) {  } ?>
