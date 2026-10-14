@@ -1,764 +1,627 @@
 <?php
+require_once __DIR__ . '/layout.php';
+require_once __DIR__ . '/icons.php';
+require_once __DIR__ . '/avatar.php';
+require_once __DIR__ . '/subscription-store.php';
+include __DIR__ . '/connection.php';
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-require_once __DIR__ . '/avatar.php';
-require_once __DIR__ . '/connection.php';
-require_once __DIR__ . '/site-branding.php';
-require_once __DIR__ . '/notifications-store.php';
-$siteName = vs_branding_app_name();
+if (!isset($conn) || !($conn instanceof mysqli)) {
+    $conn = new mysqli('localhost', 'root', '', 'vibestream');
+}
+$conn->set_charset('utf8mb4');
 
-if (!defined('YOUTUBE_API_KEY')) {
-    define('YOUTUBE_API_KEY', getenv('YOUTUBE_API_KEY') ?: 'YOUR_YOUTUBE_API_KEY');
+$viewer = trim((string)($_SESSION['username'] ?? ''));
+$profileUser = '';
+foreach (['u', 'user', 'username', 'channel'] as $param) {
+    if (isset($_GET[$param]) && trim((string)$_GET[$param]) !== '') {
+        $profileUser = trim((string)$_GET[$param]);
+        break;
+    }
+}
+if ($profileUser === '') {
+    $profileUser = $viewer;
+}
+if ($profileUser === '') {
+    header('Location: login.php');
+    exit;
+}
+$isMe = $viewer !== '' && strcasecmp($profileUser, $viewer) === 0;
+if ($isMe) {
+    $profileUser = $viewer;
 }
 
-function getYouTubeDetails($videoId) {
-    if (empty(YOUTUBE_API_KEY) || YOUTUBE_API_KEY === 'YOUR_YOUTUBE_API_KEY') {
-        return null;
-    }
-    
-    $url = "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&id={$videoId}&key=" . YOUTUBE_API_KEY;
-    
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL,$url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-    $response = curl_exec($ch);
-    curl_close($ch);
-    
-    $data = json_decode($response, true);
-    
-    if (!empty($data['items'][0])) {
-        $item =$data['items'][0];
-        return [
-            'title'        => $item['snippet']['title'],
-            'channelTitle' => $item['snippet']['channelTitle'],
-            'publishedAt'  => date("M j, Y", strtotime($item['snippet']['publishedAt'])),
-            'thumbnail'    => $item['snippet']['thumbnails']['high']['url'] ?? $item['snippet']['thumbnails']['default']['url'],
-            'views'        => $item['statistics']['viewCount'] ?? 0
-        ];
-    }
-    return null;
+if (empty($_SESSION['csrf'])) {
+    $_SESSION['csrf'] = bin2hex(random_bytes(16));
 }
+$csrf = $_SESSION['csrf'];
 
-$action =$_GET['action'] ?? '';
-$page   =$_GET['page'] ?? '';
-
-if ($action === 'google_login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    header('Content-Type: application/json; charset=utf-8');
-
-    $respond = static function (int $status, array $body): void {
-        http_response_code($status);
-        echo json_encode($body);
-        exit;
-    };
-    require_once __DIR__ . '/google-oauth.php';
-    if (!GOOGLE_OAUTH_ENABLED || GOOGLE_OAUTH_CLIENT_ID === '') {
-        $respond(503, ['success' => false, 'message' => 'Google sign-in is coming soon. Please use your email and password for now.']);
+/**
+ * Renames a user everywhere the old name is stored.
+ * Returns '' on success, or an error message to show the user.
+ */
+function vs_rename_user(mysqli $conn, string $old, string $new): string
+{
+    $new = trim($new);
+    if ($new === $old) {
+        return 'That is already your name.';
     }
-    $credential = trim((string)($_POST['credential'] ?? ''));
-    $nonce = (string)($_SESSION['google_oauth_nonce'] ?? '');
-    unset($_SESSION['google_oauth_nonce']);
-
-    if ($credential === '' || $nonce === '') {
-        $respond(400, ['success' => false, 'message' => 'Your sign-in session expired. Refresh the page and try again.']);
+    if (!preg_match('/^[\p{L}\p{N}_.-]{3,30}$/u', $new)) {
+        return 'Use 3-30 characters: letters, numbers, dot, dash or underscore (no spaces).';
+    }
+    $isAdmin = strcasecmp((string)($_SESSION['role'] ?? ''), 'admin') === 0;
+    if (!$isAdmin && in_array(mb_strtolower($new), ['admin', 'administrator', 'root', 'system', 'support', 'guest'], true)) {
+        return 'That name is reserved. Please choose another one.';
     }
 
-    $curl = curl_init('https://oauth2.googleapis.com/tokeninfo?id_token=' . rawurlencode($credential));
-    curl_setopt_array($curl, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 8,
-        CURLOPT_CONNECTTIMEOUT => 4,
-        CURLOPT_SSL_VERIFYPEER => true,
-        CURLOPT_SSL_VERIFYHOST => 2,
-    ]);
-    $tokenResponse = curl_exec($curl);
-    $tokenStatus = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
-    $tokenError = curl_error($curl);
-    curl_close($curl);
-
-    if ($tokenResponse === false || $tokenStatus !== 200) {
-        error_log('Google token verification failed: ' . ($tokenError !== '' ? $tokenError : 'HTTP ' . $tokenStatus));
-        $respond(502, ['success' => false, 'message' => 'Google could not verify your sign-in. Please try again.']);
+    // Every text column that stores a user name (found automatically).
+    $nameColumns = ['username', 'user_name', 'uploader', 'channel', 'channel_name', 'subscriber', 'subscriber_name',
+                    'author', 'owner', 'commenter', 'posted_by', 'created_by'];
+    $in = implode(',', array_map(static fn($c) => "'" . $c . "'", $nameColumns));
+    $sql = "SELECT c.TABLE_NAME, c.COLUMN_NAME
+            FROM information_schema.COLUMNS c
+            JOIN information_schema.TABLES t
+              ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_TYPE = 'BASE TABLE'
+            WHERE c.TABLE_SCHEMA = DATABASE()
+              AND c.DATA_TYPE IN ('varchar','char','tinytext','text','mediumtext','longtext')
+              AND c.COLUMN_NAME IN ($in)";
+    $targets = [];
+    $res = $conn->query($sql);
+    if (!$res) {
+        error_log('Rename: could not inspect tables: ' . $conn->error);
+        return 'Could not change your name right now. Please try again later.';
+    }
+    while ($row = $res->fetch_row()) {
+        $targets[] = [$row[0], $row[1]];
+    }
+    $res->close();
+    if (!in_array(['users', 'username'], $targets, true)) {
+        return 'Could not change your name right now. Please try again later.';
     }
 
-    $claims = json_decode($tokenResponse, true);
-    $issuer = $claims['iss'] ?? '';
-    $verifiedEmail = filter_var($claims['email'] ?? '', FILTER_VALIDATE_EMAIL);
-    if (
-        !is_array($claims)
-        || !hash_equals(GOOGLE_OAUTH_CLIENT_ID, (string)($claims['aud'] ?? ''))
-        || !in_array($issuer, ['accounts.google.com', 'https://accounts.google.com'], true)
-        || (int)($claims['exp'] ?? 0) <= time()
-        || !hash_equals($nonce, (string)($claims['nonce'] ?? ''))
-        || !in_array($claims['email_verified'] ?? false, [true, 'true', 1, '1'], true)
-        || !$verifiedEmail
-        || empty($claims['sub'])
-    ) {
-        $respond(401, ['success' => false, 'message' => 'Google returned an invalid or expired sign-in. Please try again.']);
-    }
-
-    $userColumns = [];
-    $columnResult = $conn->query('SHOW COLUMNS FROM `users`');
-    if (!$columnResult) {
-        error_log('Google sign-in could not inspect users table: ' . $conn->error);
-        $respond(500, ['success' => false, 'message' => 'Sign-in is temporarily unavailable. Please try again later.']);
-    }
-    while ($column = $columnResult->fetch_assoc()) {
-        $userColumns[strtolower($column['Field'])] = $column;
-    }
-    foreach (['username', 'email', 'role'] as $requiredColumn) {
-        if (!isset($userColumns[$requiredColumn])) {
-            $respond(500, ['success' => false, 'message' => 'Google sign-in needs username, email, and role fields in the users table.']);
+    $q = static function (string $id): string { return '`' . str_replace('`', '``', $id) . '`'; };
+    $run = static function (string $sql, string $a, string $b) use ($conn): int {
+        $st = $conn->prepare($sql);
+        if (!$st) {
+            throw new RuntimeException($conn->error);
         }
-    }
+        $st->bind_param('ss', $a, $b);
+        if (!$st->execute()) {
+            $err = $st->error;
+            $st->close();
+            throw new RuntimeException($err);
+        }
+        $n = $st->affected_rows;
+        $st->close();
+        return $n;
+    };
 
-    $email = strtolower($verifiedEmail);
-    $stmt = $conn->prepare('SELECT * FROM `users` WHERE `email` = ? LIMIT 1');
-    if (!$stmt) {
-        error_log('Google sign-in could not prepare user lookup: ' . $conn->error);
-        $respond(500, ['success' => false, 'message' => 'Sign-in is temporarily unavailable. Please try again later.']);
-    }
-    $stmt->bind_param('s', $email);
-    if (!$stmt->execute()) {
-        error_log('Google sign-in user lookup failed: ' . $stmt->error);
-        $stmt->close();
-        $respond(500, ['success' => false, 'message' => 'Sign-in is temporarily unavailable. Please try again later.']);
-    }
-    $user = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if (!$user) {
-        $displayName = trim((string)($claims['name'] ?? ''));
-        $fallbackName = strstr($email, '@', true);
-        $baseUsername = preg_replace('/[^\p{L}\p{N}_.-]+/u', '_', $displayName !== '' ? $displayName : $fallbackName);
-        $baseUsername = trim((string)$baseUsername, '_.-');
-        $baseUsername = mb_substr($baseUsername !== '' ? $baseUsername : 'GoogleUser', 0, 20);
-        $newUser = [
-            'username' => $baseUsername . '_' . substr(hash('sha256', (string)$claims['sub']), 0, 8),
-            'email' => $email,
-            'role' => 'user',
-        ];
-        foreach (['password', 'pass', 'user_password'] as $passwordColumn) {
-            if (isset($userColumns[$passwordColumn])) {
-                $newUser[$passwordColumn] = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
-                break;
+    try {
+        // Refuse a name that is already used anywhere (this also protects other people's uploads).
+        foreach ($targets as [$table, $column]) {
+            $st = $conn->prepare('SELECT 1 FROM ' . $q($table) . ' WHERE ' . $q($column) . ' = ? AND BINARY ' . $q($column) . ' <> BINARY ? LIMIT 1');
+            if (!$st) {
+                throw new RuntimeException($conn->error);
+            }
+            $st->bind_param('ss', $new, $old);
+            $st->execute();
+            $st->store_result();
+            $taken = $st->num_rows > 0;
+            $st->close();
+            if ($taken) {
+                return 'That name is already taken. Please choose another one.';
             }
         }
 
-        $fields = array_keys($newUser);
-        $quotedFields = implode(', ', array_map(static fn($field) => '`' . $field . '`', $fields));
-        $placeholders = implode(', ', array_fill(0, count($fields), '?'));
-        $insert = $conn->prepare('INSERT INTO `users` (' . $quotedFields . ') VALUES (' . $placeholders . ')');
-        if (!$insert) {
-            error_log('Google sign-in could not prepare account creation: ' . $conn->error);
-            $respond(500, ['success' => false, 'message' => 'Could not create your account. Please try again later.']);
+        $conn->begin_transaction();
+        if ($run('UPDATE `users` SET `username` = ? WHERE `username` = ?', $new, $old) < 1) {
+            $conn->rollback();
+            return 'Could not find your account to update.';
         }
-        $values = array_values($newUser);
-        $types = str_repeat('s', count($values));
-        $insert->bind_param($types, ...$values);
-        if (!$insert->execute()) {
-            error_log('Google sign-in account creation failed: ' . $insert->error);
-            $insert->close();
-            $respond(500, ['success' => false, 'message' => 'Could not create your account. Please try again later.']);
+        foreach ($targets as [$table, $column]) {
+            if ($table === 'users' && $column === 'username') {
+                continue;
+            }
+            $run('UPDATE ' . $q($table) . ' SET ' . $q($column) . ' = ? WHERE ' . $q($column) . ' = ?', $new, $old);
         }
-        $insert->close();
-        $user = $newUser;
-        $user['id'] = $conn->insert_id;
+        $conn->commit();
+    } catch (Throwable $e) {
+        try { $conn->rollback(); } catch (Throwable $ignored) {}
+        error_log('Rename failed: ' . $e->getMessage());
+        return 'Could not change your name right now. Please try again later.';
     }
-
-    $username = (string)$user['username'];
-    if (!empty($claims['picture']) && avatar_path($username) === '') {
-        if (!avatar_import_google($username, (string)$claims['picture'])) {
-            error_log('Could not import a verified Google profile avatar.');
-        }
-    }
-
-    session_regenerate_id(true);
-    $_SESSION['user_id'] = $user['id'] ?? null;
-    $_SESSION['username'] = $username;
-    $_SESSION['role'] = $user['role'] ?? 'user';
-    $_SESSION['UserSession'] = $username;
-    $_SESSION['UserId'] = $user['id'] ?? null;
-    $redirect = 'index.php';
-    if (strcasecmp((string)$_SESSION['role'], 'admin') === 0) {
-        $_SESSION['AdminSession'] = $username;
-        $_SESSION['AdminID'] = $user['id'] ?? null;
-        $_SESSION['AdminId'] = $user['id'] ?? null;
-        $redirect = 'adminpanel/index.php';
-    }
-
-    $respond(200, ['success' => true, 'redirect' => $redirect]);
+    return '';
 }
 
-if ($action === 'get_all') {
-    header('Content-Type: application/json');
-    $sql = "SELECT id, title, views FROM videos";
-    $result =$conn->query($sql);$data = [];
-    if ($result &&$result->num_rows > 0) {
-        while ($row =$result->fetch_assoc()) {
-            $data[$row['id']] = [
-                "title" => $row['title'],
-                "views" => (int)$row['views']
-            ];
+/** Keeps the profile picture and banner when a user is renamed (files are stored under a key made from the name). */
+function vs_move_avatar(string $old, string $new): void
+{
+    if (avatar_key($old) === avatar_key($new)) {
+        return;
+    }
+    $from = avatar_path($old);
+    if ($from !== '' && is_file($from)) {
+        $to = dirname($from) . '/' . avatar_key($new) . '.' . pathinfo($from, PATHINFO_EXTENSION);
+        if (!@rename($from, $to)) {
+            error_log('Could not move the avatar from ' . $from . ' to ' . $to);
         }
     }
-    echo json_encode($data);$conn->close();
-    exit;
+    banner_move($old, $new);
 }
 
-if ($action === 'watch') {
-    header('Content-Type: application/json');
-    $id =$_GET['id'] ?? '';
-    if (!empty($id)) {
-        $stmt =$conn->prepare("UPDATE videos SET views = views + 1 WHERE id = ?");
-        $stmt->bind_param("s", $id);
-        $stmt->execute();$stmt->close();
-        
-        $stmt_get =$conn->prepare("SELECT views FROM videos WHERE id = ?");
-        $stmt_get->bind_param("s", $id);$stmt_get->execute();
-        $result =$stmt_get->get_result();
-        if ($row =$result->fetch_assoc()) {
-            echo json_encode(["success" => true, "views" => (int)$row['views']]);
-        } else {
-            echo json_encode(["success" => false, "message" => "Video not found"]);
+if (!function_exists('thumb_for')) {
+    function thumb_for(array $row, $src, $realYt) {
+        if ($realYt) return "https://i.ytimg.com/vi/{$realYt}/hqdefault.jpg";
+        foreach (['thumbnail', 'thumb', 'image', 'img', 'poster'] as $c) {
+            if (!empty($row[$c])) return $row[$c];
         }
-        $stmt_get->close();
-    } else {
-        echo json_encode(["success" => false, "message" => "Invalid video ID"]);
+        return 'data:image/svg+xml;utf8,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#1e1e24"/><text x="50%" y="50%" fill="#6f6f7a" font-family="Arial" font-size="16" text-anchor="middle" dy=".3em">No preview</text></svg>');
     }
-    $conn->close();
-    exit;
 }
-
-
-if ($action === 'auth') {
-    header('Content-Type: application/json');
-    $input = json_decode(file_get_contents('php://input'), true);
-    $usernameInput =$input['username'] ?? '';
-    $isGuest =$input['isGuest'] ?? false;
-
-    if ($isGuest || empty($usernameInput)) {$finalUser = "Guest_" . rand(1000, 9999);
-        $role = "guest";
-    } else {
-        $finalUser = htmlspecialchars($usernameInput);$role = "user";
-        
-        $stmt =$conn->prepare("SELECT id, username, role FROM users WHERE username = ?");
-        $stmt->bind_param("s", $finalUser);$stmt->execute();
-        $result =$stmt->get_result();
-        
-        if ($row =$result->fetch_assoc()) {
-            $role =$row['role'];
-        } else {
-            $stmt_insert =$conn->prepare("INSERT INTO users (username, role) VALUES (?, ?)");
-            $stmt_insert->bind_param("ss", $finalUser,$role);
-            $stmt_insert->execute();$stmt_insert->close();
+if (!function_exists('vs_short_views')) {
+    function vs_short_views($n) {
+        $n = (int)$n;
+        if ($n >= 1000000000) { $v = $n / 1000000000; $u = 'B'; }
+        elseif ($n >= 1000000) { $v = $n / 1000000; $u = 'M'; }
+        elseif ($n >= 1000) { $v = $n / 1000; $u = 'K'; }
+        else { return (string)$n; }
+        $txt = $v >= 10 ? (string)round($v) : rtrim(rtrim(number_format($v, 1, '.', ''), '0'), '.');
+        return $txt . $u;
+    }
+}
+if (!function_exists('vs_yt_time_ago')) {
+    function vs_yt_time_ago($datetime) {
+        if (empty($datetime)) return '';
+        $t = strtotime($datetime);
+        if (!$t) return '';
+        $diff = max(0, time() - $t);
+        foreach ([['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]] as $u) {
+            if ($diff >= $u[1]) {
+                $n = (int)floor($diff / $u[1]);
+                return $n . ' ' . $u[0] . ($n === 1 ? '' : 's') . ' ago';
+            }
         }
-        $stmt->close();
+        return 'Just now';
     }
-
-    echo json_encode(["success" => true, "user" => ["username" => $finalUser, "role" => $role]]);$conn->close();
-    exit;
 }
 
+/* ---------- Actions ---------- */
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $flash = ['type' => 'err', 'text' => 'That request was not allowed.'];
+    $action = (string)($_POST['action'] ?? '');
 
-if (isset($_POST['login']) || isset($_POST['login_submit']) ||$action === 'login_form') {
-    $useremail =$_POST['useremail'] ?? '';
-    $password =$_POST['password'] ?? '';
+    if (hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
+        if ($isMe) {
+            if ($action === 'avatar') {
+                $err = avatar_save($viewer, $_FILES['avatar'] ?? null);
+                $flash = $err === ''
+                    ? ['type' => 'ok', 'text' => 'Avatar updated.']
+                    : ['type' => 'err', 'text' => $err];
 
-    $check_columns =$conn->query("SHOW COLUMNS FROM users LIKE 'email'");
-    $has_email = ($check_columns &&$check_columns->num_rows > 0);
+            } elseif ($action === 'avatar_remove') {
+                avatar_delete($viewer);
+                $flash = ['type' => 'ok', 'text' => 'Avatar removed.'];
 
-    if ($has_email) {
-        $stmt =$conn->prepare("SELECT * FROM users WHERE username = ? OR email = ? LIMIT 1");
-        $stmt->bind_param("ss", $useremail,$useremail);
-    } else {
-        $stmt =$conn->prepare("SELECT * FROM users WHERE username = ? LIMIT 1");
-        $stmt->bind_param("s", $useremail);
-    }
-    
-    $stmt->execute();
-    $result =$stmt->get_result();
+            } elseif ($action === 'banner') {
+                $err = banner_save($viewer, $_FILES['banner'] ?? null);
+                $flash = $err === ''
+                    ? ['type' => 'ok', 'text' => 'Banner updated.']
+                    : ['type' => 'err', 'text' => $err];
 
-    if ($row =$result->fetch_assoc()) {
-        $dbPassword =$row['password'] ?? ($row['pass'] ?? ($row['user_password'] ?? ''));
+            } elseif ($action === 'banner_remove') {
+                banner_delete($viewer);
+                $flash = ['type' => 'ok', 'text' => 'Banner removed.'];
 
-        $passwordValid = false;
-        if (!empty($dbPassword)) {
-            if (password_verify($password, $dbPassword)) {
-                $passwordValid = true;
-            } elseif (hash_equals($dbPassword, $password)) {
-                $passwordValid = true;
-                $newHash = password_hash($password, PASSWORD_DEFAULT);
-                if ($upd = $conn->prepare("UPDATE users SET password = ? WHERE id = ?")) {
-                    $upd->bind_param("si", $newHash, $row['id']);
-                    $upd->execute();
-                    $upd->close();
+            } elseif ($action === 'rename') {
+                $newName = trim((string)($_POST['new_name'] ?? ''));
+                $err = vs_rename_user($conn, $viewer, $newName);
+                if ($err === '') {
+                    vs_move_avatar($viewer, $newName);
+                    foreach (['username', 'UserSession', 'AdminSession'] as $sessionKey) {
+                        if (isset($_SESSION[$sessionKey]) && $_SESSION[$sessionKey] === $viewer) {
+                            $_SESSION[$sessionKey] = $newName;
+                        }
+                    }
+                    $flash = ['type' => 'ok', 'text' => 'Your name was changed to ' . $newName . '.'];
+                } else {
+                    $flash = ['type' => 'err', 'text' => $err];
+                }
+            }
+        } elseif ($action === 'subscribe' || $action === 'unsubscribe') {
+            if ($viewer === '') {
+                header('Location: login.php');
+                exit;
+            }
+            $exists = false;
+            if ($st = $conn->prepare('SELECT 1 FROM `users` WHERE LOWER(`username`) = LOWER(?) LIMIT 1')) {
+                $st->bind_param('s', $profileUser);
+                $st->execute();
+                $st->store_result();
+                $exists = $st->num_rows > 0;
+                $st->close();
+            }
+            if (!$exists) {
+                $flash = ['type' => 'err', 'text' => 'This channel was not found.'];
+            } else {
+                try {
+                    vs_subscription_change($conn, $profileUser, $profileUser, '', $action === 'subscribe');
+                    $flash = ['type' => 'ok', 'text' => ($action === 'subscribe' ? 'Subscribed to ' : 'Unsubscribed from ') . '@' . $profileUser . '.'];
+                } catch (Throwable $e) {
+                    $flash = ['type' => 'err', 'text' => $e->getMessage()];
                 }
             }
         }
+    }
 
-        if ($passwordValid) {
-            if (session_status() === PHP_SESSION_NONE) {
-                session_start();
-            }
-            session_regenerate_id(true);
-            $_SESSION['user_id'] =$row['id'] ?? 1;
-            $_SESSION['username'] = $row['username'] ?? $useremail;
-            $_SESSION['role'] =$row['role'] ?? 'user';
+    $_SESSION['flash'] = $flash;
+    header('Location: profile.php' . ($isMe ? '' : '?u=' . urlencode($profileUser)));
+    exit;
+}
 
-            if (strcasecmp($row["role"], "Admin") == 0) {
-                $_SESSION["AdminSession"] = $row["username"];
-                $_SESSION["AdminId"] = $row["id"]; 
-                echo "<script>alert('Login successful!'); window.location.href='adminpanel/index.php';</script>";
-                exit;
-            } else {
-                $_SESSION["UserSession"] = $row["username"];
-                $_SESSION["UserId"] = $row["id"];
-                echo "<script>alert('Login successful!'); window.location.href='index.php';</script>";
-                exit;
-            }
-        } else {
-            echo "<script>alert('Invalid password!'); window.location.href='login.php';</script>";
-            exit;
+$flash = $_SESSION['flash'] ?? null;
+unset($_SESSION['flash']);
+
+/* ---------- Load the channel ---------- */
+$accountFound = true;
+if (!$isMe) {
+    $accountFound = false;
+    if ($st = $conn->prepare('SELECT `username` FROM `users` WHERE LOWER(`username`) = LOWER(?) LIMIT 1')) {
+        $st->bind_param('s', $profileUser);
+        $st->execute();
+        $st->bind_result($foundName);
+        if ($st->fetch()) {
+            $accountFound = true;
+            $profileUser = (string)$foundName;
         }
-    } else {
-        echo "<script>alert('User not found!'); window.location.href='login.php';</script>";
-        exit;
+        $st->close();
     }
 }
 
-if (isset($_POST['signup']) || isset($_POST['signup_submit']) || $action === 'signup_form') {$username = trim($_POST['username'] ?? '');$email = trim($_POST['email'] ?? '');$password = $_POST['password'] ?? '';$confirm_password = $_POST['confirmpassword'] ?? ($_POST['confirm_password'] ?? '');
-
-    if (empty($username) || empty($password)) {
-        echo "<script>alert('Username and password are required!'); window.location.href='Signup.php';</script>";
-        exit;
-    }
-
-    if ($password !==$confirm_password) {
-        echo "<script>alert('Passwords do not match!'); window.location.href='Signup.php';</script>";
-        exit;
-    }
-
-    $check_email_col =$conn->query("SHOW COLUMNS FROM users LIKE 'email'");
-    $has_email_col = ($check_email_col &&$check_email_col->num_rows > 0);
-
-    if ($has_email_col && !empty($email)) {
-        $check =$conn->prepare("SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1");
-        $check->bind_param("ss", $username,$email);
-    } else {
-        $check =$conn->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
-        $check->bind_param("s", $username);
-    }
-    
-    $check->execute();$check->store_result();
-
-    if ($check->num_rows > 0) {
-        echo "<script>alert('Username or Email already exists!'); window.location.href='Signup.php';</script>";
-        exit;
-    }
-    $check->close();
-
-    $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-
-    if ($has_email_col) {
-        $stmt =$conn->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, 'user')");
-        $stmt->bind_param("sss", $username, $email,$hashed_password);
-    } else {
-        $stmt =$conn->prepare("INSERT INTO users (username, password, role) VALUES (?, ?, 'user')");
-        $stmt->bind_param("ss", $username,$hashed_password);
-    }
-
-    if ($stmt->execute()) {
-        echo "<script>alert('Account created successfully! Please login.'); window.location.href='login.php';</script>";
-        exit;
-    } else {
-        echo "<script>alert('Error registering account. Please try again.'); window.location.href='Signup.php';</script>";
-        exit;
-    }
-    $stmt->close();
-}
-
-
-if (isset($_POST['post_type']) ||$action === 'upload') {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    
-    if (!vs_uploads_enabled()) {
-        echo "<script>alert('Uploads are turned off right now. Please try again later.'); window.location.href='index.php';</script>";
-        exit;
-    }
-
-    $username =$_SESSION['username'] ?? ('Guest_' . rand(1000, 9999));
-    $title = trim($_POST['title'] ?? '');
-    $video_url = trim($_POST['video_url'] ?? ''); 
-    $type = trim($_POST['post_type'] ?? 'video');
-
-    if (empty($title) || empty($video_url)) {
-        echo "<script>alert('Video Title and YouTube Video ID are required!'); window.location.href='upload.php';</script>";
-        exit;
-    }
-
-    $existsStmt = $conn->prepare("SELECT id FROM videos WHERE id = ?");
-    $existsStmt->bind_param("s", $video_url);
-    $existsStmt->execute();
-    $alreadyExists = $existsStmt->get_result()->num_rows > 0;
-    $existsStmt->close();
-
-    if ($alreadyExists) {
-        $stmt = $conn->prepare("UPDATE videos SET title = ?, type = ?, username = ? WHERE id = ?");
-        $stmt->bind_param("ssss", $title, $type, $username, $video_url);
-    } else {
-        $stmt = $conn->prepare("INSERT INTO videos (id, title, views, type, username) VALUES (?, ?, 0, ?, ?)");
-        $stmt->bind_param("ssss", $video_url, $title, $type, $username);
-    }
-
-    if ($stmt->execute()) {
-        if (!$alreadyExists && isset($_SESSION['username'])) {
-            vs_notify_subscribers($conn, (string)$username, $type, (string)$video_url, $title);
+$videos = [];
+$shorts = [];
+if ($accountFound) {
+    $vCols = [];
+    if ($r = $conn->query('SHOW COLUMNS FROM `videos`')) {
+        while ($c = $r->fetch_assoc()) {
+            $vCols[strtolower($c['Field'])] = true;
         }
-        echo "<script>alert('Published successfully!'); window.location.href='index.php';</script>";
-    } else {
-        echo "<script>alert('Error publishing video. Please check database columns.'); window.location.href='upload.php';</script>";
+        $r->close();
     }
-    $stmt->close();
-    exit;
-}
-
-
-if ($action === 'like_short') {
-    header('Content-Type: application/json');
-    $input = json_decode(file_get_contents('php://input'), true);
-    $videoId =$input['videoId'] ?? '';
-    $user =$input['user'] ?? '';
-
-  if (empty($videoId) || empty($user)) {
-        echo json_encode(["success" => false, "message" => "Invalid parameters"]);
-        exit;
+    $uploaderCol = '';
+    foreach (['username', 'channel_name', 'uploader'] as $cand) {
+        if (isset($vCols[$cand])) { $uploaderCol = $cand; break; }
     }
-
-    $check =$conn->prepare("SELECT id FROM video_likes WHERE video_id = ? AND username = ?");
-    $check->bind_param("ss", $videoId,$user);
-    $check->execute();$check->store_result();
-
-    $liked = false;
-    if ($check->num_rows > 0) {
-        $del =$conn->prepare("DELETE FROM video_likes WHERE video_id = ? AND username = ?");
-        $del->bind_param("ss", $videoId, $user);$del->execute();
-        $del->close();$liked = false;
-    } else {
-        $ins =$conn->prepare("INSERT INTO video_likes (video_id, username) VALUES (?, ?)");
-        $ins->bind_param("ss", $videoId, $user);$ins->execute();
-        $ins->close();$liked = true;
-    }
-    $check->close();
-
-    $countStmt =$conn->prepare("SELECT COUNT(*) as total FROM video_likes WHERE video_id = ?");
-    $countStmt->bind_param("s", $videoId);$countStmt->execute();
-    $likesCount =$countStmt->get_result()->fetch_assoc()['total'] ?? 0;
-    $countStmt->close();
-
-    echo json_encode(["success" => true, "liked" => $liked, "likesCount" => (int)$likesCount]);$conn->close();
-    exit;
-}
-
-
-if ($action === 'add_comment') {
-    header('Content-Type: application/json');
-    $input = json_decode(file_get_contents('php://input'), true);
-    $videoId =$input['videoId'] ?? '';
-    $commentText = trim($input['comment'] ?? '');
-    $username =$input['username'] ?? 'Anonymous';
-
-   if (empty($videoId) || empty($commentText)) {
-        echo json_encode(["success" => false, "message" => "Comment cannot be empty"]);
-        exit;
-    }
-
-    $stmt =$conn->prepare("INSERT INTO video_comments (video_id, username, comment_text) VALUES (?, ?, ?)");
-    $stmt->bind_param("sss", $videoId, $username,$commentText);
-    
-    if ($stmt->execute()) {
-        echo json_encode([
-            "success" => true,
-            "comment" => [
-                "username" => htmlspecialchars($username, ENT_QUOTES, 'UTF-8'),
-                "text" => htmlspecialchars($commentText, ENT_QUOTES, 'UTF-8')
-            ]
-        ]);
-    } else {
-        echo json_encode(["success" => false, "message" => "Failed to save comment"]);
-    }
-    $stmt->close();$conn->close();
-    exit;
-}
-
-if ($page === 'watch') {
-    $id =$_GET['id'] ?? 'FmLzfYBHfuY';
-    
-    $stmt =$conn->prepare("UPDATE videos SET views = views + 1 WHERE id = ?");
-    $stmt->bind_param("s", $id);
-    $stmt->execute();$stmt->close();
-
-    $stmt_get =$conn->prepare("SELECT * FROM videos WHERE id = ?");
-    $stmt_get->bind_param("s", $id);
-    $stmt_get->execute();$res = $stmt_get->get_result();$video = $res ? $res->fetch_assoc() : null;
-    $stmt_get->close();
-
-    $ytData = getYouTubeDetails($id);
-
-    $title =$ytData['title'] ?? ($video['title'] ?? 'IF ASIAN PARENTS MADE A RAP SONG');$channelName = $ytData['channelTitle'] ?? 'Korean Comic';$uploadDate = $ytData['publishedAt'] ?? 'Dec 18, 2022';$views = $video['views'] ?? ($ytData['views'] ?? 52000000);
-
-    $videoSrc = file_exists("$id.mp4") ? "$id.mp4" : "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
-    ?>
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title><?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?> - <?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
-        <link rel="stylesheet" href="style.css?v=5">
-    </head>
-    <body>
-        <header class="navbar">
-            <div class="nav-left">
-                <a class="site-brand" href="index.php"><img class="site-brand-icon" src="<?php echo htmlspecialchars(vs_branding_logo_url(), ENT_QUOTES, 'UTF-8'); ?>" alt=""><span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span></a>
-            </div>
-            <div class="nav-center">
-                <input type="text" placeholder="Search">
-            </div>
-        </header>
-
-        <div class="watch-container">
-            <div class="main-player-section">
-                <video controls autoplay>
-                    <source src="<?php echo htmlspecialchars($videoSrc); ?>" type="video/mp4">
-                </video>
-                <h2><?php echo htmlspecialchars($title); ?></h2>
-                <p class="channel-name" style="font-weight: bold; margin: 4px 0;"><?php echo htmlspecialchars($channelName); ?> ✔</p>
-                <p class="video-meta"><?php echo number_format($views); ?> views • Published on <?php echo htmlspecialchars($uploadDate); ?></p>
-            </div>
-
-            <div class="recommendations-section">
-                <h3>Related Videos</h3>
-
-                <?php
-                $recId = 'FmLzfYBHfuY';
-                $recDetails = getYouTubeDetails($recId);
-                $recTitle =$recDetails['title'] ?? 'RADWIMPS - Suzume (Lyrics) ft. Toaka';
-                $recChannel = $recDetails['channelTitle'] ?? 'Authentic Music';$recThumb = $recDetails['thumbnail'] ?? "https://i.ytimg.com/vi/{$recId}/hqdefault.jpg";
-                ?>
-                <a href="code.php?page=watch&id=<?php echo htmlspecialchars($recId); ?>" class="video-card-link">
-                    <div class="video-card compact">
-                        <div class="thumbnail">
-                            <img src="<?php echo htmlspecialchars($recThumb); ?>" alt="<?php echo htmlspecialchars($recTitle); ?>">
-                            <span class="duration-badge">3:56</span>
-                        </div>
-                        <div class="video-info">
-                            <h3 class="video-title"><?php echo htmlspecialchars($recTitle); ?></h3>
-                            <p class="channel-name"><?php echo htmlspecialchars($recChannel); ?></p>
-                            <p class="video-meta">28M views • 3 yr ago</p>
-                        </div>
-                    </div>
-                </a>
-
-            </div>
-        </div>
-    </body>
-    </html>
-    <?php
-    $conn->close();
-    exit;
-}
-
-if ($page === 'shorts') {
-    $id =$_GET['id'] ?? 'short1';
-    
-    $stmt =$conn->prepare("UPDATE videos SET views = views + 1 WHERE id = ?");
-    $stmt->bind_param("s", $id);
-    $stmt->execute();$stmt->close();
-
-    $stmt_get =$conn->prepare("SELECT * FROM videos WHERE id = ?");
-    $stmt_get->bind_param("s", $id);
-    $stmt_get->execute();$res = $stmt_get->get_result();$video = $res ? $res->fetch_assoc() : null;
-    $stmt_get->close();
-
-    $likeCountStmt =$conn->prepare("SELECT COUNT(*) as total FROM video_likes WHERE video_id = ?");
-    $likeCountStmt->bind_param("s", $id);$likeCountStmt->execute();
-    $likesCount =$likeCountStmt->get_result()->fetch_assoc()['total'] ?? 0;
-    $likeCountStmt->close();
-
-    $commStmt =$conn->prepare("SELECT username, comment_text, created_at FROM video_comments WHERE video_id = ? ORDER BY id DESC");
-    $commStmt->bind_param("s", $id);
-    $commStmt->execute();$commentsRes = $commStmt->get_result();$comments = [];
-    while($cRow =$commentsRes->fetch_assoc()) {
-        $comments[] =$cRow;
-    }
-    $commStmt->close();
-
-    $ytData = getYouTubeDetails($id);$title = $ytData['title'] ?? ($video['title'] ?? 'Short Title');
-    $channelName =$ytData['channelTitle'] ?? 'Creator';
-    $views =$video['views'] ?? ($ytData['views'] ?? 0);$videoSrc = file_exists("$id.mp4") ? "$id.mp4" : "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
-    ?>
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title><?php echo htmlspecialchars($title); ?> - Shorts</title>
-        <link rel="stylesheet" href="style.css?v=5">
-        <style>
-            .shorts-page { display: flex; justify-content: center; align-items: center; height: calc(100vh - var(--nav-height)); background: #000; position: relative; gap: 20px; }
-            .short-player-wrapper { position: relative; width: 320px; height: 570px; background: #111; border-radius: 16px; overflow: hidden; display: flex; justify-content: center; align-items: center; }
-            .short-player-wrapper video { width: 100%; height: 100%; object-fit: cover; }
-            .short-overlay-info { position: absolute; bottom: 16px; left: 16px; right: 70px; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
-            .short-overlay-info h3 { font-size: 14px; margin: 0 0 6px 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-            .short-actions { display: flex; flex-direction: column; gap: 16px; position: absolute; right: calc(50% - 190px); bottom: 40px; align-items: center; }
-            .action-btn { background: rgba(255,255,255,0.15); border: none; color: #fff; width: 48px; height: 48px; border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; font-size: 16px; transition: background 0.2s; }
-            .action-btn:hover { background: rgba(255,255,255,0.3); }
-            .action-btn span { font-size: 11px; margin-top: 2px; font-weight: bold; }
-            
-            #comments-drawer { position: absolute; right: 0; top: 0; width: 350px; height: 100%; background: var(--surface-raised); border-left: 1px solid var(--border); box-shadow: -4px 0 16px rgba(0,0,0,0.5); display: none; flex-direction: column; z-index: 100; padding: 16px; color: var(--text-primary); }
-            #comments-drawer.open { display: flex; }
-            .drawer-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; font-weight: bold; }
-            .comments-list { flex: 1; overflow-y: auto; margin: 12px 0; display: flex; flex-direction: column; gap: 12px; }
-            .comment-item { font-size: 13px; background: var(--surface-base); padding: 8px 12px; border-radius: 8px; }
-            .comment-user { font-weight: bold; color: #3ea6ff; font-size: 12px; margin-bottom: 2px; }
-            .comment-form { display: flex; gap: 8px; }
-            .comment-form input { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-base); color: #fff; outline: none; }
-            .comment-form button { background: #3ea6ff; border: none; padding: 0 12px; border-radius: 6px; font-weight: bold; cursor: pointer; color: #000; }
-        </style>
-    </head>
-    <body>
-        <header class="navbar">
-            <div class="nav-left">
-                <a class="site-brand" href="index.php"><img class="site-brand-icon" src="<?php echo htmlspecialchars(vs_branding_logo_url(), ENT_QUOTES, 'UTF-8'); ?>" alt=""><span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span></a>
-            </div>
-        </header>
-
-        <div class="shorts-page">
-            <div class="short-player-wrapper">
-                <video controls autoplay loop>
-                    <source src="<?php echo htmlspecialchars($videoSrc); ?>" type="video/mp4">
-                </video>
-                <div class="short-overlay-info">
-                    <h3><?php echo htmlspecialchars($title); ?></h3>
-                    <p style="font-weight: 500; font-size: 13px; margin: 4px 0;"><?php echo htmlspecialchars($channelName); ?></p>
-                    <p><?php echo number_format($views); ?> views</p>
-                </div>
-            </div>
-
-            <div class="short-actions">
-                <button class="action-btn" id="like-btn" onclick="toggleLike('<?php echo $id; ?>')">
-                    👍 <span id="like-count"><?php echo $likesCount; ?></span>
-                </button>
-                <button class="action-btn" onclick="toggleCommentsDrawer()">
-                    💬 <span><?php echo count($comments); ?></span>
-                </button>
-                <button class="action-btn" onclick="navigator.share ? navigator.share({url: window.location.href}) : alert('Link copied!')">
-                    ↪
-                </button>
-            </div>
-
-            <div id="comments-drawer">
-                <div class="drawer-header">
-                    <span>Comments (<span id="drawer-total"><?php echo count($comments); ?></span>)</span>
-                    <button onclick="toggleCommentsDrawer()" style="background:none; border:none; color:#fff; cursor:pointer; font-size:16px;">✕</button>
-                </div>
-                <div class="comments-list" id="comments-container">
-                    <?php if(empty($comments)): ?>
-                        <p style="color: var(--text-secondary); text-align: center; margin-top: 20px;" id="no-comments">No comments yet. Be the first!</p>
-                    <?php else: ?>
-                        <?php foreach($comments as$com): ?>
-                            <div class="comment-item">
-                                <div class="comment-user"><?php echo htmlspecialchars($com['username']); ?></div>
-                                <div><?php echo htmlspecialchars($com['comment_text']); ?></div>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
-                <div class="comment-form">
-                    <input type="text" id="comment-input" placeholder="Add a comment...">
-                    <button onclick="postComment('<?php echo $id; ?>')">Post</button>
-                </div>
-            </div>
-        </div>
-
-        <script>
-            let userId = localStorage.getItem('vibestream_user');
-            if(!userId) {
-                userId = 'User_' + Math.floor(Math.random() * 90000 + 10000);
-                localStorage.setItem('vibestream_user', userId);
+    if ($uploaderCol !== '') {
+        $order = isset($vCols['created_at']) ? 'created_at DESC' : 'id DESC';
+        $st = $conn->prepare("SELECT * FROM `videos` WHERE LOWER(`$uploaderCol`) = LOWER(?) ORDER BY $order");
+        if ($st) {
+            $st->bind_param('s', $profileUser);
+            $st->execute();
+            foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+                if (isset($row['type']) && strtolower((string)$row['type']) === 'short') {
+                    $shorts[] = $row;
+                } else {
+                    $videos[] = $row;
+                }
             }
-
-            function toggleLike(videoId) {
-                fetch('code.php?action=like_short', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ videoId: videoId, user: userId })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if(data.success) {
-                        document.getElementById('like-count').innerText = data.likesCount;
-                        const btn = document.getElementById('like-btn');
-                        btn.style.color = data.liked ? '#ff0033' : '#fff';
-                    }
-                });
-            }
-
-            function toggleCommentsDrawer() {
-                const drawer = document.getElementById('comments-drawer');
-                drawer.classList.toggle('open');
-            }
-
-            function postComment(videoId) {
-                const input = document.getElementById('comment-input');
-                const text = input.value.trim();
-                if(!text) return;
-
-                fetch('code.php?action=add_comment', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ videoId: videoId, comment: text, username: userId })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if(data.success) {
-                        input.value = '';
-                        const list = document.getElementById('comments-container');
-                        const noCom = document.getElementById('no-comments');
-                        if(noCom) noCom.remove();
-
-
-                        const newDiv = document.createElement('div');
-                        newDiv.className = 'comment-item';
-
-                        const userEl = document.createElement('div');
-                        userEl.className = 'comment-user';
-                        userEl.textContent = data.comment.username;
-
-                        const textEl = document.createElement('div');
-                        textEl.textContent = data.comment.text;
-
-                        newDiv.append(userEl, textEl);
-                        list.prepend(newDiv);
-
-                        let currentCount = parseInt(document.getElementById('drawer-total').innerText) + 1;
-                        document.getElementById('drawer-total').innerText = currentCount;
-                    }
-                });
-            }
-        </script>
-    </body>
-    </html>
-    <?php
-    $conn->close();
-    exit;
+            $st->close();
+        }
+    }
 }
 
-header('Content-Type: application/json');
-echo json_encode(["success" => false, "message" => "Invalid endpoint"]);
-$conn->close();
+$totalViews = 0;
+$totalLikes = 0;
+foreach (array_merge($videos, $shorts) as $row) {
+    $totalViews += (int)($row['views'] ?? 0);
+    $totalLikes += (int)($row['likes'] ?? 0);
+}
+$defaultTab = (count($videos) === 0 && count($shorts) > 0) ? 'shorts' : 'videos';
+$avatarUrl = $accountFound ? avatar_url($profileUser) : '';
+$bannerUrl = $accountFound ? banner_url($profileUser) : '';
+
+$isSubscribed = false;
+$subscriberCount = null;
+if ($accountFound) {
+    if (!$isMe) {
+        try {
+            vs_subscription_session_sync($conn);
+            $isSubscribed = in_array(vs_subscription_key($profileUser), $_SESSION['subscribed_channels'] ?? [], true);
+        } catch (Throwable $e) {
+            error_log('Profile subscriptions unavailable: ' . $e->getMessage());
+        }
+    }
+    if (($uploaderCol ?? '') !== '' && isset($vCols['subscribers'])) {
+        $st = $conn->prepare("SELECT COALESCE(MAX(`subscribers`), 0) FROM `videos` WHERE LOWER(`$uploaderCol`) = LOWER(?)");
+        if ($st) {
+            $st->bind_param('s', $profileUser);
+            if ($st->execute()) {
+                $subscriberCount = (int)$st->get_result()->fetch_row()[0];
+            }
+            $st->close();
+        }
+    }
+}
+$h = static function ($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); };
+
+$extraCss = <<<'CSS'
+.profile-page { max-width: 1320px; margin: 0 auto; padding: 24px 24px 56px; }
+.flash { margin: 0 0 18px; padding: 12px 16px; border-radius: 14px; font-size: 14px; font-weight: 600; }
+.flash.ok  { background: rgba(60, 170, 90, 0.15); border: 1px solid rgba(60, 170, 90, 0.45); color: #2e9e5b; }
+.flash.err { background: rgba(220, 60, 60, 0.15); border: 1px solid rgba(220, 60, 60, 0.45); color: #d94a4a; }
+.channel-banner {
+    position: relative; overflow: hidden;
+    margin: 0 0 28px;
+    aspect-ratio: 16 / 4.6; min-height: 100px; max-height: 200px;
+    background: linear-gradient(120deg, #23253a, #1b2436 45%, #2c2140);
+}
+.channel-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.banner-actions { position: absolute; right: 28px; bottom: 16px; display: flex; gap: 10px; }
+.banner-actions .btn { background: rgba(12, 12, 18, 0.72); color: #ffffff; font-size: 14px; padding: 9px 16px; backdrop-filter: blur(4px); }
+.banner-actions .btn:hover { background: rgba(12, 12, 18, 0.9); filter: none; }
+.channel-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 32px; }
+.channel-avatar-lg {
+    width: 140px; height: 140px; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
+    background: var(--surface-2); display: flex; align-items: center; justify-content: center;
+    font-size: 56px; font-weight: 700; color: var(--text);
+}
+.channel-info { flex: 1 1 320px; min-width: 0; }
+.channel-name { margin: 8px 0 6px; font-size: 34px; line-height: 1.15; font-weight: 800; word-break: break-word; }
+.channel-meta { color: var(--muted); font-size: 15px; margin: 0 0 20px; }
+.channel-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.btn {
+    display: inline-flex; align-items: center; gap: 8px; border: 0; cursor: pointer;
+    background: var(--surface-2); color: var(--text); padding: 12px 20px; border-radius: 999px;
+    font-size: 15px; font-weight: 700; white-space: nowrap;
+}
+.btn:hover { filter: brightness(0.96); }
+.btn.primary { background: var(--accent); color: #ffffff; }
+.name-form {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0 0;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 18px 22px;
+}
+.name-form[hidden] { display: none; }
+.name-form input[type=text] {
+    flex: 1 1 220px; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text);
+}
+.name-form small { flex: 1 1 100%; color: var(--muted); }
+.tabs { display: flex; gap: 8px; margin: 32px 0 0; border-bottom: 1px solid var(--border); }
+.tab {
+    background: none; border: 0; border-bottom: 2px solid transparent; padding: 14px 20px; cursor: pointer;
+    font-size: 17px; font-weight: 700; color: var(--muted);
+}
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab .count { margin-left: 8px; font-weight: 400; color: var(--muted); }
+.tab-panel { display: none; padding-top: 24px; }
+.tab-panel.active { display: block; }
+.video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px 18px; }
+.short-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 24px 14px; }
+.p-thumb { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: var(--surface-2); }
+.p-thumb img, .p-short-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.p-short-thumb { aspect-ratio: 9 / 16; border-radius: 12px; overflow: hidden; background: var(--surface-2); }
+.p-duration { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.8); color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+.p-title { margin: 10px 0 4px; font-size: 15px; font-weight: 700; line-height: 1.35; }
+.p-meta { margin: 0; color: var(--muted); font-size: 13px; }
+.empty-state {
+    text-align: center; padding: 56px 16px; color: var(--muted);
+    border: 1px dashed var(--border); border-radius: 20px;
+}
+.empty-state .btn { margin-top: 16px; }
+@media (max-width: 760px) {
+    .profile-page { padding: 16px 12px 48px; }
+    .channel-banner { margin-bottom: 22px; }
+    .banner-actions { right: 12px; bottom: 12px; }
+    .channel-head { gap: 18px; }
+    .channel-avatar-lg { width: 96px; height: 96px; font-size: 40px; }
+    .channel-name { font-size: 26px; }
+}
+CSS;
+
+vs_page_start($accountFound ? '@' . $profileUser : 'Channel', 'profile', $extraCss);
 ?>
+<div class="profile-page">
+<?php if ($flash): ?>
+    <div class="flash <?= $flash['type'] === 'ok' ? 'ok' : 'err' ?>"><?= $h($flash['text']) ?></div>
+<?php endif; ?>
+
+<?php if (!$accountFound): ?>
+    <div class="empty-state">
+        <p>This channel was not found.</p>
+        <a class="btn primary" href="index.php">Go home</a>
+    </div>
+<?php else: ?>
+    <?php if ($isMe): ?>
+        <form method="post" action="profile.php" enctype="multipart/form-data" id="bannerForm" style="display:none;">
+            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+            <input type="hidden" name="action" value="banner">
+            <input type="file" name="banner" id="bannerFile" accept=".jpg,.jpeg,.png,.webp">
+        </form>
+    <?php endif; ?>
+    <section class="channel-banner">
+        <?php if ($bannerUrl !== ''): ?>
+            <img src="<?= $h($bannerUrl) ?>" alt="<?= $h($profileUser) ?> banner">
+        <?php endif; ?>
+        <?php if ($isMe): ?>
+            <div class="banner-actions">
+                <label class="btn" for="bannerFile"><?= vs_icon('plus-square', 16) ?> <?= $bannerUrl !== '' ? 'Change banner' : 'Add banner' ?></label>
+                <?php if ($bannerUrl !== ''): ?>
+                    <form method="post" action="profile.php" style="margin:0;">
+                        <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                        <input type="hidden" name="action" value="banner_remove">
+                        <button type="submit" class="btn">Remove banner</button>
+                    </form>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+    </section>
+
+    <section class="channel-head">
+        <?php if ($avatarUrl !== ''): ?>
+            <img class="channel-avatar-lg" src="<?= $h($avatarUrl) ?>" alt="<?= $h($profileUser) ?> avatar">
+        <?php else: ?>
+            <div class="channel-avatar-lg"><?= $h(mb_strtoupper(mb_substr($profileUser, 0, 1))) ?></div>
+        <?php endif; ?>
+
+        <div class="channel-info">
+            <h1 class="channel-name">@<?= $h($profileUser) ?></h1>
+            <?php
+                $metaParts = [];
+                if ($subscriberCount !== null) {
+                    $metaParts[] = vs_short_views($subscriberCount) . ' subscriber' . ($subscriberCount === 1 ? '' : 's');
+                }
+                $metaParts[] = count($videos) . ' video' . (count($videos) === 1 ? '' : 's');
+                $metaParts[] = count($shorts) . ' short' . (count($shorts) === 1 ? '' : 's');
+                $metaParts[] = vs_short_views($totalViews) . ' views';
+                $metaParts[] = vs_short_views($totalLikes) . ' likes';
+            ?>
+            <p class="channel-meta"><?= $h(implode(' • ', $metaParts)) ?></p>
+
+            <?php if (!$isMe): ?>
+                <div class="channel-actions">
+                    <form method="post" action="profile.php?u=<?= urlencode($profileUser) ?>" style="margin:0;">
+                        <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                        <input type="hidden" name="action" value="<?= $isSubscribed ? 'unsubscribe' : 'subscribe' ?>">
+                        <button type="submit" class="btn<?= $isSubscribed ? '' : ' primary' ?>"><?= $isSubscribed ? 'Unsubscribe' : 'Subscribe' ?></button>
+                    </form>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($isMe): ?>
+                <div class="channel-actions">
+                    <form method="post" action="profile.php" enctype="multipart/form-data" id="avatarForm" style="display:none;">
+                        <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                        <input type="hidden" name="action" value="avatar">
+                        <input type="file" name="avatar" id="avatarFile" accept=".jpg,.jpeg,.png,.webp,.gif">
+                    </form>
+                    <label class="btn" for="avatarFile"><?= vs_icon('contact', 16) ?> Change avatar</label>
+                    <?php if ($avatarUrl !== ''): ?>
+                        <form method="post" action="profile.php" style="margin:0;">
+                            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                            <input type="hidden" name="action" value="avatar_remove">
+                            <button type="submit" class="btn">Remove avatar</button>
+                        </form>
+                    <?php endif; ?>
+                    <button type="button" class="btn" id="nameToggle"><?= vs_icon('contact', 16) ?> Change name</button>
+                    <a class="btn primary" href="upload.php"><?= vs_icon('plus-square', 16) ?> Upload</a>
+                    <a class="btn" href="logout.php">Logout</a>
+                </div>
+            <?php endif; ?>
+        </div>
+    </section>
+
+    <?php if ($isMe): ?>
+        <form class="name-form" id="nameForm" method="post" action="profile.php" hidden>
+            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+            <input type="hidden" name="action" value="rename">
+            <label for="newName">New name</label>
+            <input type="text" id="newName" name="new_name" value="<?= $h($profileUser) ?>" minlength="3" maxlength="30" required autocomplete="off">
+            <button type="submit" class="btn primary">Save</button>
+            <button type="button" class="btn" id="nameCancel">Cancel</button>
+            <small>3-30 characters: letters, numbers, dot, dash or underscore. Your videos, shorts and channel will move to the new name.</small>
+        </form>
+    <?php endif; ?>
+
+    <div class="tabs" role="tablist">
+        <button type="button" class="tab<?= $defaultTab === 'videos' ? ' active' : '' ?>" role="tab" data-tab="videos">Videos<span class="count"><?= count($videos) ?></span></button>
+        <button type="button" class="tab<?= $defaultTab === 'shorts' ? ' active' : '' ?>" role="tab" data-tab="shorts">Shorts<span class="count"><?= count($shorts) ?></span></button>
+    </div>
+
+    <div class="tab-panel<?= $defaultTab === 'videos' ? ' active' : '' ?>" data-panel="videos">
+        <?php if (!$videos): ?>
+            <div class="empty-state">
+                <p>No videos yet.</p>
+                <?php if ($isMe): ?><a class="btn primary" href="upload.php"><?= vs_icon('plus-square', 16) ?> Upload your first video</a><?php endif; ?>
+            </div>
+        <?php else: ?>
+            <div class="video-grid">
+                <?php foreach ($videos as $row):
+                    $src = find_source($row, __DIR__);
+                    $yt = $src !== '' ? extract_youtube_id($src, true) : null;
+                    $thumb = thumb_for($row, $src, $yt);
+                    $title = $row['title'] ?? 'Untitled';
+                    $duration = $row['duration'] ?? '';
+                ?>
+                    <a href="watch.php?id=<?= urlencode((string)$row['id']) ?>" class="p-card">
+                        <div class="p-thumb">
+                            <img src="<?= $h($thumb) ?>" alt="<?= $h($title) ?>" loading="lazy">
+                            <?php if (!empty($duration)): ?><span class="p-duration"><?= $h($duration) ?></span><?php endif; ?>
+                        </div>
+                        <h3 class="p-title"><?= $h($title) ?></h3>
+                        <p class="p-meta"><?= $h(vs_short_views($row['views'] ?? 0)) ?> views &bull; <?= $h(vs_yt_time_ago($row['created_at'] ?? null)) ?></p>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <div class="tab-panel<?= $defaultTab === 'shorts' ? ' active' : '' ?>" data-panel="shorts">
+        <?php if (!$shorts): ?>
+            <div class="empty-state">
+                <p>No shorts yet.</p>
+                <?php if ($isMe): ?><a class="btn primary" href="upload.php"><?= vs_icon('plus-square', 16) ?> Upload a short</a><?php endif; ?>
+            </div>
+        <?php else: ?>
+            <div class="short-grid">
+                <?php foreach ($shorts as $row):
+                    $src = find_source($row, __DIR__);
+                    $yt = $src !== '' ? extract_youtube_id($src, true) : null;
+                    $thumb = thumb_for($row, $src, $yt);
+                    $title = $row['title'] ?? 'Untitled';
+                ?>
+                    <a href="shorts.php?id=<?= urlencode((string)$row['id']) ?>" class="p-card">
+                        <div class="p-short-thumb"><img src="<?= $h($thumb) ?>" alt="<?= $h($title) ?>" loading="lazy"></div>
+                        <h3 class="p-title"><?= $h($title) ?></h3>
+                        <p class="p-meta"><?= $h(vs_short_views($row['views'] ?? 0)) ?> views</p>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
+</div>
+<?php
+vs_page_end(<<<'JS'
+(function () {
+    var tabs = document.querySelectorAll('.tab');
+    var panels = document.querySelectorAll('.tab-panel');
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            var key = tab.getAttribute('data-tab');
+            tabs.forEach(function (t) { t.classList.toggle('active', t === tab); });
+            panels.forEach(function (p) { p.classList.toggle('active', p.getAttribute('data-panel') === key); });
+        });
+    });
+
+    var toggle = document.getElementById('nameToggle');
+    var form = document.getElementById('nameForm');
+    var cancel = document.getElementById('nameCancel');
+    if (toggle && form) {
+        toggle.addEventListener('click', function () {
+            form.hidden = !form.hidden;
+            if (!form.hidden) { document.getElementById('newName').focus(); }
+        });
+    }
+    if (cancel && form) {
+        cancel.addEventListener('click', function () { form.hidden = true; });
+    }
+
+    var file = document.getElementById('avatarFile');
+    var avatarForm = document.getElementById('avatarForm');
+    if (file && avatarForm) {
+        file.addEventListener('change', function () {
+            if (file.files && file.files.length) { avatarForm.submit(); }
+        });
+    }
+
+    var bannerFile = document.getElementById('bannerFile');
+    var bannerForm = document.getElementById('bannerForm');
+    if (bannerFile && bannerForm) {
+        bannerFile.addEventListener('change', function () {
+            if (bannerFile.files && bannerFile.files.length) { bannerForm.submit(); }
+        });
+    }
+})();
+JS
+);

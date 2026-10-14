@@ -225,12 +225,23 @@ $shorts = [];
 if ($hasTypeColumn) {
     $shortOrder = $search === '' ? "RAND($feedSeed)" : 'created_at DESC';
     $sSql = "SELECT * FROM videos WHERE type = 'short'";
-    if ($search !== '') $sSql .= " AND (title LIKE ? OR username LIKE ? OR channel_name LIKE ?)";
+    $sParams = [];
+    $sTypes = '';
+    if ($selectedCategory !== '' && $hasCategoryColumn) {
+        $sSql .= " AND LOWER(TRIM(category)) = ?";
+        $sParams[] = $selectedCategory;
+        $sTypes .= 's';
+    }
+    if ($search !== '') {
+        $sSql .= " AND (title LIKE ? OR username LIKE ? OR channel_name LIKE ?)";
+        $like = '%' . $search . '%';
+        array_push($sParams, $like, $like, $like);
+        $sTypes .= 'sss';
+    }
     $sSql .= " ORDER BY $shortOrder LIMIT " . (int)$shortsPerPage . " OFFSET " . (int)(($page - 1) * $shortsPerPage);
     $sStmt = $conn->prepare($sSql);
-    if ($search !== '') {
-        $like = '%' . $search . '%';
-        $sStmt->bind_param('sss', $like, $like, $like);
+    if ($sTypes !== '') {
+        $sStmt->bind_param($sTypes, ...$sParams);
     }
     $sStmt->execute();
     $shorts = $sStmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -243,9 +254,19 @@ if ($hasCategoryColumn) {
     while ($catRes && ($row = $catRes->fetch_assoc())) {
         if ($row['c'] !== '') $categories[] = $row['c'];
     }
-    foreach (vs_default_categories() as $defaultCategory) {
-        $categories[] = strtolower($defaultCategory);
-    }
+}
+$configuredCategories = [];
+try {
+    $configuredCategories = (array)vs_default_categories();
+} catch (Throwable $categoryError) {
+    $configuredCategories = [];
+}
+if (!$configuredCategories) {
+    // same built-in list the sidebar falls back to
+    $configuredCategories = ['Music', 'Gaming', 'Movies', 'Live', 'Sports', 'News', 'Fashion', 'Education', 'Anime'];
+}
+foreach ($configuredCategories as $defaultCategory) {
+    $categories[] = strtolower(trim((string)$defaultCategory));
 }
 $categories = array_values(array_unique($categories));
 
@@ -263,6 +284,18 @@ $categories = array_values(array_unique($categories));
     <link rel="manifest" href="manifest.php">
     <link rel="apple-touch-icon" href="branding-icon.php">
     <title><?php echo $search !== '' ? 'Search: ' . htmlspecialchars($search, ENT_QUOTES, 'UTF-8') . ' - ' : ''; ?><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
+    <?php
+    require_once __DIR__ . '/sidebar-icons-store.php';
+    $vsSiteIcons = [];
+    foreach (vs_si_load()['site'] as $k => $entry) {
+        $vsSiteIcons[$k] = [
+            'url'  => $entry['file'] . '?v=' . (int)@filemtime(__DIR__ . '/' . $entry['file']),
+            'mode' => $entry['mode'],
+        ];
+    }
+    ?>
+    <script>window.VS_SIDEBAR_ICONS = <?php echo json_encode($vsSiteIcons, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
+    <script src="sidebar-icons.js?v=1" defer></script>
     <script src="theme.js?v=3"></script>
     <link rel="stylesheet" href="style.css?v=5">
     <style>
@@ -938,6 +971,7 @@ $categories = array_values(array_unique($categories));
             font-size: 20px; font-weight: 700; color: var(--text);
         }
         .feed-shorts-title svg { width: 24px; height: 24px; color: var(--accent); }
+        .feed-shorts-title .shorts-title-icon { display: block; flex: 0 0 auto; width: 21px; height: 26px; background-color: currentColor; -webkit-mask: url("data:image/png;base64,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") center / contain no-repeat; mask: url("data:image/png;base64,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") center / contain no-repeat; }
         .feed-shorts .shorts-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
         @media (max-width: 1100px) {
             .feed-shorts .shorts-grid {
@@ -968,10 +1002,21 @@ $categories = array_values(array_unique($categories));
         :root[data-theme="light"] .chip:hover { background: rgba(0, 0, 0, 0.10); }
         :root[data-theme="light"] .chip.active { background: #0f0f0f; color: #ffffff; }
 
+        .chips-next {
+            position: sticky; right: 0; margin-left: auto; flex: 0 0 32px; width: 32px; height: 32px;
+            display: none; align-items: center; justify-content: center; border: 0; border-radius: 50%;
+            background: var(--bg); color: var(--text); font-size: 22px; line-height: 1; cursor: pointer;
+            box-shadow: -14px 0 12px var(--bg);
+        }
+        .chips-next:hover { background: rgba(128, 128, 128, 0.25); }
+        .chip { text-decoration: none; }
+
         /* 4 across on wide screens, then 3 / 2 / 1 */
         .video-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 40px 16px; }
-        @media (max-width: 1499px) { .video-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-        @media (max-width: 1149px) { .video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        /* desktop: if a row has fewer than 4 videos, stretch them so there is no empty spot */
+        @media (min-width: 768px) { .feed-desktop .video-grid.feed-block { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); } }
+        @media (max-width: 1099px) { .video-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 899px) { .video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (max-width: 639px)  { .video-grid { grid-template-columns: 1fr; gap: 26px; } }
 
         /* cards: no box, just thumbnail + text (theme.css gives cards a background, so these are stronger) */
@@ -1026,6 +1071,8 @@ $categories = array_values(array_unique($categories));
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
     <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="search-suggest.css?v=2">
+    <script src="search-suggest.js?v=2" defer></script>
 </head>
 <body>
     <?php render_navbar('home'); ?>
@@ -1045,13 +1092,14 @@ $categories = array_values(array_unique($categories));
                     <nav class="chips-bar" aria-label="Video categories">
                         <?php foreach ($categories as $cat): ?>
                             <?php
-                                $isCategoryActive = $cat === 'all' ? $selectedCategory === '' : $selectedCategory === $cat;
+                                $chipKey = $hasCategoryColumn ? 'category' : 'q';
+                                $currentChip = $hasCategoryColumn ? $selectedCategory : strtolower($search);
+                                $isCategoryActive = $cat === 'all' ? $currentChip === '' : $currentChip === $cat;
                                 $categoryQuery = $_GET;
-                                unset($categoryQuery['page']);
-                                if ($cat === 'all') {
-                                    unset($categoryQuery['category']);
-                                } else {
-                                    $categoryQuery['category'] = $cat;
+                                unset($categoryQuery['page'], $categoryQuery['category']);
+                                if (!$hasCategoryColumn) { unset($categoryQuery['q']); }
+                                if ($cat !== 'all') {
+                                    $categoryQuery[$chipKey] = $cat;
                                 }
                                 $categoryHref = 'index.php' . ($categoryQuery ? '?' . http_build_query($categoryQuery) : '');
                             ?>
@@ -1059,14 +1107,25 @@ $categories = array_values(array_unique($categories));
                                 <?php echo htmlspecialchars(ucfirst($cat)); ?>
                             </a>
                         <?php endforeach; ?>
+                        <button type="button" class="chips-next" id="chipsNext" aria-label="Scroll categories">&#8250;</button>
                     </nav>
+                    <script>
+                    (function () {
+                        var bar = document.querySelector('.chips-bar'), btn = document.getElementById('chipsNext');
+                        if (!bar || !btn) return;
+                        function sync() { btn.style.display = (bar.scrollWidth - bar.clientWidth - bar.scrollLeft > 4) ? 'flex' : 'none'; }
+                        btn.addEventListener('click', function () { bar.scrollBy({ left: 300, behavior: 'smooth' }); });
+                        bar.addEventListener('scroll', sync); window.addEventListener('resize', sync); sync();
+                        var act = bar.querySelector('.chip.active'); if (act && act.offsetLeft > bar.clientWidth - 80) { bar.scrollLeft = act.offsetLeft - 80; }
+                    })();
+                    </script>
 
                     <?php
                     // ----- Feed layout: videos, shorts, videos, shorts ... ending with videos -----
                     // Desktop: a row of 4 videos, then a row of 6 shorts, repeat.
                     // Phone / mobile app: 1 video, then 2 shorts, repeat.
                     $desktopFeed = ['first' => 4, 'per' => 4, 'shortsRow' => 6, 'shortsMax' => 36];
-                    $mobileFeed  = ['first' => 1, 'per' => 1, 'shortsRow' => 2, 'shortsMax' => 48];
+                    $mobileFeed  = ['first' => 1, 'per' => 1, 'shortsRow' => 2, 'shortsMax' => 48, 'shortsFirst' => ($search !== '')];
 
                     $renderVideo = function (array $row) {
                         $title = htmlspecialchars($row['title'] ?? 'Untitled');
@@ -1147,6 +1206,7 @@ $categories = array_values(array_unique($categories));
                         $shs = array_slice($shs, 0, $cfg['shortsMax']);
                         $vi = 0; $si = 0;
                         $vCount = count($vids); $sCount = count($shs);
+                        if (!empty($cfg['shortsFirst']) && $sCount) { $blocks[] = ['s', array_slice($shs, 0, $cfg['shortsRow'])]; $si += $cfg['shortsRow']; }
                         while ($vi < $vCount || $si < $sCount) {
                             if ($vi < $vCount) { $take = ($vi === 0) ? $cfg['first'] : $cfg['per']; $blocks[] = ['v', array_slice($vids, $vi, $take)]; $vi += $take; }
                             if ($si < $sCount) { $blocks[] = ['s', array_slice($shs, $si, $cfg['shortsRow'])]; $si += $cfg['shortsRow']; }
@@ -1159,12 +1219,14 @@ $categories = array_values(array_unique($categories));
                     ];
                     ?>
                     <section id="videos-grid">
-                        <?php if (!$videos): ?>
+                        <?php if (!$videos && !$shorts): ?>
                             <section class="video-grid">
                                 <div class="empty-state">
                                     <?php echo $search !== ''
                                         ? 'No videos match "' . htmlspecialchars($search) . '".'
-                                        : 'No videos yet — be the first to upload one!'; ?>
+                                        : ($selectedCategory !== ''
+                                            ? 'No videos in "' . htmlspecialchars(ucfirst($selectedCategory)) . '" yet.'
+                                            : 'No videos yet — be the first to upload one!'); ?>
                                 </div>
                             </section>
                         <?php endif; ?>
@@ -1173,13 +1235,13 @@ $categories = array_values(array_unique($categories));
                         <div class="<?php echo $feedClass; ?>">
                         <?php foreach ($feedBlocks as $block): ?>
                             <?php if ($block[0] === 'v'): ?>
-                                <section class="video-grid feed-block">
+                                <section class="video-grid feed-block" style="--cols: <?php echo max(3, min(4, count($block[1]))); ?>;">
                                     <?php foreach ($block[1] as $row) { $renderVideo($row); } ?>
                                 </section>
                             <?php else: ?>
                                 <section class="shorts-section feed-shorts"<?php echo ($firstShortsRow && $feedClass === 'feed-desktop') ? ' id="shorts-shelf"' : ''; ?>>
                                     <div class="feed-shorts-title">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 3-7 4a3 3 0 0 0 0 5l8 5a3 3 0 1 1-3 5"/><path d="m9 21 7-4a3 3 0 0 0 0-5L8 7a3 3 0 1 1 3-5"/></svg>
+                                        <span class="shorts-title-icon" aria-hidden="true"></span>
                                         Shorts
                                     </div>
                                     <div class="shorts-grid">
@@ -1211,7 +1273,7 @@ $categories = array_values(array_unique($categories));
         </div>
     </div>
 
-    <?php $reportHideButton = true; if (is_file(__DIR__ . '/report-widget.php')) { include __DIR__ . '/report-widget.php'; } ?>
+    <?php /* The Report popup loads on demand from video-menu.js (report-widget.php), so the cards' three dots never depend on it. */ ?>
     <script src="sidebar.js"></script>
     <script src="video-menu.js?v=3"></script>
 </body>

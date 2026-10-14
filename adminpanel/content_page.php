@@ -15,6 +15,11 @@ if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecm
 include_once "../connection.php";
 include_once "ui_helpers.php";
 
+// CSRF token for the delete buttons (same token checkin.php uses)
+if (empty($_SESSION['vs_csrf'])) {
+    $_SESSION['vs_csrf'] = bin2hex(random_bytes(16));
+}
+
 $CONTENT_KIND = (isset($CONTENT_KIND) && $CONTENT_KIND === 'short') ? 'short' : 'video';
 $isShortPage  = ($CONTENT_KIND === 'short');
 $pageFile     = $isShortPage ? 'shorts.php' : 'videos.php';
@@ -27,16 +32,20 @@ $uploader = isset($_GET['uploader']) ? trim((string)$_GET['uploader']) : '';
 
 $allContent = [];
 $commentCounts = [];
+// `id` is the video ID / URL text, so sort by the upload date when the table has one.
+$vCols   = vs_cols($pdo, 'videos');
+$dateCol = vs_pick($vCols, ['created_at', 'uploaded_at', 'upload_date', 'date_added', 'created_on', 'added_on', 'created', 'date']);
+$orderBy = $dateCol ? vs_q($dateCol) . ' DESC, id DESC' : 'id DESC';
 try {
     if ($uploader !== '') {
         $stmt = $pdo->prepare(
             "SELECT * FROM videos
              WHERE LOWER(COALESCE(NULLIF(TRIM(username), ''), 'admin')) = ?
-             ORDER BY id DESC"
+             ORDER BY $orderBy"
         );
         $stmt->execute([mb_strtolower($uploader, 'UTF-8')]);
     } else {
-        $stmt = $pdo->query("SELECT * FROM videos ORDER BY id DESC");
+        $stmt = $pdo->query("SELECT * FROM videos ORDER BY $orderBy");
     }
     $allContent = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $commentCounts = vs_comment_counts($pdo);
@@ -190,10 +199,14 @@ include "header.php";
                       <a href="editvideos.php?editid=<?php echo urlencode((string)$row["id"]); ?>" class="btn btn-light btn-sm" title="Edit">
                         <i class="fa-solid fa-pen-to-square"></i>
                       </a>
-                      <a href="code.php?deleteid=<?php echo urlencode((string)$row["id"]); ?>" class="btn btn-light btn-sm text-danger" title="Delete"
-                         onclick="return confirm('Are you sure you want to delete this <?php echo $noun; ?>?');">
-                        <i class="fa-solid fa-trash"></i>
-                      </a>
+                      <form action="code.php" method="POST" class="d-inline"
+                            onsubmit="return confirm('Are you sure you want to delete this <?php echo $noun; ?>?');">
+                        <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['vs_csrf']); ?>">
+                        <input type="hidden" name="id" value="<?php echo htmlspecialchars((string)$row["id"]); ?>">
+                        <button type="submit" name="delete_video" value="1" class="btn btn-light btn-sm text-danger" title="Delete">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </form>
                     </td>
                   </tr>
                   <?php

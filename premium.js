@@ -31,10 +31,11 @@
 
   function apply() {
     var on = !!read(), root = document.documentElement;
+    var plus = on && (S.plan === 'admin' || String(S.plan || '').indexOf('plus') === 0);
     root.classList.toggle('vs-premium', on);
     document.querySelectorAll('[data-vs-ad]').forEach(function (el) { el.hidden = on; });
     document.querySelectorAll('[data-vs-badge]').forEach(function (el) {
-      el.innerHTML = on ? '<span class="vs-badge" title="VibeStream Premium">Premium</span>' : '';
+      el.innerHTML = on ? (plus ? '<span class="vs-badge" title="VibeStream Premium Plus">Plus</span>' : '<span class="vs-badge" title="VibeStream Premium">Premium</span>') : '';
     });
     document.querySelectorAll('[data-premium-only]').forEach(function (el) {
       var lock = el.querySelector(':scope > .vs-lock');
@@ -48,7 +49,7 @@
       }
     });
     document.querySelectorAll('[data-vs-upgrade]').forEach(function (el) {
-      el.textContent = on ? 'Premium active' : 'Go Premium';
+      el.textContent = on ? (plus ? 'Plus active' : 'Premium active') : 'Go Premium';
       el.href = 'premium.php';
     });
     document.dispatchEvent(new CustomEvent('vs-premium-change', { detail: read() }));
@@ -64,6 +65,7 @@
   window.VSPremium = {
     PLANS: PLANS, PAY_INFO: S.payInfo || [], LOGGED_IN: !!S.loggedIn,
     isPremium: function () { return !!read(); },
+    isPlus: function () { var r = read(); return !!r && (r.plan === 'admin' || String(r.plan).indexOf('plus') === 0); },
     isPending: function () { return !!S.pending; },
     status: read,
     request: function (plan, ref) { return send('request', plan, ref); },

@@ -23,6 +23,20 @@ while ($c = $res->fetch_assoc()) {
     $cols[strtolower($c['Field'])] = $c;
 }
 
+// Make sure videos can be filed under a category (adds the column once, if it is missing).
+if (!isset($cols['category'])) {
+    try {
+        $conn->query('ALTER TABLE `videos` ADD COLUMN `category` VARCHAR(40) NULL');
+        $cols = [];
+        $res = $conn->query('SHOW COLUMNS FROM `videos`');
+        while ($c = $res->fetch_assoc()) {
+            $cols[strtolower($c['Field'])] = $c;
+        }
+    } catch (Throwable $categoryColumnError) {
+        // keep going; the category picker is simply hidden
+    }
+}
+
 $SOURCE_COLUMNS = ['video_url', 'video_path', 'video_file', 'video', 'url', 'file_path', 'filepath', 'file', 'filename', 'source', 'src', 'link', 'media_url', 'youtube_url', 'youtube_id', 'yt_id', 'video_link', 'embed_url', 'embed'];
 $srcCol = null;
 foreach ($SOURCE_COLUMNS as $name) {
@@ -88,6 +102,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $old['category']    = mb_substr(trim((string)($_POST['category'] ?? '')), 0, 60);
 
         if ($old['title'] === '') $errors[] = 'Add a title.';
+        $validCategories = array_map(function ($c) { return strtolower(trim((string)$c)); }, $categoryChoices);
+        $old['category'] = strtolower($old['category']);
+        if (isset($cols['category']) && $validCategories) {
+            if ($old['category'] === '') {
+                $errors[] = 'Choose a category.';
+            } elseif (!in_array($old['category'], $validCategories, true)) {
+                $errors[] = 'Pick one of the listed categories.';
+            }
+        }
         if ($srcCol === null) {
             $errors[] = 'Your videos table has no column to store the video link. Run the SQL shown at the top of this page first.';
         }
@@ -264,6 +287,11 @@ $extraCss = <<<'CSS'
 .field textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
 .field input:focus, .field textarea:focus { border-color: #5b8cff; box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.18); }
 .field input[type=file] { padding: 10px; }
+.field select {
+    width: 100%; background: var(--surface-raised, #0d0d0f); border: 1px solid var(--border-strong, #3d3d46); border-radius: 12px;
+    padding: 12px 14px; color: var(--text-primary, #ffffff); outline: none;
+}
+.field select:focus { border-color: #5b8cff; box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.18); }
 .seg { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 4px; gap: 4px; }
 .seg input { position: absolute; opacity: 0; pointer-events: none; }
 .seg label {
@@ -367,13 +395,13 @@ vs_page_start('Upload', 'upload', $extraCss);
 
             <?php if ($showCategory): ?>
                 <div class="field">
-                    <label for="category">Category <span style="color:var(--muted);font-weight:400">(optional)</span></label>
-                    <input type="text" id="category" name="category" maxlength="60" list="categoryList" value="<?= htmlspecialchars($old['category']) ?>">
-                    <datalist id="categoryList">
-                        <?php foreach ($categoryChoices as $choice): ?>
-                            <option value="<?= htmlspecialchars($choice) ?>"></option>
+                    <label for="category">Category</label>
+                    <select id="category" name="category" required>
+                        <option value="">Choose a category</option>
+                        <?php foreach ($categoryChoices as $choice): $cv = strtolower(trim((string)$choice)); ?>
+                            <option value="<?= htmlspecialchars($cv) ?>"<?= $old['category'] === $cv ? ' selected' : '' ?>><?= htmlspecialchars($choice) ?></option>
                         <?php endforeach; ?>
-                    </datalist>
+                    </select>
                 </div>
             <?php endif; ?>
 

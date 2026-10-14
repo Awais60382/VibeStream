@@ -12,6 +12,7 @@ include_once "../connection.php";
 include_once "ui_helpers.php";
 require_once __DIR__ . '/../avatar.php';
 require_once __DIR__ . '/owner-guard.php';
+require_once __DIR__ . '/admin-activity-store.php';
 
 if (empty($_SESSION['admin_csrf'])) {
     $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
@@ -69,13 +70,15 @@ if (!isset($pdo) || !($pdo instanceof PDO)) {
                     $code = 'expired';
                 } elseif (!$isOwner) {
                     $code = 'denied';
+                    vs_admin_log($pdo, 'user', 'Tried to delete admin account #' . mb_substr($delId, 0, 20) . ' (blocked: owner only)');
                 } elseif (!$map['id'] || $delId === '') {
                     $code = 'failed';
                 } else {
                     try {
                         $emailSel = $map['email'] ? vs_q($map['email']) : "''";
+                        $nameSel  = $map['username'] ? vs_q($map['username']) : ($map['name'] ? vs_q($map['name']) : "''");
                         $find = $pdo->prepare(
-                            'SELECT ' . $emailSel . ' AS e FROM ' . vs_q($USERS_TABLE)
+                            'SELECT ' . $emailSel . ' AS e, ' . $nameSel . ' AS n FROM ' . vs_q($USERS_TABLE)
                             . ' WHERE ' . vs_q($map['id']) . ' = :i AND LOWER(TRIM(' . vs_q($map['role']) . ')) = :role LIMIT 1'
                         );
                         $find->execute([':i' => $delId, ':role' => mb_strtolower($ADMIN_ROLE)]);
@@ -99,6 +102,10 @@ if (!isset($pdo) || !($pdo instanceof PDO)) {
                                 $pdo->exec('SET @vs_owner_ok = 0');
                             }
                             $code = $del->rowCount() > 0 ? 'deleted' : 'missing';
+                            if ($code === 'deleted') {
+                                $who = trim((string)($target['n'] ?? ''));
+                                vs_admin_log($pdo, 'user', 'Deleted admin account ' . ($who !== '' ? '"' . mb_substr($who, 0, 60) . '"' : '#' . mb_substr($delId, 0, 20)));
+                            }
                         }
                     } catch (Throwable $e) {
                         $code = 'failed';
@@ -257,7 +264,6 @@ vs_print_styles();
                     <div class="min-w-0">
                       <p class="fw-semibold mb-0"><?php echo vs_e($a['name']); ?>
                         <?php if ($a['is_me']): ?><span class="badge text-bg-secondary">You</span><?php endif; ?>
-                        <?php if ($a['is_owner']): ?><span class="badge text-bg-warning">Owner</span><?php endif; ?>
                       </p>
                       <?php if ($a['username'] !== ''): ?><p class="text-muted small mb-0">@<?php echo vs_e($a['username']); ?></p><?php endif; ?>
                       <?php if ($a['email'] !== ''): ?><p class="text-muted small mb-0 vs-mail"><?php echo vs_e($a['email']); ?></p><?php endif; ?>
@@ -265,7 +271,7 @@ vs_print_styles();
                   </div>
 
                   <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
-                    <span class="badge text-bg-primary">Admin</span>
+                    <?php if ($a['is_owner']): ?><span class="badge text-bg-warning">Owner</span><?php else: ?><span class="badge text-bg-primary">Admin</span><?php endif; ?>
                     <?php if ($a['status'] !== ''): ?><span class="badge <?php echo $statusClass; ?>"><?php echo vs_e($statusLabel); ?></span><?php endif; ?>
                     <span class="small text-muted">
                       <span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background-color:<?php echo $a['online'] ? '#2ecc71' : '#888'; ?>;"></span><?php echo $a['online'] ? 'Online' : 'Offline'; ?>

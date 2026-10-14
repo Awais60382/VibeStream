@@ -8,6 +8,7 @@ function vs_branding_defaults(): array
 {
     return [
         'logo' => VS_DEFAULT_LOGO_PATH,
+        'admin_logo' => null,
         'app_name' => VS_DEFAULT_APP_NAME,
         'app_description' => VS_DEFAULT_APP_DESCRIPTION,
         'default_theme' => 'dark',
@@ -138,6 +139,38 @@ function vs_branding_logo_url(): string
     }
 
     return vs_site_url($relativePath);
+}
+
+
+/**
+ * Admin panel icon. When the owner has not uploaded a separate one,
+ * the admin panel simply uses the website icon.
+ */
+function vs_branding_admin_logo_relative(?array $state = null): string
+{
+    $state = $state ?? vs_branding_state();
+    $relativePath = (string)($state['admin_logo'] ?? '');
+    if ($relativePath !== ''
+        && preg_match('~^uploads/site-branding/admin-[a-f0-9]{32}\.png$~', $relativePath)
+        && is_file(__DIR__ . '/' . $relativePath)) {
+        return $relativePath;
+    }
+    return '';
+}
+
+function vs_branding_has_admin_logo(?array $state = null): bool
+{
+    return vs_branding_admin_logo_relative($state) !== '';
+}
+
+function vs_branding_admin_logo_url(?array $state = null): string
+{
+    $state = $state ?? vs_branding_state();
+    $relativePath = vs_branding_admin_logo_relative($state);
+    if ($relativePath !== '') {
+        return vs_site_url($relativePath);
+    }
+    return vs_branding_logo_url();
 }
 
 

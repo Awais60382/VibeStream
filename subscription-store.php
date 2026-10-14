@@ -119,6 +119,11 @@ function vs_subscription_change(
                 $changed = $insert->affected_rows === 1;
                 $insert->close();
                 $isSubscribed = true;
+                if ($changed && !empty($_SESSION['username'])) {
+                    if (function_exists('vs_notify_new_subscriber')) {
+                        vs_notify_new_subscriber($conn, $channelUsername !== '' ? $channelUsername : $channelName, (string)$_SESSION['username']);
+                    }
+                }
             } else {
                 $delete = $conn->prepare('DELETE FROM user_subscriptions WHERE subscriber_id = ? AND channel_key = ?');
                 if (!$delete) {

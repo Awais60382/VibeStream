@@ -2,6 +2,17 @@
 require_once __DIR__ . '/admin-bootstrap.php';
 
 require_once __DIR__ . '/../site-branding.php';
+require_once __DIR__ . '/admin-activity-store.php';
+
+// Owner only: these settings change the whole website (maintenance mode, uploads, categories).
+if (empty($isSiteOwner)) {
+    http_response_code(403);
+    echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Owner only</title></head>'
+        . '<body style="font-family:Arial,sans-serif;padding:40px;background:#f4f5f7">'
+        . '<h2>Owner only</h2><p>Only the owner account can change the app settings.</p>'
+        . '<p><a href="index.php">Back to the admin panel</a></p></body></html>';
+    exit;
+}
 
 $successMsg = '';
 $errorMsg = '';
@@ -11,7 +22,6 @@ if (empty($_SESSION['vs_app_settings_csrf'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_app_settings') {
-    $newLogoPath = '';
     try {
         if (!hash_equals($_SESSION['vs_app_settings_csrf'], (string)($_POST['csrf_token'] ?? ''))) {
             throw new RuntimeException('The settings request expired. Refresh the page and try again.');
@@ -67,57 +77,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $nextState['maintenance_message'] = $newMaintenanceMessage;
         $nextState['categories'] = $newCategories;
 
-        $upload = $_FILES['site_logo'] ?? null;
-        if (is_array($upload) && ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
-            if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-                throw new RuntimeException('The logo upload failed. Choose a PNG and try again.');
-            }
-            if ((int)$upload['size'] > 4 * 1024 * 1024) {
-                throw new RuntimeException('The logo file must be 4 MB or smaller.');
-            }
-            if (!is_uploaded_file($upload['tmp_name'])) {
-                throw new RuntimeException('The uploaded logo could not be validated.');
-            }
-
-            $imageInfo = getimagesize($upload['tmp_name']);
-            $mime = (new finfo(FILEINFO_MIME_TYPE))->file($upload['tmp_name']);
-            if ($imageInfo === false || $mime !== 'image/png' || ($imageInfo[2] ?? null) !== IMAGETYPE_PNG) {
-                throw new RuntimeException('Only valid PNG image files are accepted.');
-            }
-            if ($imageInfo[0] < 128 || $imageInfo[1] < 128 || $imageInfo[0] > 2048 || $imageInfo[1] > 2048 || abs($imageInfo[0] - $imageInfo[1]) > 20) {
-                throw new RuntimeException('Use a square logo between 128 × 128 and 2048 × 2048 pixels.');
-            }
-
-            $directory = __DIR__ . '/../uploads/site-branding';
-            if (!is_dir($directory) && !mkdir($directory, 0750, true) && !is_dir($directory)) {
-                throw new RuntimeException('Could not create the logo upload directory.');
-            }
-            $filename = bin2hex(random_bytes(16)) . '.png';
-            $newLogoPath = 'uploads/site-branding/' . $filename;
-            if (!move_uploaded_file($upload['tmp_name'], __DIR__ . '/../' . $newLogoPath)) {
-                throw new RuntimeException('The uploaded logo could not be saved.');
-            }
-            $nextState['logo'] = $newLogoPath;
-            $adminName = (string)($_SESSION['AdminSession'] ?? 'Site owner');
-            $nextState['notification'] = [
-                'message' => 'The site logo was updated by ' . $adminName . '.',
-                'created_at' => date(DATE_ATOM),
-            ];
+        // What changed, for the activity log (compared before saving)
+        $clip = static fn($v) => mb_strlen((string)$v) > 40 ? mb_substr((string)$v, 0, 39) . '…' : (string)$v;
+        $onOff = static fn($b) => $b ? 'ON' : 'OFF';
+        $changes = [];
+        if (vs_branding_app_name($brandingState) !== $appName) {
+            $changes[] = 'app name "' . $clip(vs_branding_app_name($brandingState)) . '" → "' . $clip($appName) . '"';
+        }
+        if (vs_branding_app_description($brandingState) !== $appDescription) {
+            $changes[] = 'app description';
+        }
+        if (vs_branding_default_theme($brandingState) !== $defaultTheme) {
+            $changes[] = 'default theme → ' . $defaultTheme;
+        }
+        if (vs_uploads_enabled($brandingState) !== $newUploadsEnabled) {
+            $changes[] = 'uploads ' . $onOff($newUploadsEnabled);
+        }
+        if ((int)vs_max_upload_mb($brandingState) !== (int)$newMaxUploadMb) {
+            $changes[] = 'max upload ' . (int)vs_max_upload_mb($brandingState) . ' → ' . (int)$newMaxUploadMb . ' MB';
+        }
+        if (!empty($brandingState['maintenance_enabled']) !== $newMaintenanceEnabled) {
+            $changes[] = 'maintenance mode ' . $onOff($newMaintenanceEnabled);
+        }
+        if ((string)($brandingState['maintenance_message'] ?? '') !== $newMaintenanceMessage) {
+            $changes[] = 'maintenance message';
+        }
+        if (array_values(vs_default_categories($brandingState)) !== $newCategories) {
+            $changes[] = 'categories (' . count($newCategories) . ')';
         }
 
-        try {
-            vs_branding_save_state($nextState);
-        } catch (Throwable $error) {
-            if ($newLogoPath !== '' && is_file(__DIR__ . '/../' . $newLogoPath)) {
-                unlink(__DIR__ . '/../' . $newLogoPath);
-            }
-            throw $error;
-        }
+        vs_branding_save_state($nextState);
+        vs_admin_log($pdo ?? null, 'settings', 'App settings saved: ' . ($changes ? implode(', ', $changes) : 'no changes'));
 
         $brandingState = $nextState;
-        $successMsg = $newLogoPath !== ''
-            ? 'App settings saved and the new logo published. Admins can see the in-app notification.'
-            : 'App settings saved.';
+        $successMsg = 'App settings saved.';
     } catch (Throwable $error) {
         $errorMsg = $error->getMessage();
     }
@@ -160,7 +153,7 @@ require_once __DIR__ . '/header.php';
       <p class="text-muted mb-0">These values appear on the website and installable app. User theme choices are not overridden.</p>
     </div>
 
-    <form method="post" enctype="multipart/form-data">
+    <form method="post">
       <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['vs_app_settings_csrf'], ENT_QUOTES, 'UTF-8'); ?>">
       <input type="hidden" name="action" value="save_app_settings">
 
@@ -172,10 +165,13 @@ require_once __DIR__ . '/header.php';
         </div>
       </div>
 
-      <div class="mb-3">
-        <label for="site_logo" class="form-label">Replace logo <span class="text-muted">(optional)</span></label>
-        <input class="form-control" type="file" id="site_logo" name="site_logo" accept="image/png">
-        <div class="form-text">PNG only; square image from 128 × 128 to 2048 × 2048 pixels; up to 4 MB.</div>
+      <div class="mb-4">
+<?php if (!empty($isSiteOwner)): ?>
+        <a class="btn btn-outline-primary" href="icons.php"><i class="bi bi-image me-1" aria-hidden="true"></i>Change icons</a>
+        <div class="form-text">Replace the website icon (logo, browser tab and installed app) or the admin panel icon.</div>
+<?php else: ?>
+        <div class="form-text">Only the site owner can change the website and admin panel icons.</div>
+<?php endif; ?>
       </div>
 
       <div class="mb-3">

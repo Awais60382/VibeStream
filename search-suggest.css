@@ -1,0 +1,150 @@
+/* VibeStream - YouTube-style search bar: leading icon, clear (X) button and suggestions dropdown. */
+.navbar .vs-search-wrap { position: relative; }
+
+.navbar .vs-search-box .vs-lead-icon {
+  flex: 0 0 0; width: 0; overflow: hidden; display: inline-flex; align-items: center; justify-content: center;
+  transition: width .15s; color: inherit; pointer-events: none;
+}
+.navbar .vs-search-box:focus-within .vs-lead-icon { flex-basis: 44px; width: 44px; }
+.navbar .vs-search-box:focus-within .vs-lead-icon + input { padding-left: 0 !important; }
+.navbar .vs-search-box .vs-lead-icon svg { width: 20px; height: 20px; flex: 0 0 auto; }
+
+.navbar .vs-search-box .vs-clear-btn {
+  flex: 0 0 auto; width: 40px; border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; align-self: center; height: 34px;
+}
+.navbar .vs-search-box .vs-clear-btn[hidden] { display: none !important; }
+.navbar .vs-search-box .vs-clear-btn:hover { background: rgba(128,128,128,.25); }
+.navbar .vs-search-box .vs-clear-btn svg { width: 20px; height: 20px; }
+
+.vs-suggest {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 2000; margin: 0; padding: 8px 0; list-style: none;
+  max-height: min(70vh, 640px); overflow-y: auto; border-radius: 14px; box-sizing: border-box;
+  background: #fff; color: #0f0f0f; box-shadow: 0 6px 24px rgba(0,0,0,.28); border: 1px solid rgba(128,128,128,.2);
+}
+.vs-suggest[hidden] { display: none; }
+.vs-suggest.is-dark { background: #212121; color: #fff; border-color: rgba(255,255,255,.08); }
+.vs-suggest li {
+  display: flex; align-items: center; gap: 16px; padding: 0 16px; min-height: 40px; cursor: pointer;
+  font-size: 16px; line-height: 1.3;
+}
+.vs-suggest li.is-active, .vs-suggest li:hover { background: rgba(128,128,128,.22); }
+.vs-suggest .vs-s-icon { flex: 0 0 24px; width: 24px; height: 24px; display: inline-flex; opacity: .9; }
+.vs-suggest .vs-s-icon svg { width: 24px; height: 24px; }
+.vs-suggest .vs-s-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.vs-suggest .vs-s-text b { font-weight: 700; }
+.vs-suggest .vs-s-del {
+  flex: 0 0 auto; border: 0; background: transparent; color: #3ea6ff; font: inherit; font-size: 13px; cursor: pointer;
+  padding: 6px 4px; visibility: hidden;
+}
+.vs-suggest li:hover .vs-s-del, .vs-suggest li.is-active .vs-s-del { visibility: visible; }
+@media (hover: none) { .vs-suggest .vs-s-del { visibility: visible; } }
+@media (max-width: 700px) {
+  .vs-suggest li { min-height: 46px; font-size: 17px; }
+}
+
+
+/* ======================================================================
+   Compact size: the search bar is a normal navbar-sized bar, centered, not full width.
+   ====================================================================== */
+.navbar .nav-center { display: flex; justify-content: center; }
+.navbar .vs-search-wrap { max-width: 560px !important; width: 100% !important; margin: 0 auto; gap: 8px !important; }
+.navbar .vs-search-box { height: 36px !important; }
+.navbar .vs-search-box input { font-size: 14px; padding: 0 14px !important; }
+.navbar .vs-search-btn { flex: 0 0 52px !important; }
+.navbar .vs-search-btn svg { width: 18px; height: 18px; }
+.navbar .vs-mic-btn { width: 36px !important; height: 36px !important; }
+.navbar .vs-mic-btn svg { width: 18px; height: 18px; }
+.navbar .vs-search-box .vs-lead-icon svg, .navbar .vs-search-box .vs-clear-btn svg { width: 18px; height: 18px; }
+.navbar .vs-search-box:focus-within .vs-lead-icon { flex-basis: 38px; width: 38px; }
+.navbar .vs-search-box .vs-clear-btn { width: 34px; height: 30px; }
+@media (max-width: 700px) {
+  .navbar .vs-search-wrap { max-width: none !important; }
+  .navbar .vs-search-box { height: 36px !important; }
+  .navbar .vs-search-btn { flex-basis: 46px !important; }
+}
+
+
+/* ======================================================================
+   Suggestion rows with a small thumbnail on the right (your own videos and shorts only)
+   ====================================================================== */
+.vs-suggest li { padding-top: 5px; padding-bottom: 5px; min-height: 44px; }
+.vs-suggest .vs-s-thumb { flex: 0 0 auto; width: 67px; height: 38px; border-radius: 6px; object-fit: cover; background: rgba(128,128,128,.3); }
+.vs-suggest .vs-s-tag {
+  flex: 0 0 auto; font-size: 11px; font-weight: 700; line-height: 1; padding: 4px 7px; border-radius: 999px;
+  background: rgba(249,67,63,.16); color: #f9433f;
+}
+/* index.php search form hosts the dropdown too */
+.app-navbar .search-form { position: relative; }
+
+/* ======================================================================
+   Other search bars (admin panel top bar, watch history)
+   ====================================================================== */
+.admin-navbar form[role="search"], .history-search { position: relative; }
+.history-search .vs-suggest svg, .admin-navbar .vs-suggest svg { width: 24px; height: 24px; flex: 0 0 24px; }
+.history-search .vs-suggest { background: var(--surface, #fff); color: var(--text, #0f0f0f); }
+.history-search .vs-suggest.is-dark { background: var(--surface, #212121); color: var(--text, #fff); }
+.admin-navbar .vs-suggest li { font-size: 14px; }
+
+
+/* ======================================================================
+   Main top bar (header.php): pill search box + search button + round mic button
+   ====================================================================== */
+.navbar .nav-center { display: flex; justify-content: center; align-items: center; min-width: 0; }
+.navbar .vs-search-wrap {
+  --vs-bd: #ccc; --vs-bg: #fff; --vs-btn: #f8f8f8; --vs-mic: #f2f2f2; --vs-fg: #0f0f0f; --vs-ph: #707070; --vs-hover: #e5e5e5;
+  display: flex !important; align-items: center; gap: 8px !important; position: relative;
+  width: 100% !important; max-width: 640px !important; margin: 0 auto; min-width: 0;
+}
+html[data-theme="dark"] .navbar .vs-search-wrap {
+  --vs-bd: #303030; --vs-bg: #121212; --vs-btn: #222; --vs-mic: #272727; --vs-fg: #f1f1f1; --vs-ph: #888; --vs-hover: #3a3a3a;
+}
+.navbar .vs-search-wrap .vs-search-box {
+  flex: 1 1 auto; min-width: 0; display: flex !important; align-items: stretch; height: 40px !important;
+  border: 1px solid var(--vs-bd); border-radius: 999px; background: var(--vs-bg); overflow: hidden; box-sizing: border-box;
+}
+.navbar .vs-search-wrap .vs-search-box:focus-within { border-color: #1c62b9; }
+.navbar .vs-search-wrap .vs-search-box input {
+  flex: 1 1 auto; min-width: 0; width: auto !important; height: 100% !important; margin: 0;
+  border: 0 !important; outline: 0 !important; box-shadow: none !important; border-radius: 0 !important;
+  background: transparent !important; color: var(--vs-fg) !important; font-size: 15px; padding: 0 16px !important;
+}
+.navbar .vs-search-wrap .vs-search-box input::placeholder { color: var(--vs-ph); opacity: 1; }
+.navbar .vs-search-wrap .vs-search-btn {
+  flex: 0 0 64px !important; width: 64px; height: auto; margin: 0; padding: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0 !important; border-left: 1px solid var(--vs-bd) !important; border-radius: 0 !important;
+  background: var(--vs-btn) !important; color: var(--vs-fg) !important;
+}
+.navbar .vs-search-wrap .vs-search-btn:hover { background: var(--vs-hover) !important; }
+.navbar .vs-search-wrap .vs-search-btn svg { width: 20px; height: 20px; }
+.navbar .vs-search-wrap .vs-mic-btn {
+  flex: 0 0 40px !important; width: 40px !important; height: 40px !important; margin: 0; padding: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0 !important; border-radius: 50% !important; background: var(--vs-mic) !important; color: var(--vs-fg) !important;
+}
+.navbar .vs-search-wrap .vs-mic-btn:hover { background: var(--vs-hover) !important; }
+.navbar .vs-search-wrap .vs-mic-btn svg { width: 20px; height: 20px; }
+.navbar .vs-search-wrap .vs-mic-btn.is-listening { background: #f9433f !important; color: #fff !important; animation: vsMicPulse 1.2s infinite; }
+@keyframes vsMicPulse { 0% { box-shadow: 0 0 0 0 rgba(249,67,63,.55); } 70% { box-shadow: 0 0 0 10px rgba(249,67,63,0); } 100% { box-shadow: 0 0 0 0 rgba(249,67,63,0); } }
+@media (max-width: 700px) {
+  .navbar .vs-search-wrap { max-width: none !important; }
+  .navbar .vs-search-wrap .vs-search-box { height: 38px !important; }
+  .navbar .vs-search-wrap .vs-search-btn { flex-basis: 50px !important; width: 50px; }
+  .navbar .vs-search-wrap .vs-mic-btn { flex-basis: 38px !important; width: 38px !important; height: 38px !important; }
+}
+
+/* ======================================================================
+   Small mic inside every other search box (admin lists, watch history, index.php ...)
+   ====================================================================== */
+.vs-mic-field { position: relative; }
+.vs-mic-field > input { padding-right: 40px !important; box-sizing: border-box; }
+.vs-mic-inline {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%); z-index: 2;
+  width: 30px; height: 30px; margin: 0; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; color: inherit; opacity: .8;
+}
+.vs-mic-inline svg { width: 18px; height: 18px; }
+.vs-mic-inline:hover { background: rgba(128,128,128,.25); opacity: 1; }
+.vs-mic-inline.is-listening { background: #f9433f; color: #fff; opacity: 1; animation: vsMicPulse 1.2s infinite; }

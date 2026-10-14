@@ -3,6 +3,8 @@
  * VibeStream - signed-in user menu (avatar + name + caret with a dropdown),
  * styled like the admin panel's profile menu. Used by index.php, layout.php and header.php.
  */
+require_once __DIR__ . '/sidebar-icons-store.php';
+
 if (!function_exists('vs_user_menu_html')) {
     function vs_user_menu_html(string $username, string $avatarUrl = ''): string
     {
@@ -24,11 +26,16 @@ if (!function_exists('vs_user_menu_html')) {
             'caret'   => $svg('<path d="M6 9l6 6 6-6"/>'),
         ];
 
+        // Custom icons set in adminpanel/icons.php (Website sidebar tab) replace the originals here.
+        $ico = function (string $key, string $menuKey) use ($icons): string {
+            return vs_si_html('site', $menuKey, $icons[$key], 20);
+        };
+
         // Only signed-in admins get the Admin panel shortcut (the panel itself re-checks access on the server).
         $isAdmin = !empty($_SESSION['AdminSession'])
             || (isset($_SESSION['role']) && strcasecmp((string)$_SESSION['role'], 'admin') === 0);
         $adminItem = $isAdmin
-            ? '<a class="vs-user-item" role="menuitem" href="adminpanel/index.php"><span class="vs-user-icon">' . $icons['admin'] . '</span><span>Admin panel</span></a>'
+            ? '<a class="vs-user-item" role="menuitem" href="adminpanel/index.php"><span class="vs-user-icon">' . $ico('admin', 'menu_adminpanel') . '</span><span>Admin panel</span></a>'
             : '';
 
         $avatar = '<span class="vs-user-avatar"><span class="vs-user-initial">' . $e($initial) . '</span>';
@@ -44,12 +51,12 @@ if (!function_exists('vs_user_menu_html')) {
             . '<span class="vs-user-caret">' . $icons['caret'] . '</span>'
             . '</button>'
             . '<div class="vs-user-dropdown" role="menu" hidden>'
-            . '<a class="vs-user-item" role="menuitem" href="profile.php"><span class="vs-user-icon">' . $icons['profile'] . '</span><span>Profile</span></a>'
-            . '<a class="vs-user-item" role="menuitem" href="subscriptions.php"><span class="vs-user-icon">' . $icons['subs'] . '</span><span>Subscriptions</span></a>'
-            . '<a class="vs-user-item" role="menuitem" href="notifications.php"><span class="vs-user-icon">' . $icons['bell'] . '</span><span>Notifications</span></a>'
+            . '<a class="vs-user-item" role="menuitem" href="profile.php"><span class="vs-user-icon">' . $ico('profile', 'menu_profile') . '</span><span>Profile</span></a>'
+            . '<a class="vs-user-item" role="menuitem" href="subscriptions.php"><span class="vs-user-icon">' . $ico('subs', 'menu_subscriptions') . '</span><span>Subscriptions</span></a>'
+            . '<a class="vs-user-item" role="menuitem" href="notifications.php"><span class="vs-user-icon">' . $ico('bell', 'menu_notifications') . '</span><span>Notifications</span></a>'
             . $adminItem
             . '<div class="vs-user-divider"></div>'
-            . '<a class="vs-user-item vs-user-danger" role="menuitem" href="logout.php"><span class="vs-user-icon">' . $icons['logout'] . '</span><span>Log out</span></a>'
+            . '<a class="vs-user-item vs-user-danger" role="menuitem" href="logout.php"><span class="vs-user-icon">' . $ico('logout', 'menu_logout') . '</span><span>Log out</span></a>'
             . '</div>'
             . '</div>';
     }

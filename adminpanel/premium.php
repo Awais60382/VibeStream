@@ -12,6 +12,8 @@ include_once "../connection.php";
 include_once "ui_helpers.php";
 require_once __DIR__ . '/../avatar.php';
 require_once __DIR__ . '/../premium-store.php';
+require_once __DIR__ . '/owner-guard.php';
+require_once __DIR__ . '/admin-activity-store.php';
 
 if (empty($_SESSION['premium_csrf'])) {
     $_SESSION['premium_csrf'] = bin2hex(random_bytes(32));
@@ -37,6 +39,9 @@ if ($hasDb) {
             // Approve or reject a payment request
             if ($act === 'approve' || $act === 'reject') {
                 $done = vs_premium_review($pdo, (int)($_POST['id'] ?? 0), $act === 'approve');
+                if ($done) {
+                    vs_admin_log($pdo, 'premium', ($act === 'approve' ? 'Approved' : 'Rejected') . ' Premium payment request #' . (int)($_POST['id'] ?? 0));
+                }
                 header('Location: premium.php?msg=' . ($done ? ($act === 'approve' ? 'approved' : 'rejected') : 'handled'));
                 exit;
             }
@@ -45,11 +50,15 @@ if ($hasDb) {
             $who = trim((string)($_POST['username'] ?? ''));
             if ($act === 'revoke' && $who !== '') {
                 vs_premium_cancel($pdo, $who);
+                vs_admin_log($pdo, 'premium', 'Cancelled Premium for ' . $who);
                 header('Location: premium.php?msg=revoked');
                 exit;
             }
             if ($act === 'grant' && $who !== '') {
                 $ok = vs_premium_set($pdo, $who, (string)($_POST['plan'] ?? ''));
+                if ($ok) {
+                    vs_admin_log($pdo, 'premium', 'Gave Premium (' . (string)($_POST['plan'] ?? '') . ') to ' . $who);
+                }
                 header('Location: premium.php?msg=' . ($ok ? 'granted' : 'failed'));
                 exit;
             }
@@ -86,6 +95,49 @@ $stPending = 0;
 foreach ($requests as $r) {
     if ($r['status'] === 'pending') {
         $stPending++;
+    }
+}
+
+// Everyone who can get Premium: users and admins (the owner is left out), with their Premium state.
+$people = [];
+$peopleCount = ['all' => 0, 'has' => 0, 'not' => 0, 'admins' => 0];
+if ($hasDb && $dbError === '') {
+    try {
+        $uc = vs_cols($pdo, 'users');
+        $mName  = $uc ? vs_pick($uc, ['username', 'user_name', 'login', 'uname']) : null;
+        $mEmail = $uc ? vs_pick($uc, ['email', 'email_address', 'mail']) : null;
+        $mRole  = $uc ? vs_pick($uc, ['role', 'user_role', 'usertype', 'user_type', 'account_type']) : null;
+        if ($mName) {
+            $sel = vs_q($mName) . ' AS f_name'
+                 . ($mEmail ? ', ' . vs_q($mEmail) . ' AS f_email' : '')
+                 . ($mRole ? ', ' . vs_q($mRole) . ' AS f_role' : '');
+            $urows = $pdo->query('SELECT ' . $sel . ' FROM `users` ORDER BY ' . vs_q($mName) . ' ASC')->fetchAll(PDO::FETCH_ASSOC);
+
+            $premState = [];   // lower-case user name => true (active now) / false (ended)
+            foreach ($members as $m) {
+                $k = mb_strtolower(trim((string)$m['username']));
+                $premState[$k] = !empty($premState[$k]) || !empty($m['_active']);
+            }
+            foreach ($urows as $u) {
+                $nm = trim((string)($u['f_name'] ?? ''));
+                $em = trim((string)($u['f_email'] ?? ''));
+                if ($nm === '' || ($em !== '' && strtolower($em) === strtolower(VS_OWNER_EMAIL))) {
+                    continue;   // no name to give Premium to, or the owner
+                }
+                $isAdmin = isset($u['f_role']) && strcasecmp(trim((string)$u['f_role']), 'Admin') === 0;
+                $k = mb_strtolower($nm);
+                if ($isAdmin)                          { $state = 'admin'; }
+                elseif (!empty($premState[$k]))        { $state = 'active'; }
+                elseif (array_key_exists($k, $premState)) { $state = 'ended'; }
+                else                                   { $state = 'none'; }
+                $people[] = ['name' => $nm, 'email' => $em, 'state' => $state];
+                $peopleCount['all']++;
+                if ($state === 'admin')  { $peopleCount['admins']++; }
+                if ($state === 'admin' || $state === 'active') { $peopleCount['has']++; } else { $peopleCount['not']++; }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('premium people list failed: ' . $e->getMessage());
     }
 }
 
@@ -360,6 +412,65 @@ include "header.php";
               </select>
               <button type="submit" class="btn btn-primary btn-sm">Give Premium</button>
             </form>
+
+            <div class="p-3 pt-0">
+              <hr class="mt-0">
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Filter people">
+                  <button type="button" class="btn btn-primary" data-gp="all">All (<?php echo (int)$peopleCount['all']; ?>)</button>
+                  <button type="button" class="btn btn-outline-primary" data-gp="has">Has Premium (<?php echo (int)$peopleCount['has']; ?>)</button>
+                  <button type="button" class="btn btn-outline-primary" data-gp="not">Not upgraded (<?php echo (int)$peopleCount['not']; ?>)</button>
+                  <button type="button" class="btn btn-outline-primary" data-gp="admins">Admins (<?php echo (int)$peopleCount['admins']; ?>)</button>
+                </div>
+                <input type="search" class="form-control form-control-sm" id="gpSearch" placeholder="Search users" aria-label="Search users" autocomplete="off" style="max-width:220px">
+              </div>
+              <p class="text-muted small mb-2">Showing <span id="gpCount"><?php echo (int)$peopleCount['all']; ?></span> of <?php echo (int)$peopleCount['all']; ?>. Admins always have Premium, so they have no Give button.</p>
+              <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                  <thead>
+                    <tr><th scope="col">User</th><th scope="col">Premium</th><th scope="col" class="text-end">Give Premium</th></tr>
+                  </thead>
+                  <tbody id="gpRows">
+                    <?php foreach ($people as $p): ?>
+                      <tr data-name="<?php echo vs_e(mb_strtolower($p['name'] . ' ' . $p['email'])); ?>" data-state="<?php echo vs_e($p['state']); ?>">
+                        <td>
+                          <div class="table-media">
+                            <img class="avatar-img avatar-sm" src="<?php echo vs_e(avatar_url($p['name'])); ?>" alt="" onerror="this.onerror=null;this.src='<?php echo vs_e($pmInitial($p['name'])); ?>';">
+                            <div>
+                              <strong class="content-title"><?php echo vs_e($p['name']); ?></strong>
+                              <?php if ($p['email'] !== ''): ?><div class="text-muted small"><?php echo vs_e($p['email']); ?></div><?php endif; ?>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <?php if ($p['state'] === 'admin'): ?><span class="badge text-bg-primary">Admin (included)</span>
+                          <?php elseif ($p['state'] === 'active'): ?><span class="badge text-bg-success">Has Premium</span>
+                          <?php elseif ($p['state'] === 'ended'): ?><span class="badge text-bg-secondary">Ended</span>
+                          <?php else: ?><span class="badge text-bg-warning">Not upgraded</span>
+                          <?php endif; ?>
+                        </td>
+                        <td class="text-end">
+                          <?php if ($p['state'] === 'none' || $p['state'] === 'ended'): ?>
+                            <form method="post" class="d-inline-flex gap-1 justify-content-end">
+                              <input type="hidden" name="csrf" value="<?php echo vs_e($csrf); ?>">
+                              <input type="hidden" name="action" value="grant">
+                              <input type="hidden" name="username" value="<?php echo vs_e($p['name']); ?>">
+                              <select class="form-select form-select-sm" name="plan" aria-label="Plan" style="width:auto">
+                                <?php foreach (VS_PREMIUM_PLANS as $key => $def): ?>
+                                  <option value="<?php echo vs_e($key); ?>" <?php echo $key === 'monthly' ? 'selected' : ''; ?>><?php echo vs_e($def['label']); ?></option>
+                                <?php endforeach; ?>
+                              </select>
+                              <button type="submit" class="btn btn-primary btn-sm">Give Premium</button>
+                            </form>
+                          <?php endif; ?>
+                        </td>
+                      </tr>
+                    <?php endforeach; ?>
+                    <tr id="gpEmpty"<?php echo $people ? ' hidden' : ''; ?>><td colspan="3" class="text-center text-muted py-4">No users found.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
         </div>
       </main>
@@ -385,6 +496,44 @@ include "header.php";
     }
     q.addEventListener('input', apply);
     f.addEventListener('change', apply);
+  })();
+  </script>
+  <script>
+  (function () {
+    var body = document.getElementById('gpRows');
+    if (!body) return;
+    var rows = body.querySelectorAll('tr[data-state]'), empty = document.getElementById('gpEmpty'),
+        count = document.getElementById('gpCount'), search = document.getElementById('gpSearch'),
+        btns = document.querySelectorAll('[data-gp]'), mode = 'all';
+    function match(state) {
+      if (mode === 'all') return true;
+      if (mode === 'has') return state === 'admin' || state === 'active';
+      if (mode === 'not') return state === 'none' || state === 'ended';
+      return state === 'admin';
+    }
+    function apply() {
+      var term = (search.value || '').toLowerCase().trim(), n = 0;
+      rows.forEach(function (tr) {
+        var show = match(tr.dataset.state) && (!term || tr.dataset.name.indexOf(term) > -1);
+        tr.hidden = !show;
+        if (show) n++;
+      });
+      count.textContent = n;
+      empty.hidden = n !== 0;
+    }
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        mode = b.getAttribute('data-gp');
+        btns.forEach(function (x) {
+          var on = x === b;
+          x.classList.toggle('btn-primary', on);
+          x.classList.toggle('btn-outline-primary', !on);
+        });
+        apply();
+      });
+    });
+    search.addEventListener('input', apply);
+    apply();
   })();
   </script>
   <script src="./assets/js/bootstrap.bundle.min.js"></script>

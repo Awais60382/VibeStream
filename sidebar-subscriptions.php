@@ -6,10 +6,72 @@
  *   v Show more / Show less
  *
  * Used by vs_render_sidebar() in sidebar-navigation.php.
+ * Blue dot = the channel uploaded something after you last opened it; opening the channel clears it
+ * (table subscription_seen, written by subscription-seen.php).
  */
 
 require_once __DIR__ . '/subscription-store.php';
 require_once __DIR__ . '/avatar.php';
+
+/** Table that remembers when each user last opened each channel (clears the blue dot). */
+function vs_sub_seen_ensure(mysqli $conn): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $conn->query(
+        'CREATE TABLE IF NOT EXISTS `subscription_seen` (
+            `user_id` INT NOT NULL,
+            `channel_key` VARCHAR(191) NOT NULL,
+            `seen_at` DATETIME NOT NULL,
+            PRIMARY KEY (`user_id`, `channel_key`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $done = true;
+}
+
+function vs_sub_user_id(mysqli $conn): int
+{
+    $id = vs_subscription_user_id();
+    if ($id > 0) {
+        return $id;
+    }
+    $username = trim((string)($_SESSION['username'] ?? ''));
+    if ($username === '') {
+        return 0;
+    }
+    $stmt = $conn->prepare('SELECT id FROM users WHERE username = ? LIMIT 1');
+    if (!$stmt) {
+        return 0;
+    }
+    $stmt->bind_param('s', $username);
+    if ($stmt->execute()) {
+        $id = (int)($stmt->get_result()->fetch_assoc()['id'] ?? 0);
+    }
+    $stmt->close();
+    return max($id, 0);
+}
+
+/** The user opened this channel: its "new upload" dot goes away until the channel posts again. */
+function vs_sub_mark_seen(mysqli $conn, int $userId, string $key): void
+{
+    $key = mb_substr(mb_strtolower(trim($key)), 0, 191);
+    if ($userId <= 0 || $key === '') {
+        return;
+    }
+    vs_sub_seen_ensure($conn);
+    $stmt = $conn->prepare(
+        'INSERT INTO subscription_seen (user_id, channel_key, seen_at) VALUES (?, ?, NOW())
+         ON DUPLICATE KEY UPDATE seen_at = NOW()'
+    );
+    if (!$stmt) {
+        return;
+    }
+    $stmt->bind_param('is', $userId, $key);
+    $stmt->execute();
+    $stmt->close();
+}
 
 function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $newDays = 3): string
 {
@@ -63,7 +125,7 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
 
-        $stmt = $conn->prepare('SELECT channel_name, channel_username FROM user_subscriptions WHERE subscriber_id = ? ORDER BY created_at DESC LIMIT ' . (int)$max);
+        $stmt = $conn->prepare('SELECT channel_name, channel_username, created_at FROM user_subscriptions WHERE subscriber_id = ? ORDER BY created_at DESC LIMIT ' . (int)$max);
         if (!$stmt) {
             return '';
         }
@@ -80,6 +142,30 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
     } catch (Throwable $e) {
         error_log('Sidebar subscriptions failed: ' . $e->getMessage());
         return '';
+    }
+
+    // When did this user last open each channel?
+    $seen = [];
+    try {
+        vs_sub_seen_ensure($conn);
+        $sq = $conn->prepare('SELECT channel_key, seen_at FROM subscription_seen WHERE user_id = ?');
+        if ($sq) {
+            $sq->bind_param('i', $userId);
+            if ($sq->execute()) {
+                $sr = $sq->get_result();
+                while ($x = $sr->fetch_assoc()) {
+                    $seen[(string)$x['channel_key']] = (int)strtotime((string)$x['seen_at']);
+                }
+            }
+            $sq->close();
+        }
+    } catch (Throwable $e) {
+        error_log('Sidebar subscription dots failed: ' . $e->getMessage());
+    }
+
+    $activeProfile = '';
+    if (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'profile.php') {
+        $activeProfile = mb_strtolower(trim((string)($_GET['u'] ?? '')));
     }
 
     $items = [];
@@ -114,21 +200,27 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
         }
 
         $latestAt = !empty($latest['created_at']) ? strtotime((string)$latest['created_at']) : 0;
+
+        // Blue dot = the channel posted after you last opened it (or after you subscribed).
+        $key = mb_strtolower($label);
+        $baseline = $seen[$key] ?? (int)strtotime((string)($r['created_at'] ?? ''));
+        $isNew = $latestAt > 0 && $latestAt > $baseline;
+        if ($isNew && $activeProfile !== '' && $activeProfile === $key) {
+            // You are on this channel's page right now: that counts as opening it.
+            vs_sub_mark_seen($conn, $userId, $key);
+            $isNew = false;
+        }
+
         $items[] = [
             'label'  => $label,
             'avatar' => $avatar,
             'latest' => $latestAt ?: 0,
-            'isNew'  => $latestAt > 0 && $latestAt >= time() - $newDays * 86400,
+            'isNew'  => $isNew,
         ];
     }
 
     // channels with the freshest upload first
     usort($items, fn($a, $b) => $b['latest'] <=> $a['latest']);
-
-    $activeProfile = '';
-    if (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'profile.php') {
-        $activeProfile = mb_strtolower(trim((string)($_GET['u'] ?? '')));
-    }
 
     $hasMore = count($items) > $visible;
 
@@ -150,6 +242,7 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
         }
         .vs-sub-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .vs-sub-extra[hidden] { display: none; }
+        .vs-sub-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #3ea6ff; margin-left: 4px; }
         .vs-sub-toggle { width: 100%; background: none; border: 0; cursor: pointer; font: inherit; font-size: 14px; text-align: left; }
         .vs-sub-toggle .vs-sub-ic { width: 24px; display: grid; place-items: center; flex: 0 0 24px; }
         .vs-sub-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -188,6 +281,7 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
                         <span class="vs-sub-av" style="background:linear-gradient(135deg,hsl(<?= $hue ?> 65% 45%),hsl(<?= ($hue + 40) % 360 ?> 70% 35%))"><?= $esc($initial) ?></span>
                     <?php endif; ?>
                     <span class="vs-sub-name"><?= $esc($it['label']) ?></span>
+                    <?php if ($it['isNew']): ?><span class="vs-sub-dot" title="New upload" aria-label="New upload"></span><?php endif; ?>
                 </a>
             <?php endforeach; ?>
 
@@ -200,6 +294,31 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
         </div>
         <?php endif; ?>
     </div>
+
+    <?php if ($items): ?>
+    <script>
+        // Opening a channel clears its blue dot (and remembers it on the server).
+        (function () {
+            var url = <?= json_encode(vs_sidebar_url('subscription-seen.php')) ?>;
+            function seen(a) {
+                var dot = a.querySelector('.vs-sub-dot');
+                if (!dot) return;
+                dot.remove();
+                try {
+                    var f = new FormData();
+                    f.append('key', a.getAttribute('data-key') || '');
+                    if (!(navigator.sendBeacon && navigator.sendBeacon(url, f))) {
+                        fetch(url, { method: 'POST', body: f, credentials: 'same-origin', keepalive: true });
+                    }
+                } catch (e) {}
+            }
+            document.querySelectorAll('#vsSub .vs-sub-item[data-key]').forEach(function (a) {
+                a.addEventListener('click', function () { seen(a); });
+                a.addEventListener('auxclick', function () { seen(a); });
+            });
+        })();
+    </script>
+    <?php endif; ?>
 
     <?php if ($hasMore): ?>
     <script>

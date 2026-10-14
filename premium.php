@@ -32,6 +32,9 @@ require_once __DIR__ . '/sidebar-navigation.php';
 .pm-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
 .pm-plan{background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.28);border-radius:20px;padding:28px}
 .pm-plan.pm-pro{border:2px solid #f5b942}
+.pm-plan.pm-plus{border:2px solid #a78bfa}
+.pm-btn.pm-btn-plus{background:#7c5cff}
+.pm-btn.pm-btn-plus:disabled{background:rgba(128,128,128,.3)}
 .pm-plan h2{font-size:22px;margin:0 0 4px}
 .pm-price{font-size:42px;font-weight:800;margin:8px 0}
 .pm-price small{font-size:15px;font-weight:500;opacity:.65}
@@ -73,10 +76,10 @@ require_once __DIR__ . '/sidebar-navigation.php';
   </div>
 
   <h1>Watch without limits</h1>
-  <p class="pm-lead">No ads, better quality, and downloads for offline watching. Pick a day, a month or a year.</p>
+  <p class="pm-lead">No ads, better quality, and downloads for offline watching. Pick a week, a month or a year.</p>
 
   <div class="pm-toggle" role="group" aria-label="Billing period">
-    <button type="button" id="pmD" aria-pressed="false">Daily</button>
+    <button type="button" id="pmW" aria-pressed="false">Weekly</button>
     <button type="button" id="pmM" aria-pressed="true">Monthly</button>
     <button type="button" id="pmY" aria-pressed="false">Yearly</button>
   </div>
@@ -108,6 +111,20 @@ require_once __DIR__ . '/sidebar-navigation.php';
       </ul>
       <button class="pm-btn" type="button" id="pmBuy">Get Premium</button>
     </section>
+    <section class="pm-plan pm-plus">
+      <h2>Premium Plus</h2>
+      <div class="pm-price"><span id="pmAmt2">$9.99</span> <small id="pmPer2">per month</small></div>
+      <span class="pm-save" id="pmSave2"></span>
+      <ul>
+        <li>Everything in Premium</li>
+        <li>4K HDR and the highest quality</li>
+        <li>Download in the highest quality</li>
+        <li>Plus badge on your profile and comments</li>
+        <li>Priority support</li>
+        <li>First access to every new feature</li>
+      </ul>
+      <button class="pm-btn pm-btn-plus" type="button" id="pmBuy2">Get Plus</button>
+    </section>
   </div>
   <p class="pm-note" id="pmNote"></p>
 </main>
@@ -132,52 +149,67 @@ require_once __DIR__ . '/sidebar-navigation.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  var plan = 'monthly', busy = false, $ = function (i) { return document.getElementById(i); };
-  var PER = { daily: 'per day', monthly: 'per month', yearly: 'per year' };
-  var IDS = { daily: 'pmD', monthly: 'pmM', yearly: 'pmY' };
+  var period = 'monthly', chosen = '', busy = false, $ = function (i) { return document.getElementById(i); };
+  var PER = { weekly: 'per week', monthly: 'per month', yearly: 'per year' };
+  var IDS = { weekly: 'pmW', monthly: 'pmM', yearly: 'pmY' };
+  var KEY = {
+    premium: { weekly: 'weekly', monthly: 'monthly', yearly: 'yearly' },
+    plus: { weekly: 'plusweek', monthly: 'plusmonth', yearly: 'plusyear' }
+  };
+  var UI = {
+    premium: { amt: 'pmAmt', per: 'pmPer', save: 'pmSave', buy: 'pmBuy' },
+    plus: { amt: 'pmAmt2', per: 'pmPer2', save: 'pmSave2', buy: 'pmBuy2' }
+  };
   function money(n) { return '$' + Number(n).toFixed(2); }
   function toast(t) { var e = $('pmToast'); e.textContent = t; e.classList.add('show'); setTimeout(function () { e.classList.remove('show'); }, 4500); }
+  function tierOf(plan) { return plan === 'admin' || String(plan || '').indexOf('plus') === 0 ? 'plus' : 'premium'; }
   if (typeof VSPremium === 'undefined') {
-    $('pmBuy').onclick = function () { toast('premium.js is missing. Put it in the VibeStream folder and refresh.'); };
+    $('pmBuy').onclick = $('pmBuy2').onclick = function () { toast('premium.js is missing. Put it in the VibeStream folder and refresh.'); };
     return;
   }
-  if (!VSPremium.PLANS.daily) {
-    $('pmBuy').onclick = function () { toast('Premium is not set up. Check that header.php prints VS_PREMIUM_STATE.'); };
+  if (!VSPremium.PLANS.weekly || !VSPremium.PLANS.plusmonth) {
+    $('pmBuy').onclick = $('pmBuy2').onclick = function () { toast('Premium plans are not set up. Replace premium-store.php and premium.js with the new versions.'); };
     return;
   }
 
-  function saving(p) {
-    var P = VSPremium.PLANS, base = p === 'monthly' ? P.daily.price * 30 : (p === 'yearly' ? P.monthly.price * 12 : 0);
+  function saving(tier, p) {
+    var P = VSPremium.PLANS, k = KEY[tier], base = p === 'monthly' ? P[k.weekly].price * 4 : (p === 'yearly' ? P[k.monthly].price * 12 : 0);
     if (!base) return '';
-    var pct = Math.round((1 - P[p].price / base) * 100);
-    return pct > 0 ? 'Save ' + pct + '% compared to ' + (p === 'monthly' ? 'daily' : 'monthly') : '';
+    var pct = Math.round((1 - P[k[p]].price / base) * 100);
+    return pct > 0 ? 'Save ' + pct + '% compared to ' + (p === 'monthly' ? 'weekly' : 'monthly') : '';
   }
 
   function render() {
-    var p = VSPremium.PLANS[plan], s = VSPremium.status(), pend = VSPremium.isPending();
-    for (var k in IDS) $(IDS[k]).setAttribute('aria-pressed', k === plan);
-    $('pmAmt').textContent = money(p.price);
-    $('pmPer').textContent = PER[plan];
-    $('pmSave').textContent = saving(plan);
-    $('pmBuy').disabled = !!s || pend || busy;
-    $('pmBuy').textContent = s ? 'You have Premium' : (pend ? 'Payment under review' : (VSPremium.LOGGED_IN ? 'Get Premium' : 'Sign in to get Premium'));
+    var s = VSPremium.status(), pend = VSPremium.isPending(), cur = s ? tierOf(s.plan) : '';
+    for (var k in IDS) $(IDS[k]).setAttribute('aria-pressed', k === period);
+    ['premium', 'plus'].forEach(function (tier) {
+      var p = VSPremium.PLANS[KEY[tier][period]], u = UI[tier];
+      $(u.amt).textContent = money(p.price);
+      $(u.per).textContent = PER[period];
+      $(u.save).textContent = saving(tier, period);
+    });
+    var b1 = $('pmBuy'), b2 = $('pmBuy2');
+    b1.disabled = !!s || pend || busy;
+    b1.textContent = s ? (cur === 'plus' ? 'Included in your plan' : 'You have Premium') : (pend ? 'Payment under review' : (VSPremium.LOGGED_IN ? 'Get Premium' : 'Sign in to get Premium'));
+    b2.disabled = cur === 'plus' || pend || busy;
+    b2.textContent = cur === 'plus' ? 'You have Plus' : (pend ? 'Payment under review' : (s ? 'Upgrade to Plus' : (VSPremium.LOGGED_IN ? 'Get Plus' : 'Sign in to get Plus')));
     $('pmFree').style.visibility = s ? 'hidden' : 'visible';
     var admin = !!s && s.plan === 'admin';
     $('pmCancel').style.display = admin ? 'none' : '';
+    document.querySelector('.pm-status').style.display = admin ? 'none' : '';
     if (s) {
-      $('pmStatusText').textContent = admin
-        ? 'Premium is always on for admins'
-        : 'Premium is active until ' +
-          new Date(s.expires).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+      $('pmStatusText').textContent = (cur === 'plus' ? 'Premium Plus' : 'Premium') + ' is active until ' +
+        new Date(s.expires).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
     }
     $('pmNote').textContent = pend
       ? 'We got your payment details. Premium turns on as soon as the payment is confirmed.'
       : 'Pay first, then enter your transaction ID. Premium turns on after we confirm your payment.';
   }
 
-  function openModal() {
-    var p = VSPremium.PLANS[plan], ul = $('pmPayList');
-    $('pmModalPlan').textContent = p.label + ' plan: ' + money(p.price) + ' ' + PER[plan];
+  function openModal(tier) {
+    chosen = KEY[tier][period];
+    var p = VSPremium.PLANS[chosen], ul = $('pmPayList');
+    $('pmModalPlan').textContent = (tier === 'plus' ? 'Premium Plus' : 'Premium') + ' ' + p.label.replace(/^Plus /, '') + ' plan: ' + money(p.price) + ' ' + PER[period];
     ul.innerHTML = '';
     (VSPremium.PAY_INFO || []).forEach(function (t) {
       var li = document.createElement('li'); li.textContent = t; ul.appendChild(li);
@@ -193,12 +225,16 @@ document.addEventListener('DOMContentLoaded', function () {
     job().then(function () { toast(okMsg); }).catch(function (e) { toast(e.message); }).then(function () { busy = false; render(); });
   }
 
-  $('pmD').onclick = function () { plan = 'daily'; render(); };
-  $('pmM').onclick = function () { plan = 'monthly'; render(); };
-  $('pmY').onclick = function () { plan = 'yearly'; render(); };
+  $('pmW').onclick = function () { period = 'weekly'; render(); };
+  $('pmM').onclick = function () { period = 'monthly'; render(); };
+  $('pmY').onclick = function () { period = 'yearly'; render(); };
   $('pmBuy').onclick = function () {
     if (!VSPremium.LOGGED_IN) { location.href = 'login.php'; return; }
-    openModal();
+    openModal('premium');
+  };
+  $('pmBuy2').onclick = function () {
+    if (!VSPremium.LOGGED_IN) { location.href = 'login.php'; return; }
+    openModal('plus');
   };
   $('pmClose').onclick = closeModal;
   $('pmModal').onclick = function (e) { if (e.target === $('pmModal')) closeModal(); };
@@ -207,7 +243,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var ref = $('pmRef').value.trim();
     if (ref.length < 4) { toast('Enter the transaction ID from your payment.'); return; }
     busy = true; render();
-    VSPremium.request(plan, ref)
+    VSPremium.request(chosen, ref)
       .then(function () { closeModal(); toast('Payment details sent. Premium turns on once we confirm it.'); })
       .catch(function (e) { toast(e.message); })
       .then(function () { busy = false; render(); });

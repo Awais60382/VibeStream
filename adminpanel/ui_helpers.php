@@ -225,24 +225,28 @@ function vs_uploader_stats(PDO $pdo, string $table = 'videos'): array
 
 /**
  * Number of comments per video id, e.g. ['abc123' => 4]. Returns [] if there is no comments table.
+ * Without $table it uses `video_comments` (the table code.php cleans up) and falls back to `comments`.
  */
-function vs_comment_counts(PDO $pdo, string $table = 'comments'): array
+function vs_comment_counts(PDO $pdo, ?string $table = null): array
 {
     $out = [];
-    $c = vs_cols($pdo, $table);
-    $vid = $c ? vs_pick($c, ['video_id', 'vid', 'content_id']) : null;
-    if (!$vid) {
-        return $out;
-    }
-    try {
-        $stmt = $pdo->query('SELECT ' . vs_q($vid) . ' AS vid, COUNT(*) AS n FROM ' . vs_q($table) . ' GROUP BY ' . vs_q($vid));
-        if ($stmt) {
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
-                $out[(string)$r['vid']] = (int)$r['n'];
-            }
+    foreach ($table !== null ? [$table] : ['video_comments', 'comments'] as $t) {
+        $c = vs_cols($pdo, $t);
+        $vid = $c ? vs_pick($c, ['video_id', 'vid', 'content_id']) : null;
+        if (!$vid) {
+            continue;
         }
-    } catch (Throwable $e) {
-        return [];
+        try {
+            $stmt = $pdo->query('SELECT ' . vs_q($vid) . ' AS vid, COUNT(*) AS n FROM ' . vs_q($t) . ' GROUP BY ' . vs_q($vid));
+            if ($stmt) {
+                foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                    $out[(string)$r['vid']] = (int)$r['n'];
+                }
+            }
+            return $out;
+        } catch (Throwable $e) {
+            continue;
+        }
     }
     return $out;
 }

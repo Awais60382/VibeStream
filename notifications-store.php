@@ -70,6 +70,14 @@ function vs_notification_prefs_ensure_table(mysqli $conn): void
     $conn->query(<<<'SQL'
 CREATE TABLE IF NOT EXISTS `user_notification_prefs` (
     `user_id` INT NOT NULL,
+    `desktop_notifs` TINYINT(1) NOT NULL DEFAULT 0,
+    `subscriptions` TINYINT(1) NOT NULL DEFAULT 1,
+    `recommended` TINYINT(1) NOT NULL DEFAULT 1,
+    `channel_activity` TINYINT(1) NOT NULL DEFAULT 1,
+    `comment_activity` TINYINT(1) NOT NULL DEFAULT 1,
+    `mentions` TINYINT(1) NOT NULL DEFAULT 1,
+    `content_reuse` TINYINT(1) NOT NULL DEFAULT 1,
+    `promotions` TINYINT(1) NOT NULL DEFAULT 0,
     `uploads` TINYINT(1) NOT NULL DEFAULT 1,
     `comments` TINYINT(1) NOT NULL DEFAULT 1,
     `likes` TINYINT(1) NOT NULL DEFAULT 1,
@@ -78,6 +86,34 @@ CREATE TABLE IF NOT EXISTS `user_notification_prefs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL
     );
+
+    $colsNeeded = [
+        'desktop_notifs'   => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'subscriptions'    => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'recommended'      => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'channel_activity' => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'comment_activity' => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'mentions'         => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'content_reuse'    => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'promotions'       => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'uploads'          => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'comments'         => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'likes'            => 'TINYINT(1) NOT NULL DEFAULT 1',
+        'subscribers'      => 'TINYINT(1) NOT NULL DEFAULT 1',
+    ];
+    $colRes = $conn->query('SHOW COLUMNS FROM `user_notification_prefs`');
+    if ($colRes) {
+        $existing = [];
+        while ($c = $colRes->fetch_assoc()) {
+            $existing[strtolower((string)$c['Field'])] = true;
+        }
+        $colRes->free();
+        foreach ($colsNeeded as $col => $type) {
+            if (!isset($existing[strtolower($col)])) {
+                $conn->query("ALTER TABLE `user_notification_prefs` ADD COLUMN `$col` $type");
+            }
+        }
+    }
     $done = true;
 }
 }
@@ -85,21 +121,46 @@ SQL
 if (!function_exists('vs_notification_prefs')) {
 function vs_notification_prefs(?mysqli $conn, int $userId): array
 {
-    $prefs = ['uploads' => 1, 'comments' => 1, 'likes' => 1, 'subscribers' => 1];
+    $prefs = [
+        'desktop_notifs'   => 0,
+        'subscriptions'    => 1,
+        'recommended'      => 1,
+        'channel_activity' => 1,
+        'comment_activity' => 1,
+        'mentions'         => 1,
+        'content_reuse'    => 1,
+        'promotions'       => 0,
+        'uploads'          => 1,
+        'comments'         => 1,
+        'likes'            => 1,
+        'subscribers'      => 1,
+    ];
     if (!$conn || $userId <= 0) {
         return $prefs;
     }
     try {
         vs_notification_prefs_ensure_table($conn);
-        $stmt = $conn->prepare('SELECT uploads, comments, likes, subscribers FROM user_notification_prefs WHERE user_id = ? LIMIT 1');
+        $stmt = $conn->prepare('SELECT * FROM user_notification_prefs WHERE user_id = ? LIMIT 1');
         $stmt->bind_param('i', $userId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($row) {
-            foreach ($prefs as $key => $unused) {
-                $prefs[$key] = (int)$row[$key] ? 1 : 0;
+            foreach ($prefs as $key => $defaultVal) {
+                if (isset($row[$key])) {
+                    $prefs[$key] = (int)$row[$key] ? 1 : 0;
+                }
             }
+            $sub = $row['subscriptions'] ?? $row['uploads'] ?? 1;
+            $ch  = $row['channel_activity'] ?? $row['subscribers'] ?? 1;
+            $cm  = $row['comment_activity'] ?? $row['comments'] ?? 1;
+            $prefs['subscriptions']    = (int)$sub ? 1 : 0;
+            $prefs['uploads']          = (int)$sub ? 1 : 0;
+            $prefs['channel_activity'] = (int)$ch ? 1 : 0;
+            $prefs['subscribers']      = (int)$ch ? 1 : 0;
+            $prefs['comment_activity'] = (int)$cm ? 1 : 0;
+            $prefs['comments']         = (int)$cm ? 1 : 0;
+            $prefs['likes']            = (int)$cm ? 1 : 0;
         }
     } catch (Throwable $error) {
         // keep defaults
@@ -113,15 +174,41 @@ function vs_notification_prefs_save(mysqli $conn, int $userId, array $prefs): bo
 {
     try {
         vs_notification_prefs_ensure_table($conn);
-        $u = empty($prefs['uploads']) ? 0 : 1;
-        $c = empty($prefs['comments']) ? 0 : 1;
-        $l = empty($prefs['likes']) ? 0 : 1;
-        $s = empty($prefs['subscribers']) ? 0 : 1;
+        $desk = !empty($prefs['desktop_notifs']) ? 1 : 0;
+        $sub  = !isset($prefs['subscriptions']) ? (!empty($prefs['uploads']) ? 1 : 0) : (!empty($prefs['subscriptions']) ? 1 : 0);
+        $rec  = !isset($prefs['recommended']) ? 1 : (!empty($prefs['recommended']) ? 1 : 0);
+        $ch   = !isset($prefs['channel_activity']) ? (!empty($prefs['subscribers']) ? 1 : 0) : (!empty($prefs['channel_activity']) ? 1 : 0);
+        $cm   = !isset($prefs['comment_activity']) ? (!empty($prefs['comments']) ? 1 : 0) : (!empty($prefs['comment_activity']) ? 1 : 0);
+        $men  = !isset($prefs['mentions']) ? 1 : (!empty($prefs['mentions']) ? 1 : 0);
+        $reu  = !isset($prefs['content_reuse']) ? 1 : (!empty($prefs['content_reuse']) ? 1 : 0);
+        $pro  = !empty($prefs['promotions']) ? 1 : 0;
+
+        $u = $sub;
+        $c = $cm;
+        $l = $cm;
+        $s = $ch;
+
         $stmt = $conn->prepare(
-            'INSERT INTO user_notification_prefs (user_id, uploads, comments, likes, subscribers) VALUES (?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE uploads = VALUES(uploads), comments = VALUES(comments), likes = VALUES(likes), subscribers = VALUES(subscribers)'
+            'INSERT INTO user_notification_prefs (
+                user_id, desktop_notifs, subscriptions, recommended, channel_activity,
+                comment_activity, mentions, content_reuse, promotions,
+                uploads, comments, likes, subscribers
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                desktop_notifs   = VALUES(desktop_notifs),
+                subscriptions    = VALUES(subscriptions),
+                recommended      = VALUES(recommended),
+                channel_activity = VALUES(channel_activity),
+                comment_activity = VALUES(comment_activity),
+                mentions         = VALUES(mentions),
+                content_reuse    = VALUES(content_reuse),
+                promotions       = VALUES(promotions),
+                uploads          = VALUES(uploads),
+                comments         = VALUES(comments),
+                likes            = VALUES(likes),
+                subscribers      = VALUES(subscribers)'
         );
-        $stmt->bind_param('iiiii', $userId, $u, $c, $l, $s);
+        $stmt->bind_param('iiiiiiiiiiiii', $userId, $desk, $sub, $rec, $ch, $cm, $men, $reu, $pro, $u, $c, $l, $s);
         $ok = $stmt->execute();
         $stmt->close();
         return (bool)$ok;
@@ -138,16 +225,18 @@ function vs_notification_pref_group(string $type): string
     switch ($type) {
         case 'video':
         case 'short':
-            return 'uploads';
+            return 'subscriptions';
         case 'comment':
         case 'reply':
-            return 'comments';
+            return 'comment_activity';
         case 'like':
         case 'comment_like':
         case 'heart':
-            return 'likes';
+            return 'comment_activity';
         case 'subscriber':
-            return 'subscribers';
+            return 'channel_activity';
+        case 'mention':
+            return 'mentions';
     }
     return '';
 }
@@ -474,6 +563,55 @@ function vs_notify_comment_reply(mysqli $conn, array $video, string $actor, stri
 }
 }
 
+/**
+ * Detect mentions (@username) in a comment and notify the mentioned users.
+ * Respects the 'mentions' preference toggle.
+ */
+if (!function_exists('vs_notify_mentions')) {
+function vs_notify_mentions(mysqli $conn, array $video, string $actor, string $text, int $commentId): int
+{
+    try {
+        $text = trim($text);
+        $videoId = (string)($video['id'] ?? '');
+        if ($text === '' || $videoId === '') {
+            return 0;
+        }
+        if (!preg_match_all('/@([a-zA-Z0-9_\-\.]{2,50})/u', $text, $matches)) {
+            return 0;
+        }
+        $mentionedNames = array_unique($matches[1]);
+        $owner = trim((string)($video['username'] ?? ''));
+        $actorLower = mb_strtolower(trim($actor));
+        $ownerLower = mb_strtolower($owner);
+        $isShort = (string)($video['type'] ?? '') === 'short';
+        $title = mb_substr(trim((string)($video['title'] ?? '')), 0, 200);
+        $link = ($isShort ? 'shorts.php?id=' : 'watch.php?id=') . rawurlencode($videoId) . ($commentId > 0 ? '#comment-' . $commentId : '');
+        $preview = mb_substr(trim((string)preg_replace('/\s+/', ' ', $text)), 0, 90);
+        $quoted = $preview !== '' ? ': "' . $preview . '"' : '';
+
+        $sent = 0;
+        foreach ($mentionedNames as $name) {
+            $nameTrim = trim($name);
+            $nameLower = mb_strtolower($nameTrim);
+            if ($nameLower === $actorLower || $nameLower === $ownerLower) {
+                continue;
+            }
+            $targetId = vs_user_id_by_name($conn, $nameTrim);
+            if ($targetId > 0) {
+                $message = '@' . $actor . ' mentioned you in a comment' . $quoted;
+                if (vs_notify_user($conn, $targetId, 'mention', $actor, $videoId, $title, $message, $link, 'link')) {
+                    $sent++;
+                }
+            }
+        }
+        return $sent;
+    } catch (Throwable $error) {
+        error_log('VibeStream mention notification: ' . $error->getMessage());
+        return 0;
+    }
+}
+}
+
 /* ---------- Reading notifications ---------- */
 
 if (!function_exists('vs_notifications_unread_count')) {
@@ -703,7 +841,7 @@ function vs_notification_css(): string
 .vs-n-av.is-app { background: #fff; border-radius: 12px; }
 .vs-n-av.is-app img { object-fit: contain; padding: 4px; }
 .vs-n-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.vs-n-msg { font-size: 14px; line-height: 20px; font-weight: 400; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.vs-n-msg { font-size: 14px; line-height: 20px; font-weight: 400; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: inherit; }
 .vs-n-time { font-size: 12px; line-height: 18px; color: var(--muted, #aaaaaa); }
 .vs-n-thumb { width: 108px; height: 60px; flex: 0 0 108px; border-radius: 8px; object-fit: cover; background: var(--surface-2, #272727); }
 .vs-n-more { width: 40px; height: 40px; margin: 0 8px 0 4px; flex: 0 0 40px; display: grid; place-items: center; border: 0; background: none; border-radius: 50%; cursor: pointer; color: var(--text, #f1f1f1); }
@@ -725,6 +863,26 @@ function vs_notification_css(): string
   .vs-n-thumb { width: 72px; height: 40px; flex-basis: 72px; }
   .vs-n-av { width: 40px; height: 40px; flex-basis: 40px; font-size: 16px; }
 }
+/* Light mode overrides for notification items */
+:root[data-theme="light"] .nav-notif-menu { background: #ffffff; border-color: #e0e0e0; }
+:root[data-theme="light"] .vs-n-head { border-bottom-color: #e0e0e0; }
+:root[data-theme="light"] .vs-n-head h3 { color: #0f0f0f; }
+:root[data-theme="light"] .vs-n-gear { color: #0f0f0f; }
+:root[data-theme="light"] .vs-n-item { color: #0f0f0f; }
+:root[data-theme="light"] .vs-n-item:hover { background: rgba(0,0,0,.06); }
+:root[data-theme="light"] .vs-n-item.unread { background: rgba(62,166,255,.08); }
+:root[data-theme="light"] .vs-n-item.unread:hover { background: rgba(62,166,255,.14); }
+:root[data-theme="light"] .vs-n-msg { color: #0f0f0f; }
+:root[data-theme="light"] .vs-n-time { color: #606060; }
+:root[data-theme="light"] .vs-n-more { color: #0f0f0f; }
+:root[data-theme="light"] .vs-n-menu { background: #ffffff; border-color: #e0e0e0; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+:root[data-theme="light"] .vs-n-menu button { color: #0f0f0f; }
+:root[data-theme="light"] .vs-n-menu button:hover { background: rgba(0,0,0,.06); }
+:root[data-theme="light"] .vs-n-foot { border-top-color: #e0e0e0; }
+:root[data-theme="light"] .vs-n-readall { border-right-color: #e0e0e0; }
+:root[data-theme="light"] .vs-n-empty strong { color: #0f0f0f; }
+:root[data-theme="light"] .vs-n-empty { color: #606060; }
+:root[data-theme="light"] .vs-n-thumb { background: #f2f2f2; }
 CSS;
 }
 }
@@ -766,7 +924,7 @@ function vs_notification_bell_html(): string
     $html .= '<div class="nav-notif-menu" role="menu" hidden>';
     $html .= '<div class="vs-n-head"><h3>Notifications</h3><div class="vs-n-head-actions">';
     if ($signedIn) {
-        $html .= '<a class="vs-n-gear" href="notifications.php#settings" title="Notification settings" aria-label="Notification settings">'
+        $html .= '<a class="vs-n-gear" href="notifications.php" title="Notification settings" aria-label="Notification settings">'
             . '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a>';
     }
     $html .= '</div></div>';
@@ -776,7 +934,7 @@ function vs_notification_bell_html(): string
     } else {
         $html .= '<div class="vs-n-list" data-vs-n-list>' . vs_notification_list_html($items) . '</div>';
         $html .= '<div class="vs-n-foot"><button type="button" class="vs-n-readall" data-vs-n-readall>Mark all as read</button>'
-            . '<a class="nav-notif-all" href="notifications.php">View all</a></div>';
+            . '<a class="nav-notif-all" href="notifications.php?tab=feed">View all</a></div>';
     }
     $html .= '</div></div>';
 
@@ -846,15 +1004,21 @@ function vs_notification_bell_html(): string
     }
     var act = t.closest ? t.closest('[data-vs-n-act]') : null;
     if (act) {
+      event.preventDefault();
+      event.stopPropagation();
       var item = act.closest('.vs-n-item'), id = item.getAttribute('data-id');
       var container = item.parentNode;
+      var menu = item.querySelector('.vs-n-menu');
+      if (menu) menu.hidden = true;
       if (act.getAttribute('data-vs-n-act') === 'delete') {
         post({ action: 'delete', id: id }).then(function (d) { if (d && d.success) setBadge(d.unread); });
         item.remove(); emptyCheck(container);
       } else {
+        /* Mark as read: keep the item visible, just remove the blue unread indicator */
         item.classList.remove('unread');
+        var dot = item.querySelector('.vs-n-dot');
+        if (dot) dot.style.background = 'transparent';
         post({ action: 'read', id: id }).then(function (d) { if (d && d.success) setBadge(d.unread); });
-        item.querySelector('.vs-n-menu').hidden = true;
       }
       return;
     }
@@ -883,15 +1047,34 @@ function vs_notification_bell_html(): string
   });
   document.addEventListener('keydown', function (event) { if (event.key === 'Escape') closeBell(); });
 
-  // keep the red count fresh without a page refresh
+  // keep the red count fresh without a page refresh & fire desktop alerts
   if (signed()) {
+    var lastUnread = -1;
     setInterval(function () {
       if (document.visibilityState !== 'visible') return;
       var r = root();
+      if (!r) return;
       fetch(r.getAttribute('data-api') + '?action=poll', { credentials: 'same-origin' })
         .then(function (res) { return res.json(); })
-        .then(function (d) { if (d && d.success) setBadge(d.unread); }).catch(function () {});
-    }, 30000);
+        .then(function (d) {
+          if (d && d.success) {
+            setBadge(d.unread);
+            if (lastUnread !== -1 && d.unread > lastUnread && window.Notification && Notification.permission === 'granted') {
+              try {
+                var notifObj = new Notification('VibeStream', {
+                  body: 'You have new notifications on VibeStream.',
+                  icon: 'branding-icon.php'
+                });
+                notifObj.onclick = function () {
+                  window.focus();
+                  window.location.href = 'notifications.php?tab=feed';
+                };
+              } catch (err) {}
+            }
+            lastUnread = d.unread;
+          }
+        }).catch(function () {});
+    }, 20000);
   }
 })();
 </script>

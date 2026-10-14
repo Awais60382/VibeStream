@@ -6,6 +6,8 @@
  * - vs_history_fetch()   : newest-first list of videos the user watched (history.php)
  * - vs_history_remove()  : remove one video from the history
  * - vs_history_clear()   : wipe the whole history
+ * - vs_history_paused()  : true when the user turned watch history off (nothing is recorded)
+ * - vs_history_set_paused() : pause / resume watch history
  *
  * The table is created automatically the first time it is needed.
  */
@@ -30,6 +32,58 @@ function vs_history_ensure_table(mysqli $conn): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
     $done = true;
+}
+
+function vs_history_ensure_prefs_table(mysqli $conn): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $conn->query(
+        'CREATE TABLE IF NOT EXISTS `watch_history_prefs` (
+            `user_id` INT NOT NULL,
+            `paused` TINYINT(1) NOT NULL DEFAULT 0,
+            PRIMARY KEY (`user_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $done = true;
+}
+
+/** True when this user paused their watch history. */
+function vs_history_paused(mysqli $conn, int $userId): bool
+{
+    if ($userId <= 0) {
+        return false;
+    }
+    vs_history_ensure_prefs_table($conn);
+    $stmt = $conn->prepare('SELECT paused FROM watch_history_prefs WHERE user_id = ? LIMIT 1');
+    if (!$stmt) {
+        return false;
+    }
+    $stmt->bind_param('i', $userId);
+    $paused = false;
+    if ($stmt->execute()) {
+        $paused = (int)($stmt->get_result()->fetch_assoc()['paused'] ?? 0) === 1;
+    }
+    $stmt->close();
+    return $paused;
+}
+
+function vs_history_set_paused(mysqli $conn, int $userId, bool $paused): void
+{
+    vs_history_ensure_prefs_table($conn);
+    $flag = $paused ? 1 : 0;
+    $stmt = $conn->prepare(
+        'INSERT INTO watch_history_prefs (user_id, paused) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE paused = VALUES(paused)'
+    );
+    if (!$stmt) {
+        throw new RuntimeException('Could not update your watch history setting.');
+    }
+    $stmt->bind_param('ii', $userId, $flag);
+    $stmt->execute();
+    $stmt->close();
 }
 
 function vs_history_user_id(mysqli $conn): int
@@ -64,7 +118,7 @@ function vs_history_record(mysqli $conn, string $videoId): void
         return;
     }
     $userId = vs_history_user_id($conn);
-    if ($userId <= 0) {
+    if ($userId <= 0 || vs_history_paused($conn, $userId)) {
         return;
     }
     vs_history_ensure_table($conn);

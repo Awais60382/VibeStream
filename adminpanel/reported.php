@@ -10,6 +10,7 @@ if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecm
 
 include_once "../connection.php";
 include_once "ui_helpers.php";
+require_once __DIR__ . '/../avatar.php';
 (static function (): void {
     $dirs = [__DIR__ . '/..', __DIR__];
     foreach ($dirs as $d) {
@@ -39,7 +40,11 @@ if (!in_array($type, ['all', 'video', 'short'], true)) {
     $type = 'all';
 }
 
-$reasons = vs_report_reasons();
+$reasons = vs_report_reasons() + ['child' => 'Child safety', 'other' => 'Something else'];   // older reports keep their old wording
+$repLetter = static function (string $n): string {
+    $c = mb_strtoupper(mb_substr(trim($n) !== '' ? trim($n) : 'U', 0, 1));
+    return 'data:image/svg+xml;charset=UTF-8,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#4f6df5"/><text x="32" y="43" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="#fff" text-anchor="middle">' . htmlspecialchars($c, ENT_QUOTES | ENT_XML1) . '</text></svg>');
+};
 $fatal   = '';
 $groups  = [];
 $counts  = ['open' => 0, 'videos' => 0, 'shorts' => 0, 'total' => 0];
@@ -51,7 +56,8 @@ $msgs = [
     'failed'    => 'Something went wrong. Please try again.',
 ];
 
-if (!isset($pdo) || !($pdo instanceof PDO)) {
+$pdo = vs_report_pdo();
+if (!$pdo) {
     $fatal = 'No database connection found. Check that ../connection.php creates $pdo.';
 } else {
     try {
@@ -224,8 +230,7 @@ vs_print_styles();
                     <th scope="col">Content</th>
                     <th scope="col">Creator</th>
                     <th scope="col">Type</th>
-                    <th scope="col">Reports</th>
-                    <th scope="col" class="vs-hide-sm">Reasons</th>
+                    <th scope="col">Who reported it and why</th>
                     <th scope="col" class="text-end">Last reported</th>
                     <th scope="col" class="text-end">Action</th>
                   </tr>
@@ -237,29 +242,30 @@ vs_print_styles();
                 ?>
                   <tr>
                     <td>
-                      <strong><?php echo $info ? vs_e($info['title']) : 'Removed or not found'; ?></strong>
+                      <?php if ($info): ?>
+                        <a href="../<?php echo $g['type'] === 'short' ? 'shorts' : 'watch'; ?>.php?id=<?php echo urlencode($g['id']); ?>" target="_blank" rel="noopener" class="fw-bold text-decoration-none"><?php echo vs_e($info['title']); ?></a>
+                      <?php else: ?>
+                        <strong>Removed or not found</strong>
+                      <?php endif; ?>
                       <p class="text-muted small mb-0">ID <?php echo vs_e($g['id']); ?></p>
                     </td>
                     <td><?php echo $info && $info['who'] !== '' ? vs_e($info['who']) : '-'; ?></td>
                     <td><span class="badge <?php echo $g['type'] === 'short' ? 'text-bg-info' : 'text-bg-primary'; ?>"><?php echo $g['type'] === 'short' ? 'Short' : 'Video'; ?></span></td>
-                    <td>
-                      <details>
-                        <summary><span class="badge <?php echo $isOpen ? 'text-bg-danger' : 'text-bg-secondary'; ?>"><?php echo count($g['reports']); ?></span> <?php echo $isOpen ? 'open' : 'reviewed'; ?></summary>
-                        <ul class="list-unstyled small mt-2 mb-0">
-                          <?php foreach ($g['reports'] as $r): ?>
-                            <li class="mb-2">
-                              <strong><?php echo vs_e($reasons[$r['reason']] ?? $r['reason']); ?></strong>
-                              by <?php echo vs_e($r['reporter']); ?>
-                              <span class="text-muted">(<?php echo vs_e(vs_ago($r['created_at'])); ?><?php echo $r['status'] !== 'open' ? ', ' . vs_e($r['status']) : ''; ?>)</span>
-                              <?php if ($r['details'] !== ''): ?><br><span class="text-muted"><?php echo vs_e($r['details']); ?></span><?php endif; ?>
-                            </li>
-                          <?php endforeach; ?>
-                        </ul>
-                      </details>
-                    </td>
-                    <td class="vs-hide-sm">
-                      <?php foreach ($g['reasons'] as $rk => $rn): ?>
-                        <span class="badge text-bg-light"><?php echo vs_e($reasons[$rk] ?? $rk); ?><?php echo $rn > 1 ? ' x' . (int)$rn : ''; ?></span>
+                    <td style="min-width:320px">
+                      <p class="small mb-2"><span class="badge <?php echo $isOpen ? 'text-bg-danger' : 'text-bg-secondary'; ?>"><?php echo count($g['reports']); ?></span> report<?php echo count($g['reports']) === 1 ? '' : 's'; ?> &middot; <?php echo $isOpen ? 'open' : 'reviewed'; ?></p>
+                      <?php foreach ($g['reports'] as $r):
+                          $rn = (string)$r['reporter'];
+                          $rOpen = $r['status'] === 'open';
+                      ?>
+                        <div class="d-flex align-items-start gap-2 mb-2">
+                          <img src="<?php echo vs_e(avatar_url($rn)); ?>" alt="" width="32" height="32" style="width:32px;height:32px;flex:0 0 32px;border-radius:50%;object-fit:cover;" onerror="this.onerror=null;this.src='<?php echo vs_e($repLetter($rn)); ?>';">
+                          <div class="small">
+                            <strong><?php echo vs_e($rn); ?></strong>
+                            <span class="text-muted">&middot; <?php echo vs_e(vs_ago($r['created_at'])); ?><?php echo $rOpen ? '' : ', ' . vs_e($r['status']); ?></span><br>
+                            <span class="badge <?php echo $rOpen ? 'text-bg-danger' : 'text-bg-secondary'; ?>"><?php echo vs_e($reasons[$r['reason']] ?? $r['reason']); ?></span>
+                            <?php if ($r['details'] !== ''): ?><div class="text-muted mt-1">&ldquo;<?php echo vs_e($r['details']); ?>&rdquo;</div><?php endif; ?>
+                          </div>
+                        </div>
                       <?php endforeach; ?>
                     </td>
                     <td class="text-end text-muted"><?php echo vs_e(vs_ago($g['last'])); ?></td>

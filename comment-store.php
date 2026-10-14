@@ -15,9 +15,9 @@
  *   vs_comments_handle_action($conn, $action, $videoId)   -> array|null
  *   vs_comment_new_item_html($id, $user, $text)
  *   vs_comments_panel_html($options)
- *
- * NOTE: this file has nothing to do with notifications. Those live in notifications-store.php.
  */
+
+require_once __DIR__ . '/notifications-store.php';
 
 if (!function_exists('vs_comments_esc')) {
     function vs_comments_esc($value): string

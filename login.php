@@ -72,7 +72,7 @@ include "header.php";
             nonce: <?php echo json_encode($_SESSION['google_oauth_nonce']); ?>,
             callback: function (response) {
                 var error = document.getElementById('google-error');
-                fetch('code.php?action=google_login', {
+                fetch('google-login.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
                     body: new URLSearchParams({credential: response.credential})

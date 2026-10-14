@@ -359,3 +359,82 @@ if (!function_exists('avatar_key')) {
         return '';
     }
 }
+
+if (!defined('BANNER_DIR')) {
+    define('BANNER_DIR', __DIR__ . '/uploads/banners');
+}
+
+if (!function_exists('banner_key')) {
+
+    function banner_key($username) {
+        return md5('banner:' . mb_strtolower(trim((string)$username)));
+    }
+
+    function banner_path($username) {
+        if (trim((string)$username) === '') return '';
+        foreach (['jpg', 'png', 'webp'] as $ext) {
+            $p = BANNER_DIR . '/' . banner_key($username) . '.' . $ext;
+            if (is_file($p)) return $p;
+        }
+        return '';
+    }
+
+    function banner_url($username) {
+        $p = banner_path($username);
+        return $p !== '' ? avatar_file_url($p) : '';
+    }
+
+    function banner_delete($username) {
+        foreach (['jpg', 'png', 'webp'] as $ext) {
+            $p = BANNER_DIR . '/' . banner_key($username) . '.' . $ext;
+            if (is_file($p)) @unlink($p);
+        }
+    }
+
+    function banner_move($old, $new) {
+        if (banner_key($old) === banner_key($new)) return;
+        $from = banner_path($old);
+        if ($from === '' || !is_file($from)) return;
+        $to = dirname($from) . '/' . banner_key($new) . '.' . pathinfo($from, PATHINFO_EXTENSION);
+        if (!@rename($from, $to)) {
+            error_log('Could not move the banner from ' . $from . ' to ' . $to);
+        }
+    }
+
+    function banner_save($username, $file) {
+        if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            return 'Please choose an image first.';
+        }
+        if ($file['error'] === UPLOAD_ERR_INI_SIZE || $file['error'] === UPLOAD_ERR_FORM_SIZE) {
+            return 'That image is too large (max 4 MB).';
+        }
+        if ($file['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+            return 'Upload failed, please try again.';
+        }
+        if ($file['size'] > 4 * 1024 * 1024) {
+            return 'That image is too large (max 4 MB).';
+        }
+
+        $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $fi = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = (string)finfo_file($fi, $file['tmp_name']);
+            finfo_close($fi);
+        }
+        if (!isset($allowed[$mime]) || @getimagesize($file['tmp_name']) === false) {
+            return 'Only JPG, PNG or WEBP images are allowed.';
+        }
+
+        if (!is_dir(BANNER_DIR) && !@mkdir(BANNER_DIR, 0775, true)) {
+            return 'Could not create the uploads/banners folder.';
+        }
+
+        banner_delete($username);
+        $dest = BANNER_DIR . '/' . banner_key($username) . '.' . $allowed[$mime];
+        if (!move_uploaded_file($file['tmp_name'], $dest)) {
+            return 'Could not save the image.';
+        }
+        return '';
+    }
+}

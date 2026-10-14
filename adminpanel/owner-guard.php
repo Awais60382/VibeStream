@@ -6,6 +6,8 @@
  */
 include_once __DIR__ . '/ui_helpers.php';
 
+// Kept for old code. The real check is vs_is_site_owner_email() in ui_helpers.php,
+// so every page agrees on who the owner is.
 const VS_OWNER_EMAIL = 'muhammadawaiscom0@gmail.com';
 
 /** Email of the admin who is signed in right now (read from the users table), or ''. */
@@ -51,6 +53,5 @@ function vs_current_admin_email(PDO $pdo): string
 /** True only when the signed-in admin's email is VS_OWNER_EMAIL. */
 function vs_is_owner(PDO $pdo): bool
 {
-    $email = vs_current_admin_email($pdo);
-    return $email !== '' && hash_equals(strtolower(VS_OWNER_EMAIL), $email);
+    return vs_is_site_owner_email(vs_current_admin_email($pdo));
 }

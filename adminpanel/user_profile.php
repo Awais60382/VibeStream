@@ -11,6 +11,7 @@ if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecm
 include_once "../connection.php";
 include_once "ui_helpers.php";
 require_once __DIR__ . '/release-username.php';
+require_once __DIR__ . '/owner-guard.php';
 
 $USERS_TABLE  = 'users';
 $VIDEOS_TABLE = 'videos';
@@ -38,7 +39,8 @@ $user = null;
 $run = static function (PDO $pdo, string $sql, array $params): PDOStatement {
     $st = $pdo->prepare($sql);
     if (!$st || !$st->execute($params)) {
-        throw new RuntimeException('Database query failed.');
+        $info = $st ? $st->errorInfo() : $pdo->errorInfo();
+        throw new RuntimeException('Database query failed: ' . ($info[2] ?? 'unknown error'));
     }
     return $st;
 };
@@ -102,6 +104,52 @@ $countAdmins = static function () use ($pdo, $USERS_TABLE, $map, $ADMIN_ROLE, $r
     return (int)$st->fetchColumn();
 };
 
+/* Finds the value this site uses for a normal (non-admin) account, so "Make user" works
+   even when the role column is an ENUM or the site calls normal users "member", "User" etc. */
+$resolveUserRole = static function () use ($pdo, $USERS_TABLE, $map, $USER_ROLE, $ADMIN_ROLE, $run): string {
+    $prefer = ['user', 'users', 'member', 'normal', 'regular', 'customer', 'viewer', 'subscriber'];
+    try {
+        $col = $pdo->query('SHOW COLUMNS FROM ' . vs_q($USERS_TABLE) . ' LIKE ' . $pdo->quote($map['role']))->fetch(PDO::FETCH_ASSOC);
+        $type = (string)($col['Type'] ?? '');
+        if (stripos($type, 'enum(') === 0 && preg_match_all("/'((?:[^']|'')*)'/", $type, $m)) {
+            $vals = [];
+            foreach ($m[1] as $v) {
+                $v = str_replace("''", "'", $v);
+                if (strcasecmp($v, $ADMIN_ROLE) !== 0) {
+                    $vals[] = $v;
+                }
+            }
+            foreach ($prefer as $p) {
+                foreach ($vals as $v) {
+                    if (strcasecmp($v, $p) === 0) {
+                        return $v;
+                    }
+                }
+            }
+            if ($vals) {
+                return $vals[0];
+            }
+        }
+        $st = $run($pdo, 'SELECT ' . vs_q($map['role']) . ' AS r, COUNT(*) AS c FROM ' . vs_q($USERS_TABLE)
+            . ' WHERE ' . vs_q($map['role']) . ' IS NOT NULL AND ' . vs_q($map['role']) . " <> '' AND LOWER(" . vs_q($map['role']) . ') <> LOWER(:a)'
+            . ' GROUP BY ' . vs_q($map['role']) . ' ORDER BY c DESC', [':a' => $ADMIN_ROLE]);
+        $found = $st->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($prefer as $p) {
+            foreach ($found as $row) {
+                if (strcasecmp((string)$row['r'], $p) === 0) {
+                    return (string)$row['r'];
+                }
+            }
+        }
+        if ($found) {
+            return (string)$found[0]['r'];
+        }
+    } catch (Throwable $e) {
+        error_log('user_profile could not detect the normal role: ' . $e->getMessage());
+    }
+    return $USER_ROLE;
+};
+
 /* ---------- Actions ---------- */
 if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -129,7 +177,32 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($countAdmins() <= 1) {
                 throw new InvalidArgumentException('This is the last admin account, so it cannot be changed to a user.');
             }
-            $run($pdo, 'UPDATE ' . vs_q($USERS_TABLE) . ' SET ' . vs_q($map['role']) . ' = :r WHERE ' . vs_q($map['id']) . ' = :id', [':r' => $USER_ROLE, ':id' => $id]);
+            // The database lock only lets the owner remove admin access, so check that here on the server
+            // and tell the database ("@vs_owner_ok") for this one change.
+            if (!vs_is_owner($pdo)) {
+                throw new InvalidArgumentException('Only the site owner can remove admin access.');
+            }
+            $pdo->exec('SET @vs_owner_ok = 1');
+            try {
+            // Try the detected normal-user role first, then the usual spellings, until the database accepts one.
+            $candidates = array_values(array_unique([$resolveUserRole(), $USER_ROLE, 'User', 'users', 'Users', 'member', 'Member', 'normal', 'regular']));
+            $updated = false;
+            $lastErr = null;
+            foreach ($candidates as $cand) {
+                try {
+                    $run($pdo, 'UPDATE ' . vs_q($USERS_TABLE) . ' SET ' . vs_q($map['role']) . ' = :r WHERE ' . vs_q($map['id']) . ' = :id', [':r' => $cand, ':id' => $id]);
+                    $updated = true;
+                    break;
+                } catch (Throwable $tryErr) {
+                    $lastErr = $tryErr;
+                }
+            }
+            if (!$updated) {
+                throw $lastErr ?: new RuntimeException('Could not change the role.');
+            }
+            } finally {
+                $pdo->exec('SET @vs_owner_ok = 0');
+            }
             $_SESSION['vs_user_flash'] = ($username !== '' ? $username : 'The admin') . ' is now a normal user.';
             header('Location: user_profile.php?id=' . urlencode($id));
             exit;
@@ -150,6 +223,12 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($isAdminUser && $countAdmins() <= 1) {
                 throw new InvalidArgumentException('This is the last admin account, so it cannot be deleted.');
             }
+            if ($isAdminUser) {
+                if (!vs_is_owner($pdo)) {
+                    throw new InvalidArgumentException('Only the site owner can delete admin accounts.');
+                }
+                $pdo->exec('SET @vs_owner_ok = 1');
+            }
             $alsoVideos    = (($_POST['videos_choice'] ?? 'keep') === 'delete');
             $removedVideos = 0;
             $pdo->beginTransaction();
@@ -160,7 +239,9 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $run($pdo, 'DELETE FROM ' . vs_q($USERS_TABLE) . ' WHERE ' . vs_q($map['id']) . ' = :id', [':id' => $id]);
                 $pdo->commit();
+                $pdo->exec('SET @vs_owner_ok = 0');
             } catch (Throwable $e) {
+                $pdo->exec('SET @vs_owner_ok = 0');
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
                 }
@@ -188,8 +269,9 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (InvalidArgumentException $e) {
         $formError = $e->getMessage();
     } catch (Throwable $e) {
-        error_log('user_profile action failed: ' . $e->getMessage());
-        $formError = 'Something went wrong. Please try again.';
+        error_log('user_profile action "' . ($action ?? '') . '" failed: ' . $e->getMessage());
+        // This page is admin-only, so the real reason is shown to help fix it.
+        $formError = 'Something went wrong. Please try again. (' . mb_substr($e->getMessage(), 0, 300) . ')';
     }
 }
 
@@ -212,6 +294,7 @@ $uploadTotal = $videoCount + $shortCount;
 
 $full = ($user && $map['name']) ? trim((string)($user[$map['name']] ?? '')) : '';
 $email = ($user && $map['email']) ? trim((string)($user[$map['email']] ?? '')) : '';
+$isOwnerUser = ($email !== '' && function_exists('vs_is_site_owner_email') && vs_is_site_owner_email($email));
 $display = $full !== '' ? $full : ($username !== '' ? $username : 'User');
 $avatar = ($user && $map['avatar']) ? vs_avatar_src($user[$map['avatar']] ?? '', $AVATAR_BASE) : '';
 $joined = '';
@@ -261,7 +344,7 @@ vs_print_styles();
                   <h2 class="h5 mb-0">
                     <?php echo vs_e($display); ?>
                     <?php if ($isSelf): ?><span class="badge text-bg-secondary">You</span><?php endif; ?>
-                    <?php if ($isAdminUser): ?><span class="badge text-bg-primary">Admin</span><?php else: ?><span class="badge text-bg-light">User</span><?php endif; ?>
+                    <?php if ($isOwnerUser): ?><span class="badge text-bg-warning">Owner</span><?php elseif ($isAdminUser): ?><span class="badge text-bg-primary">Admin</span><?php else: ?><span class="badge text-bg-light">User</span><?php endif; ?>
                   </h2>
                   <p class="text-muted small mb-0">
                     <?php if ($username !== ''): ?>@<?php echo vs_e($username); ?><?php endif; ?>

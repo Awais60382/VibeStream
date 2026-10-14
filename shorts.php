@@ -165,6 +165,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ? array_values(array_diff($_SESSION['liked_videos'], [$vid]))
                 : array_merge($_SESSION['liked_videos'], [$vid]);
 
+            if (!$liked && !empty($_SESSION['username'])) {
+                if (function_exists('vs_notify_video_event')) {
+                    vs_notify_video_event($conn, $v, 'like', (string)$_SESSION['username']);
+                }
+            }
+
             $stmt = $conn->prepare("SELECT COALESCE(likes,0) AS n FROM videos WHERE id = ?");
             if (!$stmt) {
                 throw new RuntimeException('Your like was saved, but its count could not be read.');
