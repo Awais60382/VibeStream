@@ -7,7 +7,7 @@ google-oauth.local.php
 uploads/
 backups/
 adminpanel/data/
-*.zip
-"@ | Set-Content .gitignorenode_modules/
+node_modules/
 client_secret*.json
-*.apps.googleusercontent.com.json
+*.zip
+"@ | Set-Content .gitignore
