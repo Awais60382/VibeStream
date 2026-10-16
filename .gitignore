@@ -1,10 +1,11 @@
+@"
 connection.php
+stripe-config.php
+google-oauth.php
 google-oauth.local.php
-uploads/
-.vscode/
-
-# Local Netlify folder
-.netlify
-client_secret_*.json
-node_modules/
 .env
+uploads/
+backups/
+adminpanel/data/
+*.zip
+"@ | Set-Content .gitignore
