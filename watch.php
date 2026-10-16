@@ -298,6 +298,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+if (!function_exists('vs_random_pick_video')) {
+    /**
+     * Picks a random video for the Watch / Shorts buttons.
+     * It remembers what this visitor was already shown (in their session) and
+     * goes through every video before any repeats, so each press feels fresh.
+     */
+    function vs_random_pick_video(mysqli $conn, string $sessionKey, string $where): ?array
+    {
+        $seen = (isset($_SESSION[$sessionKey]) && is_array($_SESSION[$sessionKey])) ? array_values($_SESSION[$sessionKey]) : [];
+        $last = $seen ? (string)end($seen) : '';
+        $rounds = [$seen, $last !== '' ? [$last] : [], []];
+        foreach ($rounds as $index => $exclude) {
+            if ($index > 0 && $exclude === $rounds[$index - 1]) {
+                continue;
+            }
+            $sql = "SELECT * FROM videos WHERE $where";
+            if ($exclude) {
+                $sql .= ' AND id NOT IN (' . implode(',', array_fill(0, count($exclude), '?')) . ')';
+            }
+            $sql .= ' ORDER BY RAND() LIMIT 1';
+            $stmt = $conn->prepare($sql);
+            if (!$stmt) {
+                return null;
+            }
+            if ($exclude) {
+                $params = array_map('strval', $exclude);
+                $stmt->bind_param(str_repeat('s', count($params)), ...$params);
+            }
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ($row) {
+                /* a finished round starts again from just the video that was picked */
+                $keep = ($index === 0) ? $seen : [];
+                $keep[] = (string)$row['id'];
+                $_SESSION[$sessionKey] = array_slice($keep, -500);
+                return $row;
+            }
+        }
+        return null;
+    }
+}
+
 $hasTypeColumn = column_exists($conn, 'videos', 'type');
 $id = trim($_GET['id'] ?? '');
 $video = null;
@@ -312,9 +355,16 @@ if ($id !== '') {
 }
 
 if (!$video) {
-    $where = $hasTypeColumn ? "WHERE COALESCE(type,'video') <> 'short'" : "";
-    $result = $conn->query("SELECT * FROM videos $where ORDER BY id DESC LIMIT 1");
-    $video = $result ? $result->fetch_assoc() : null;
+    // No (valid) video in the address: show a different random one every time
+    // the Watch button is pressed, then move to that video's own address so a
+    // refresh or a shared link keeps pointing at it.
+    $where = $hasTypeColumn ? "COALESCE(type,'video') <> 'short'" : "1=1";
+    $video = vs_random_pick_video($conn, 'random_seen_watch', $where);
+    if ($video && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+        header('Cache-Control: no-store');
+        header('Location: watch.php?id=' . urlencode((string)$video['id']));
+        exit;
+    }
 }
 
 if (!$video) {
@@ -420,11 +470,22 @@ try {
 $commentCount = count($comments);
 
 $related = [];
+$relatedParams = [$id];
+$relatedTypes = 's';
+$relatedOrder = [];
+$hasCategoryColumn = column_exists($conn, 'videos', 'category');
+if ($hasCategoryColumn && trim((string)($video['category'] ?? '')) !== '') {
+    $relatedOrder[] = "CASE WHEN LOWER(TRIM(category)) = LOWER(TRIM(?)) THEN 0 ELSE 1 END";
+    $relatedParams[] = trim((string)$video['category']);
+    $relatedTypes .= 's';
+}
+$relatedOrder[] = 'COALESCE(views, 0) DESC';
+$relatedOrder[] = 'created_at DESC';
 $relSql = $hasTypeColumn
-    ? "SELECT * FROM videos WHERE id <> ? AND COALESCE(type,'video') <> 'short' ORDER BY RAND() LIMIT 10"
-    : "SELECT * FROM videos WHERE id <> ? ORDER BY RAND() LIMIT 10";
+    ? "SELECT * FROM videos WHERE id <> ? AND COALESCE(type,'video') <> 'short' ORDER BY " . implode(', ', $relatedOrder) . ' LIMIT 10'
+    : "SELECT * FROM videos WHERE id <> ? ORDER BY " . implode(', ', $relatedOrder) . ' LIMIT 10';
 if ($stmt = $conn->prepare($relSql)) {
-    $stmt->bind_param("s", $id);
+    $stmt->bind_param($relatedTypes, ...$relatedParams);
     $stmt->execute();
     $rres = $stmt->get_result();
     while ($rrow = $rres->fetch_assoc()) $related[] = $rrow;
@@ -776,7 +837,25 @@ if ($stmt = $conn->prepare($relSql)) {
         .comment-text { font-size: 14px; color: var(--text); line-height: 1.4; word-break: break-word; }
 
         .recommendations-section { width: 380px; min-width: 340px; }
-        .recommendations-title { font-size: 16px; margin: 0 0 16px 0; }
+        .recommendations-title { font-size: 16px; margin: 0; }
+        .rec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px 0; }
+        .autoplay-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted, #aaa); cursor: pointer; user-select: none; }
+        .autoplay-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+        .autoplay-track { position: relative; width: 34px; height: 18px; border-radius: 999px; background: #555; transition: background 0.15s; }
+        .autoplay-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+        .autoplay-toggle input:checked + .autoplay-track { background: #3ea6ff; }
+        .autoplay-toggle input:checked + .autoplay-track::after { transform: translateX(16px); }
+        .autoplay-toggle input:focus-visible + .autoplay-track { outline: 2px solid #fff; outline-offset: 2px; }
+        .upnext {
+            position: fixed; left: 20px; bottom: 20px; z-index: 2000; max-width: min(360px, calc(100vw - 40px));
+            display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 14px;
+            background: #212121; color: #fff; border: 1px solid #3a3a3a; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        .upnext b { font-size: 13px; color: #aaa; font-weight: 600; }
+        .upnext span { font-size: 15px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .upnext div { display: flex; gap: 8px; }
+        .upnext button { border: 0; border-radius: 999px; padding: 7px 14px; font-weight: 600; cursor: pointer; background: #3a3a3a; color: #fff; }
+        .upnext button.primary { background: #fff; color: #000; }
         .video-card.compact {
             display: flex; flex-direction: row; gap: 12px; align-items: flex-start;
             margin-bottom: 12px; cursor: pointer; text-decoration: none;
@@ -836,7 +915,7 @@ if ($stmt = $conn->prepare($relSql)) {
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
     <link rel="stylesheet" href="theme.css?v=3">
-    <link rel="stylesheet" href="navbar-fix.css?v=3">
+    <link rel="stylesheet" href="navbar-fix.css?v=4">
     <link rel="stylesheet" href="comments.css?v=1">
 </head>
 <body>
@@ -855,7 +934,7 @@ if ($stmt = $conn->prepare($relSql)) {
                             <?php if ($yt_id): ?>
                                 <iframe
                                     id="main-iframe"
-                                    src="https://www.youtube.com/embed/<?php echo htmlspecialchars($yt_id); ?>?autoplay=1&amp;rel=0"
+                                    src="https://www.youtube.com/embed/<?php echo htmlspecialchars($yt_id); ?>?autoplay=1&amp;rel=0&amp;enablejsapi=1"
                                     title="Video player"
                                     frameborder="0"
                                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -888,7 +967,7 @@ if ($stmt = $conn->prepare($relSql)) {
                                         <?php endif; ?>
                                     </div>
                                     <div class="channel-text">
-                                        <h3 id="main-channel"><?php echo htmlspecialchars($channel); ?></h3>
+                                        <h3 id="main-channel"><a href="profile.php?u=<?php echo rawurlencode($channelOwner); ?>"><?php echo htmlspecialchars($channel); ?></a></h3>
                                         <p id="main-subs"><?php echo $subs; ?> subscriber<?php echo $subs == 1 ? '' : 's'; ?></p>
                                     </div>
                                     <button id="subscribe-btn" type="button" class="subscribe-btn<?php echo $userHasSubscribed ? ' subscribed' : ''; ?>">
@@ -908,9 +987,9 @@ if ($stmt = $conn->prepare($relSql)) {
                                             <span id="main-dislikes"><?php echo number_format($dislikes); ?></span>
                                         </button>
                                     </div>
-                                    <button class="btn-pill" type="button">Share</button>
+                                    <button class="btn-pill" type="button" id="share-btn">Share</button>
                                     <button class="btn-pill" type="button">Download</button>
-                                    <button class="btn-pill" type="button">Save</button>
+                                    <a class="btn-pill" href="playlists.php?add=<?php echo rawurlencode((string)$id); ?>">Add to playlist</a>
                                     <?php if (!empty($id)) { $reportContentId = (string)$id; $reportKind = 'video'; if (is_file(__DIR__ . '/report-widget.php')) { include __DIR__ . '/report-widget.php'; } } ?>
                                 </div>
                             </div>
@@ -936,7 +1015,14 @@ if ($stmt = $conn->prepare($relSql)) {
                     </div>
 
                     <aside class="recommendations-section">
-                        <h3 class="recommendations-title">Related Videos</h3>
+                        <div class="rec-head">
+                            <h3 class="recommendations-title">Related Videos</h3>
+                            <label class="autoplay-toggle" title="Play the next video automatically when this one ends">
+                                <span>Autoplay</span>
+                                <input type="checkbox" id="autoplay-toggle" checked>
+                                <span class="autoplay-track" aria-hidden="true"></span>
+                            </label>
+                        </div>
                         <?php if ($related): ?>
                             <?php foreach ($related as $rec):
                                 $rec_src = find_source($rec, __DIR__);
@@ -1044,6 +1130,106 @@ if ($stmt = $conn->prepare($relSql)) {
                 subsText.textContent = data.subscribers + (data.subscribers == 1 ? ' subscriber' : ' subscribers');
             });
         });
+    </script>
+    <script>
+        /* Autoplay next video + working Share button */
+        (function () {
+            const KEY = 'vs_autoplay_next';
+            const toggle = document.getElementById('autoplay-toggle');
+            const first = document.querySelector('.recommendations-section a.video-card');
+            const video = document.getElementById('main-video');
+            const frame = document.getElementById('main-iframe');
+            let on = true;
+            try { on = window.localStorage.getItem(KEY) !== '0'; } catch (e) {}
+            let timer = null;
+            let box = null;
+
+            function cancel() {
+                if (timer) { clearInterval(timer); timer = null; }
+                if (box) { box.remove(); box = null; }
+            }
+            function go() {
+                const href = first ? first.getAttribute('href') : '';
+                cancel();
+                if (href) window.location.href = href;
+            }
+            function playNext() {
+                if (!on || !first || timer) return;
+                let left = 5;
+                box = document.createElement('div');
+                box.className = 'upnext';
+                const label = document.createElement('b');
+                const title = document.createElement('span');
+                title.textContent = first.getAttribute('data-vm-title') || 'The next video';
+                const row = document.createElement('div');
+                const now = document.createElement('button');
+                now.type = 'button';
+                now.className = 'primary';
+                now.textContent = 'Play now';
+                now.addEventListener('click', go);
+                const stop = document.createElement('button');
+                stop.type = 'button';
+                stop.textContent = 'Cancel';
+                stop.addEventListener('click', cancel);
+                row.appendChild(now);
+                row.appendChild(stop);
+                box.appendChild(label);
+                box.appendChild(title);
+                box.appendChild(row);
+                document.body.appendChild(box);
+                const paint = () => { label.textContent = 'Up next in ' + left + 's'; };
+                paint();
+                timer = setInterval(() => { left -= 1; if (left <= 0) { go(); } else { paint(); } }, 1000);
+            }
+
+            if (toggle) {
+                toggle.checked = on;
+                toggle.addEventListener('change', () => {
+                    on = toggle.checked;
+                    try { window.localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) {}
+                    if (!on) cancel();
+                });
+            }
+
+            if (video) {
+                video.addEventListener('ended', playNext);
+                video.addEventListener('play', cancel);
+            }
+            if (frame) {
+                const listen = () => {
+                    try { frame.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*'); } catch (e) {}
+                };
+                frame.addEventListener('load', () => { listen(); setTimeout(listen, 800); setTimeout(listen, 2500); });
+                window.addEventListener('message', (e) => {
+                    if (e.source !== frame.contentWindow) return;
+                    let d = e.data;
+                    if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { return; } }
+                    if (!d) return;
+                    let state = null;
+                    if (d.event === 'onStateChange') state = d.info;
+                    else if (d.event === 'infoDelivery' && d.info && typeof d.info.playerState === 'number') state = d.info.playerState;
+                    if (state === 0) playNext();
+                    else if (state === 1) cancel();
+                });
+            }
+
+            const shareBtn = document.getElementById('share-btn');
+            if (shareBtn) {
+                const url = new URL('watch.php?id=' + encodeURIComponent(<?php echo json_encode((string)$id); ?>), window.location.href).href;
+                shareBtn.addEventListener('click', async () => {
+                    if (navigator.share) {
+                        try { await navigator.share({ title: document.title, url: url }); return; }
+                        catch (e) { if (e && e.name === 'AbortError') return; }
+                    }
+                    try {
+                        await navigator.clipboard.writeText(url);
+                        toast('Link copied');
+                    } catch (e) {
+                        window.prompt('Copy this link', url);
+                    }
+                });
+            }
+        })();
     </script>
 </body>
 </html>

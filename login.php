@@ -34,7 +34,7 @@ include "header.php";
         <?php endif; ?>
         <div class="auth-divider"><span>or continue with email</span></div>
 
-        <form action="code.php?action=login_form" method="POST">
+        <form action="login-handler.php" method="POST">
             <div class="form-group">
                 <label for="useremail">Username or email address</label>
                 <input type="text" id="useremail" name="useremail" autocomplete="username" placeholder="Enter username or email" required>

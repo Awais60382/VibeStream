@@ -250,6 +250,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 
+if (!function_exists('vs_random_pick_video')) {
+    /**
+     * Picks a random video for the Watch / Shorts buttons.
+     * It remembers what this visitor was already shown (in their session) and
+     * goes through every video before any repeats, so each press feels fresh.
+     */
+    function vs_random_pick_video(mysqli $conn, string $sessionKey, string $where): ?array
+    {
+        $seen = (isset($_SESSION[$sessionKey]) && is_array($_SESSION[$sessionKey])) ? array_values($_SESSION[$sessionKey]) : [];
+        $last = $seen ? (string)end($seen) : '';
+        $rounds = [$seen, $last !== '' ? [$last] : [], []];
+        foreach ($rounds as $index => $exclude) {
+            if ($index > 0 && $exclude === $rounds[$index - 1]) {
+                continue;
+            }
+            $sql = "SELECT * FROM videos WHERE $where";
+            if ($exclude) {
+                $sql .= ' AND id NOT IN (' . implode(',', array_fill(0, count($exclude), '?')) . ')';
+            }
+            $sql .= ' ORDER BY RAND() LIMIT 1';
+            $stmt = $conn->prepare($sql);
+            if (!$stmt) {
+                return null;
+            }
+            if ($exclude) {
+                $params = array_map('strval', $exclude);
+                $stmt->bind_param(str_repeat('s', count($params)), ...$params);
+            }
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ($row) {
+                /* a finished round starts again from just the video that was picked */
+                $keep = ($index === 0) ? $seen : [];
+                $keep[] = (string)$row['id'];
+                $_SESSION[$sessionKey] = array_slice($keep, -500);
+                return $row;
+            }
+        }
+        return null;
+    }
+}
+
 $id = trim($_GET['id'] ?? '');
 $video = null;
 
@@ -259,9 +302,18 @@ if ($id !== '') {
     $stmt->execute();
     $video = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-} else {
-    $result = $conn->query("SELECT * FROM videos WHERE type = 'short' ORDER BY created_at ASC LIMIT 1");
-    $video = $result ? $result->fetch_assoc() : null;
+}
+
+if (!$video) {
+    // No (valid) short in the address: show a different random short every time
+    // the Shorts button is pressed, then move to that short's own address so a
+    // refresh or a shared link keeps pointing at it.
+    $video = vs_random_pick_video($conn, 'random_seen_shorts', "type = 'short'");
+    if ($video && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+        header('Cache-Control: no-store');
+        header('Location: shorts.php?id=' . urlencode((string)$video['id']));
+        exit;
+    }
 }
 
 $comments = [];
@@ -309,38 +361,30 @@ if ($video) {
         }
     }
 
-    $curCreated = $video['created_at'] ?? null;
-
-    if ($curCreated !== null) {
-        $stmt = $conn->prepare(
-            "SELECT id FROM videos WHERE type='short' AND (created_at > ? OR (created_at = ? AND id > ?))
-             ORDER BY created_at ASC, id ASC LIMIT 1"
-        );
-        $stmt->bind_param("sss", $curCreated, $curCreated, $id);
-        $stmt->execute();
-        $next = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        $stmt = $conn->prepare(
-            "SELECT id FROM videos WHERE type='short' AND (created_at < ? OR (created_at = ? AND id < ?))
-             ORDER BY created_at DESC, id DESC LIMIT 1"
-        );
-        $stmt->bind_param("sss", $curCreated, $curCreated, $id);
-        $stmt->execute();
-        $prev = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+    // Next = a random short this visitor has not seen yet in the current round
+    // (the Next button opens shorts.php, which picks it). Previous = the short
+    // they were watching before this one.
+    $seenKey = 'random_seen_shorts';
+    if (!isset($_SESSION[$seenKey]) || !is_array($_SESSION[$seenKey])) {
+        $_SESSION[$seenKey] = [];
     }
-
-    if (!$next) {
-        $res = $conn->query("SELECT id FROM videos WHERE type='short' ORDER BY created_at ASC, id ASC LIMIT 1");
-        $next = $res ? $res->fetch_assoc() : null;
+    if (!in_array((string)$id, array_map('strval', $_SESSION[$seenKey]), true)) {
+        $_SESSION[$seenKey][] = (string)$id;
+        $_SESSION[$seenKey] = array_slice($_SESSION[$seenKey], -500);
     }
-    if (!$prev) {
-        $res = $conn->query("SELECT id FROM videos WHERE type='short' ORDER BY created_at DESC, id DESC LIMIT 1");
-        $prev = $res ? $res->fetch_assoc() : null;
+    $trail = (isset($_SESSION['shorts_trail']) && is_array($_SESSION['shorts_trail'])) ? array_values($_SESSION['shorts_trail']) : [];
+    $trailCount = count($trail);
+    if ($trailCount > 0 && (string)$trail[$trailCount - 1] === (string)$id) {
+        // the page was reloaded: nothing to change
+    } elseif ($trailCount > 1 && (string)$trail[$trailCount - 2] === (string)$id) {
+        array_pop($trail); // the visitor pressed Previous
+    } else {
+        $trail[] = (string)$id;
     }
-    if (!$next) $next = ['id' => $id];
-    if (!$prev) $prev = ['id' => $id];
+    $trail = array_slice($trail, -100);
+    $_SESSION['shorts_trail'] = $trail;
+    $prev = count($trail) > 1 ? ['id' => $trail[count($trail) - 2]] : null;
+    $next = ['id' => $id];
 
     $src = find_source($video, __DIR__);
     $yt = $src ? extract_youtube_id($src) : null;
@@ -816,10 +860,10 @@ if ($video) {
 
                     <!-- far right: previous / next -->
                     <div class="nav-column">
-                        <a href="<?= !$noVideo && !empty($prev['id']) ? 'shorts.php?id=' . urlencode($prev['id']) : '#' ?>" class="nav-btn<?= $noVideo ? ' disabled' : '' ?>" id="prevBtn" title="Previous short">
+                        <a href="<?= !$noVideo && !empty($prev['id']) ? 'shorts.php?id=' . urlencode($prev['id']) : '#' ?>" class="nav-btn<?= ($noVideo || empty($prev['id'])) ? ' disabled' : '' ?>" id="prevBtn" title="Previous short">
                             <span class="circle">↑</span>
                         </a>
-                        <a href="<?= !$noVideo && !empty($next['id']) ? 'shorts.php?id=' . urlencode($next['id']) : '#' ?>" class="nav-btn<?= $noVideo ? ' disabled' : '' ?>" id="nextBtn" title="Next short">
+                        <a href="<?= !$noVideo ? 'shorts.php' : '#' ?>" class="nav-btn<?= $noVideo ? ' disabled' : '' ?>" id="nextBtn" title="Next short (random)">
                             <span class="circle">↓</span>
                         </a>
                     </div>

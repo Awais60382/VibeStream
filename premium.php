@@ -15,6 +15,7 @@ require_once __DIR__ . '/sidebar-navigation.php';
 .pm-layout .sidebar-link.active{background:rgba(128,128,128,.24);font-weight:700}
 .pm-layout .sidebar-icon{display:inline-flex;flex:0 0 24px;width:24px;height:24px}
 .pm-layout .sidebar-icon svg{width:24px;height:24px}
+.pm-layout .sidebar-icon img{width:24px;height:24px;object-fit:contain}
 .pm-layout .sidebar-account{display:flex;align-items:center;gap:10px;padding:14px 20px}
 .pm-layout .sidebar-account-copy{display:flex;flex-direction:column;line-height:1.25;min-width:0}
 .pm-layout .sidebar-account-copy small{opacity:.65}
@@ -64,6 +65,10 @@ require_once __DIR__ . '/sidebar-navigation.php';
 .pm-row .pm-btn{flex:1}
 .pm-btn.pm-ghost{background:rgba(128,128,128,.28);color:inherit}
 .pm-small{font-size:13px;opacity:.7}
+.pm-history{margin-top:30px}
+.pm-history h2{font-size:20px;margin:0 0 10px}
+.pm-hrow{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px solid rgba(128,128,128,.25);font-size:14px}
+.pm-hrow a{color:#f5b942;font-weight:600}
 @media (prefers-reduced-motion:reduce){.pm-toast{transition:none}}
 </style>
 
@@ -127,6 +132,10 @@ require_once __DIR__ . '/sidebar-navigation.php';
     </section>
   </div>
   <p class="pm-note" id="pmNote"></p>
+  <section class="pm-history" id="pmHistoryBox" hidden>
+    <h2>Your payments</h2>
+    <div id="pmHistory"></div>
+  </section>
 </main>
 </div>
 
@@ -204,19 +213,29 @@ document.addEventListener('DOMContentLoaded', function () {
     $('pmNote').textContent = pend
       ? 'We got your payment details. Premium turns on as soon as the payment is confirmed.'
       : 'Pay first, then enter your transaction ID. Premium turns on after we confirm your payment.';
+
+    var H = VSPremium.history ? VSPremium.history() : [], list = $('pmHistory');
+    $('pmHistoryBox').hidden = !H.length;
+    list.innerHTML = '';
+    H.forEach(function (h) {
+      var row = document.createElement('div'), t = document.createElement('span');
+      row.className = 'pm-hrow';
+      t.textContent = h.label + ' \u00b7 ' + money(h.amount) + ' \u00b7 ' + h.status + ' \u00b7 ' + h.date;
+      row.appendChild(t);
+      if (h.status === 'approved') {
+        var a = document.createElement('a');
+        a.href = 'premium-receipt.php?id=' + encodeURIComponent(h.id);
+        a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Receipt';
+        row.appendChild(a);
+      }
+      list.appendChild(row);
+    });
   }
 
+  // Get Premium / Get Plus: go straight to the checkout page for the chosen plan and billing period.
   function openModal(tier) {
     chosen = KEY[tier][period];
-    var p = VSPremium.PLANS[chosen], ul = $('pmPayList');
-    $('pmModalPlan').textContent = (tier === 'plus' ? 'Premium Plus' : 'Premium') + ' ' + p.label.replace(/^Plus /, '') + ' plan: ' + money(p.price) + ' ' + PER[period];
-    ul.innerHTML = '';
-    (VSPremium.PAY_INFO || []).forEach(function (t) {
-      var li = document.createElement('li'); li.textContent = t; ul.appendChild(li);
-    });
-    $('pmRef').value = '';
-    $('pmModal').hidden = false;
-    $('pmRef').focus();
+    location.href = 'premium-checkout.php?plan=' + encodeURIComponent(chosen);
   }
   function closeModal() { $('pmModal').hidden = true; }
 
@@ -248,7 +267,10 @@ document.addEventListener('DOMContentLoaded', function () {
       .catch(function (e) { toast(e.message); })
       .then(function () { busy = false; render(); });
   };
-  $('pmCancel').onclick = function () { run(function () { return VSPremium.cancel(); }, 'Premium cancelled'); };
+  $('pmCancel').onclick = function () {
+    if (!confirm('End Premium now? You lose the time you already paid for, and there is no refund.')) return;
+    run(function () { return VSPremium.cancel(); }, 'Premium cancelled');
+  };
   document.addEventListener('vs-premium-change', render);
   render();
 });

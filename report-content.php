@@ -15,8 +15,16 @@ function vs_report_out(array $data, int $code = 200): void
     if (!empty($data['detail']) && !in_array((string)($_SERVER['REMOTE_ADDR'] ?? ''), ['127.0.0.1', '::1'], true)) {
         unset($data['detail']);
     }
+    $json = json_encode($data);
+    @ini_set('zlib.output_compression', '0');
     http_response_code($code);
-    echo json_encode($data);
+    header('Content-Length: ' . strlen($json));   // the browser can finish before the owner e-mail is sent
+    header('Connection: close');
+    echo $json;
+    while (ob_get_level() > 0) {
+        @ob_end_flush();
+    }
+    flush();
     exit;
 }
 
@@ -99,6 +107,20 @@ try {
         ':t' => $content['table'], ':i' => $content['id'], ':k' => $content['type'],
         ':r' => $reason, ':d' => $details, ':u' => $user, ':c' => date('Y-m-d H:i:s'),
     ]);
+    // Tell the owner (e-mail + System check page). Never allowed to break the report.
+    $ownerAlertFile = __DIR__ . '/adminpanel/owner-alert.php';
+    if (is_file($ownerAlertFile)) {
+        try {
+            require_once $ownerAlertFile;
+            vs_owner_alert_after_response(
+                $pdo, 'report', 'New report on a ' . $content['type'],
+                'Reason: ' . $reason . '. ' . ucfirst((string)$content['type']) . ' #' . $content['id']
+                . '. Reported by ' . $user . ($details !== '' ? '. Details: ' . $details : '')
+            );
+        } catch (Throwable $e) {
+            error_log('owner alert failed: ' . $e->getMessage());
+        }
+    }
     vs_report_out(['ok' => true, 'message' => 'Thanks. Your report was sent to the admins.']);
 } catch (PDOException $e) {
     if ($e->getCode() === '23000') {

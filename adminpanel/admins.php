@@ -13,6 +13,8 @@ include_once "ui_helpers.php";
 require_once __DIR__ . '/../avatar.php';
 require_once __DIR__ . '/owner-guard.php';
 require_once __DIR__ . '/admin-activity-store.php';
+require_once __DIR__ . '/owner-alert.php';
+require_once __DIR__ . '/release-username.php';
 
 if (empty($_SESSION['admin_csrf'])) {
     $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
@@ -71,6 +73,7 @@ if (!isset($pdo) || !($pdo instanceof PDO)) {
                 } elseif (!$isOwner) {
                     $code = 'denied';
                     vs_admin_log($pdo, 'user', 'Tried to delete admin account #' . mb_substr($delId, 0, 20) . ' (blocked: owner only)');
+                    vs_owner_alert($pdo, 'blocked', 'Blocked: someone tried to delete an admin account', 'Only the owner can delete admins, so it was refused.');
                 } elseif (!$map['id'] || $delId === '') {
                     $code = 'failed';
                 } else {
@@ -104,6 +107,21 @@ if (!isset($pdo) || !($pdo instanceof PDO)) {
                             $code = $del->rowCount() > 0 ? 'deleted' : 'missing';
                             if ($code === 'deleted') {
                                 $who = trim((string)($target['n'] ?? ''));
+                                if ($who !== '') {
+                                    // Remove the profile picture and free the name so it can be used again.
+                                    $key = md5(mb_strtolower($who));
+                                    foreach (['jpg', 'png', 'webp', 'gif'] as $ext) {
+                                        $p = __DIR__ . '/../uploads/avatars/' . $key . '.' . $ext;
+                                        if (is_file($p)) {
+                                            @unlink($p);
+                                        }
+                                    }
+                                    try {
+                                        vs_release_username($pdo, $who, 'deleted_' . preg_replace('/\W/', '', $delId));
+                                    } catch (Throwable $releaseError) {
+                                        error_log('Could not free user name: ' . $releaseError->getMessage());
+                                    }
+                                }
                                 vs_admin_log($pdo, 'user', 'Deleted admin account ' . ($who !== '' ? '"' . mb_substr($who, 0, 60) . '"' : '#' . mb_substr($delId, 0, 20)));
                             }
                         }

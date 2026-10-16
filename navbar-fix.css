@@ -1,0 +1,49 @@
+.app-navbar,
+.nav-left,
+.nav-center,
+.nav-right {
+    min-width: 0;
+}
+
+.app-navbar .brand {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.app-navbar .nav-right {
+    gap: 10px;
+}
+
+@media (max-width: 760px) {
+    .app-navbar {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        padding-right: 12px;
+        padding-left: 12px;
+    }
+
+    .app-navbar .nav-left {
+        min-width: 0;
+    }
+
+    .app-navbar .nav-right {
+        justify-content: flex-end;
+        gap: 6px;
+    }
+}
+
+@media (max-width: 420px) {
+    .app-navbar .brand {
+        font-size: 18px;
+    }
+
+    .app-navbar .nav-toggle {
+        flex: 0 0 40px;
+        width: 40px;
+        height: 40px;
+    }
+
+    .app-navbar .nav-left {
+        gap: 8px;
+    }
+}

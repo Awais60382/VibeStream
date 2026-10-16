@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/sidebar-subscriptions.php';
 require_once __DIR__ . '/category-presets.php';
+require_once __DIR__ . '/sidebar-icons-store.php';
 
 /**
  * Prefix a relative sidebar link with $GLOBALS['vs_sidebar_base'].
@@ -36,6 +37,9 @@ function vs_render_sidebar(string $active = 'home'): void
         'shorts' => $svg('<path d="M17.77 10.32l-1.2-.5L18 9.06a3.74 3.74 0 0 0-3.5-6.62L6 6.94a3.74 3.74 0 0 0 .23 6.74l1.2.49L6 14.93a3.75 3.75 0 0 0 3.5 6.63l8.5-4.5a3.74 3.74 0 0 0-.23-6.74z"/><path d="M10 14.65v-5.3L15 12z" fill="currentColor" stroke="none"/>'),
         'profile' => $svg('<rect x="4" y="3" width="16" height="18" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M7 19c.8-2.4 2.6-3.6 5-3.6s4.2 1.2 5 3.6"/>'),
         'history' => $svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>'),
+        'later' => $svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+        'liked' => $svg('<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8z"/>'),
+        'playlist' => $svg('<path d="M4 6h11M4 11h11M4 16h7"/><path d="m16 15 5 3-5 3z"/>'),
         'subscriptions' => $svg('<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M6 3h12M9 11l5 3-5 3z"/>'),
         'upload' => $svg('<path d="M12 16V4m-5 5 5-5 5 5"/><path d="M4 16v4h16v-4"/>'),
         'trend' => $svg('<path d="M4 18 10 12l4 4 6-8"/><path d="M14 8h6v6"/>'),
@@ -141,6 +145,9 @@ function vs_render_sidebar(string $active = 'home'): void
             'items' => [
                 ['key' => 'profile', 'label' => 'Your Channel', 'href' => 'profile.php', 'icon' => 'profile'],
                 ['key' => 'history', 'label' => 'History', 'href' => 'history.php', 'icon' => 'history'],
+                ['key' => 'watch-later', 'label' => 'Watch later', 'href' => 'watch-later.php', 'icon' => 'later'],
+                ['key' => 'playlists', 'label' => 'Playlists', 'href' => 'playlists.php', 'icon' => 'playlist'],
+                ['key' => 'liked', 'label' => 'Liked videos', 'href' => 'playlists.php?list=liked', 'icon' => 'liked'],
                 ['key' => 'subscriptions', 'label' => 'All subscriptions', 'href' => 'subscriptions.php', 'icon' => 'subscriptions'],
                 ['key' => 'upload', 'label' => 'Upload Video', 'href' => 'upload.php', 'icon' => 'upload'],
                 ['key' => 'premium', 'label' => 'Premium', 'href' => 'premium.php', 'icon' => 'premium', 'color' => '#f5b942'],
@@ -213,9 +220,12 @@ function vs_render_sidebar(string $active = 'home'): void
                                 : $selectedTrend === ($item['category'] ?? '')
                         ));
                     $iconStyle = !empty($item['color']) ? ' style="color: ' . htmlspecialchars($item['color']) . '"' : '';
+                    $siteIconKey = $item['key'] === 'category' ? (string)($item['category'] ?? '') : $item['key'];
+                    $siteIcon = vs_si_html('site', $siteIconKey, '', 24);
+                    $iconHtml = $siteIcon !== '' ? $siteIcon : $icons[$item['icon']];
                 ?>
                     <a class="sidebar-link<?php echo $isActive ? ' active' : ''; ?><?php echo ($collapsible && $itemIndex >= $collapse) ? ' vs-extra' : ''; ?>" href="<?php echo htmlspecialchars(vs_sidebar_url($item['href'])); ?>"<?php echo $isActive ? ' aria-current="page"' : ''; ?>>
-                        <span class="sidebar-icon"<?php echo $iconStyle; ?>><?php echo $icons[$item['icon']]; ?></span>
+                        <span class="sidebar-icon"<?php echo $iconStyle; ?>><?php echo $iconHtml; ?></span>
                         <span class="sidebar-label"><?php echo htmlspecialchars($item['label']); ?></span>
                     </a>
                 <?php endforeach; ?>

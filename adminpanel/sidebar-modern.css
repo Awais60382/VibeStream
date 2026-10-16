@@ -1,0 +1,92 @@
+/*
+ * VibeStream admin panel - clean sidebar style (small muted section titles, slim rows, soft gray active row).
+ * Put this file in adminpanel/assets/css/. It is loaded after style.css by header.php and works in light and dark mode.
+ */
+
+/* Section titles: "Main", "Users", "System" ... small, muted, no capitals, no letter spacing */
+html body .admin-sidebar .sidebar-section-title {
+  display: block;
+  margin: 10px 0 2px;
+  padding: 8px 12px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: lowercase;
+  color: var(--admin-sidebar-muted, #8b8f99);
+  opacity: 0.9;
+}
+html body .admin-sidebar .sidebar-section-title::first-letter {
+  text-transform: uppercase;
+}
+html body .admin-sidebar .sidebar-section-title:first-child {
+  margin-top: 0;
+}
+
+/* The list: tight and calm */
+html body .admin-sidebar .sidebar-nav {
+  gap: 2px;
+  padding: 12px 10px;
+}
+
+/* Rows */
+html body .admin-sidebar .sidebar-nav .nav-link {
+  min-height: 36px;
+  padding: 7px 12px;
+  gap: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--admin-sidebar-text, #c9ccd3);
+  transform: none;
+}
+html body .admin-sidebar .sidebar-nav .nav-link:hover,
+html body .admin-sidebar .sidebar-nav .nav-link:focus {
+  background: rgba(128, 128, 128, 0.14);
+  color: var(--admin-sidebar-text-strong, #fff);
+  transform: none;
+}
+
+/* Active row: soft gray pill instead of the bright purple block */
+html body .admin-sidebar .sidebar-nav .nav-link.active,
+html[data-theme="dark"] body .admin-sidebar .sidebar-nav .nav-link.active,
+html:not([data-theme="dark"]) body .admin-sidebar .sidebar-nav .nav-link.active {
+  background: rgba(128, 128, 128, 0.22);
+  color: var(--admin-sidebar-text-strong, #fff);
+  box-shadow: none;
+  font-weight: 600;
+}
+html:not([data-theme="dark"]) body .admin-sidebar .sidebar-nav .nav-link.active {
+  color: #111827;
+}
+
+/* Icons: plain line icons, no coloured tile behind them */
+html body .admin-sidebar .sidebar-nav .nav-link .nav-icon,
+html body .admin-sidebar .sidebar-nav .nav-link.active .nav-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+html body .admin-sidebar .sidebar-nav .nav-link .nav-icon i {
+  font-size: 17px;
+  line-height: 1;
+}
+
+/* Badges (counts) stay small and tidy on the right */
+html body .admin-sidebar .sidebar-nav .nav-link .badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Collapsed (mini) sidebar keeps icons centered */
+body.sidebar-mini .admin-sidebar .sidebar-nav .nav-link {
+  justify-content: center;
+  padding: 8px;
+}

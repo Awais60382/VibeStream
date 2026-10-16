@@ -49,6 +49,7 @@ function vs_si_items(): array
             'watch'         => ['Watch', 'bi bi-play-btn'],
             'profile'       => ['Your Channel', 'bi bi-person-square'],
             'history'       => ['History', 'bi bi-clock-history'],
+            'liked'         => ['Liked videos', 'bi bi-hand-thumbs-up'],
             'subscriptions' => ['All subscriptions', 'bi bi-collection-play'],
             'upload'        => ['Upload Video', 'bi bi-upload'],
             'premium'       => ['Premium', 'bi bi-gem'],
@@ -126,10 +127,10 @@ function vs_si_html(string $scope, string $key, string $fallback = '', int $size
     $url = $prefix . $entry['file'] . '?v=' . (int)@filemtime(__DIR__ . '/' . $entry['file']);
     $safe = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
     if ($entry['mode'] === 'color') {
-        return '<img src="' . $safe . '" alt="" width="' . $size . '" height="' . $size . '" style="display:block;object-fit:contain;">';
+        return '<img data-vs-custom-icon="1" src="' . $safe . '" alt="" width="' . $size . '" height="' . $size . '" style="display:block;flex:0 0 auto;object-fit:contain;">';
     }
     $mask = "url('" . $safe . "') center/contain no-repeat";
-    return '<span aria-hidden="true" style="display:block;width:' . $size . 'px;height:' . $size . 'px;background-color:currentColor;-webkit-mask:' . $mask . ';mask:' . $mask . ';"></span>';
+    return '<span data-vs-custom-icon="1" aria-hidden="true" style="display:block;flex:0 0 auto;width:' . $size . 'px;height:' . $size . 'px;background-color:currentColor;-webkit-mask:' . $mask . ';mask:' . $mask . ';"></span>';
 }
 
 /**

@@ -46,6 +46,17 @@ if ($hasDb) {
                 exit;
             }
 
+            // Save the "how to pay" lines shown to buyers on premium.php
+            if ($act === 'payinfo') {
+                $lines = preg_split('/\R/', (string)($_POST['pay_info'] ?? '')) ?: [];
+                $saved = vs_premium_save_pay_info($lines);
+                if ($saved) {
+                    vs_admin_log($pdo, 'premium', 'Updated Premium payment details');
+                }
+                header('Location: premium.php?msg=' . ($saved ? 'payinfo' : 'payinfofail'));
+                exit;
+            }
+
             // Grant or revoke Premium by hand
             $who = trim((string)($_POST['username'] ?? ''));
             if ($act === 'revoke' && $who !== '') {
@@ -190,6 +201,8 @@ $msgs = [
     'handled'  => 'That payment request was already handled.',
     'failed'   => 'Could not grant Premium. Check the username and plan.',
     'expired'  => 'Session expired. Try again.',
+    'payinfo'  => 'Payment details saved. Buyers can now pay.',
+    'payinfofail' => 'Could not save payment details. Check that the backups folder is writable.',
 ];
 $flash = $msgs[$_GET['msg'] ?? ''] ?? '';
 
@@ -392,6 +405,21 @@ include "header.php";
                 </table>
               </div>
             <?php endif; ?>
+          </section>
+
+          <section class="panel mt-3">
+            <div class="panel-header">
+              <div>
+                <h2 class="h5 mb-1 section-title"><i class="bi bi-wallet2" aria-hidden="true"></i><span>Payment details</span></h2>
+                <p class="text-muted mb-0">Where buyers send money. One line per method (up to 6). While this is empty, the Premium page says "Payments are not open yet".</p>
+              </div>
+            </div>
+            <form method="post" class="p-3 pt-0">
+              <input type="hidden" name="csrf" value="<?php echo vs_e($csrf); ?>">
+              <input type="hidden" name="action" value="payinfo">
+              <textarea class="form-control" name="pay_info" rows="4" maxlength="1300" aria-label="Payment details" placeholder="Bank transfer: HBL, 1234567890, Your Name&#10;Easypaisa: 03XX-XXXXXXX, Your Name"><?php echo vs_e(implode("\n", vs_premium_pay_info())); ?></textarea>
+              <button type="submit" class="btn btn-primary btn-sm mt-2">Save payment details</button>
+            </form>
           </section>
 
           <section class="panel mt-3">

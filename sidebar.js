@@ -16,6 +16,7 @@
     'watch': 'watch',
     'your channel': 'profile',
     'history': 'history',
+    'liked videos': 'liked',
     'all subscriptions': 'subscriptions',
     'upload video': 'upload',
     'premium': 'premium',

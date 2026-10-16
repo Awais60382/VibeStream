@@ -216,7 +216,9 @@ button, input, textarea, select { font: inherit; }
 }
 
 @media (max-width: 760px) {
-    .app-navbar { padding: 0 12px; gap: 12px; }
+    .app-navbar { grid-template-columns: minmax(0, 1fr) auto; padding: 0 12px; gap: 12px; }
+    .nav-left { min-width: 0; }
+    .nav-right { gap: 8px; }
     .brand { font-size: 20px; }
     .nav-center { display: none; }
     .create-btn { display: none; }

@@ -68,6 +68,8 @@
     isPlus: function () { var r = read(); return !!r && (r.plan === 'admin' || String(r.plan).indexOf('plus') === 0); },
     isPending: function () { return !!S.pending; },
     status: read,
+    history: function () { return S.history || []; },
+    limits: function () { return S.limits || {}; },
     request: function (plan, ref) { return send('request', plan, ref); },
     cancel: function () { return send('cancel'); },
     refresh: apply

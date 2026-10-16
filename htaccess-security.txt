@@ -1,0 +1,23 @@
+# ---------------------------------------------------------------------------
+# VibeStream - keep private files from being downloaded.
+# HOW TO USE: save this as a file named  .htaccess  in your main VibeStream folder
+# (in Notepad: File > Save as, name it .htaccess, type "All files").
+# If you already have a .htaccess, paste everything below at the END of it instead.
+# ---------------------------------------------------------------------------
+
+Options -Indexes
+
+RewriteEngine On
+RewriteRule ^manifest\.webmanifest$ manifest.php [L]
+
+# Google client secret, local settings, database copies, backups and logs can never be opened from the web.
+# (PHP can still use them. Only direct downloads by visitors are blocked.)
+<FilesMatch "^(client_secret.*\.json|google-oauth\.local\.php|\.env|.*\.(sql|zip|gz|bak|log))$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>

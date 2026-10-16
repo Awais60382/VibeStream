@@ -180,7 +180,11 @@ try {
         $out = fopen('php://output', 'w');
         fputcsv($out, ['Time', 'Admin', 'Activity', 'Details', 'Page', 'IP']);
         while ($r = $st->fetch(PDO::FETCH_NUM)) {
-            fputcsv($out, $r);
+            // Stop =, +, -, @ at the start of a cell from running as a spreadsheet formula.
+            fputcsv($out, array_map(static function ($v): string {
+                $s = (string)$v;
+                return ($s !== '' && strpbrk($s[0], "=+-@\t\r") !== false) ? "'" . $s : $s;
+            }, $r));
         }
         exit;
     }

@@ -78,6 +78,36 @@ if (isset($pdo) && $pdo instanceof PDO) {
     }
 }
 
+// Premium requests waiting for an admin (bell + sidebar badge). Skipped when this admin turned them off on Notifications.
+$adminPremiumPendingCount = 0;
+$adminPremiumPending = [];
+if (isset($pdo) && $pdo instanceof PDO) {
+    try {
+        $wantPremiumPending = true;
+        if ($adminNotifUserId > 0) {
+            try {
+                $pf = $pdo->prepare('SELECT premium_requests FROM admin_notification_prefs WHERE user_id = :id LIMIT 1');
+                $pf->execute([':id' => $adminNotifUserId]);
+                $pv = $pf->fetchColumn();
+                if ($pv !== false && (int)$pv === 0) {
+                    $wantPremiumPending = false;
+                }
+            } catch (Throwable $e) {
+                // no saved settings: everything is on
+            }
+        }
+        if ($wantPremiumPending) {
+            $adminPremiumPendingCount = (int)$pdo->query("SELECT COUNT(*) FROM premium_requests WHERE status = 'pending'")->fetchColumn();
+            if ($adminPremiumPendingCount > 0) {
+                $adminPremiumPending = $pdo->query("SELECT username, plan, amount, created_at FROM premium_requests WHERE status = 'pending' ORDER BY created_at DESC LIMIT 5")->fetchAll(PDO::FETCH_ASSOC);
+            }
+        }
+    } catch (Throwable $e) {
+        $adminPremiumPendingCount = 0;
+        $adminPremiumPending = [];
+    }
+}
+
 // Unread messages from other admins (sidebar badge)
 $adminMsgUnread = 0;
 if (isset($conn) && $conn instanceof mysqli) {
@@ -336,7 +366,40 @@ vs_admin_log_page_view(
           <span class="nav-icon"><i class="bi bi-send-check" aria-hidden="true"></i></span>
           <span class="nav-text">Owner notices</span>
         </a>
+        <a class="nav-link<?php echo $vsCurrent === 'notifications.php' ? ' active' : ''; ?>" href="notifications.php"<?php echo $vsCurrent === 'notifications.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><i class="bi bi-bell" aria-hidden="true"></i></span>
+          <span class="nav-text">Notifications</span>
+          <?php if ($adminPremiumPendingCount > 0): ?><span class="badge rounded-pill bg-danger ms-auto"><?php echo (int)$adminPremiumPendingCount; ?></span><?php endif; ?>
+        </a>
 <?php if (!empty($isSiteOwner)): ?>
+        <a class="nav-link<?php echo $vsCurrent === 'site-icons.php' ? ' active' : ''; ?>" href="site-icons.php"<?php echo $vsCurrent === 'site-icons.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><i class="bi bi-images" aria-hidden="true"></i></span>
+          <span class="nav-text">Site icons</span>
+        </a>
+<?php
+        // Amber "!" on Backups when the last backup is missing or older than 7 days
+        $vsBackupAge = null;
+        $vsBackupFile = __DIR__ . '/../backups/history.json';
+        if (is_file($vsBackupFile)) {
+            $vsBackupList = json_decode((string)@file_get_contents($vsBackupFile), true);
+            if (is_array($vsBackupList) && $vsBackupList) {
+                $vsBackupTime = strtotime((string)($vsBackupList[0]['created'] ?? ''));
+                if ($vsBackupTime) {
+                    $vsBackupAge = (int)floor((time() - $vsBackupTime) / 86400);
+                }
+            }
+        }
+        $vsBackupStale = $vsBackupAge === null || $vsBackupAge >= 7;
+?>
+        <a class="nav-link<?php echo $vsCurrent === 'backup.php' ? ' active' : ''; ?>" href="backup.php"<?php echo $vsCurrent === 'backup.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><i class="bi bi-database-down" aria-hidden="true"></i></span>
+          <span class="nav-text">Backups</span>
+          <?php if ($vsBackupStale): ?><span class="badge rounded-pill bg-warning text-dark ms-auto" title="<?php echo $vsBackupAge === null ? 'No backup yet' : 'Last backup is ' . (int)$vsBackupAge . ' days old'; ?>">!</span><?php endif; ?>
+        </a>
+        <a class="nav-link<?php echo $vsCurrent === 'system-check.php' ? ' active' : ''; ?>" href="system-check.php"<?php echo $vsCurrent === 'system-check.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><i class="bi bi-heart-pulse" aria-hidden="true"></i></span>
+          <span class="nav-text">System check</span>
+        </a>
         <a class="nav-link<?php echo $vsCurrent === 'admin-activity.php' ? ' active' : ''; ?>" href="admin-activity.php"<?php echo $vsCurrent === 'admin-activity.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','activity'); ?><i class="bi bi-activity" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Admin activity</span>
@@ -396,7 +459,7 @@ vs_admin_log_page_view(
             <div class="dropdown">
               <button class="icon-button notification-toggle dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Admin notifications" title="Admin notifications">
                 <i class="bi bi-bell" aria-hidden="true"></i>
-                <?php if (($brandingNotificationMessage !== '' && !$brandingNotificationRead) || $adminChannelUnread > 0 || $adminPremiumEndedCount > 0 || $vsIconPendingCount > 0): ?><span class="notification-dot" aria-hidden="true"></span><?php endif; ?>
+                <?php if (($brandingNotificationMessage !== '' && !$brandingNotificationRead) || $adminChannelUnread > 0 || $adminPremiumEndedCount > 0 || $vsIconPendingCount > 0 || $adminPremiumPendingCount > 0): ?><span class="notification-dot" aria-hidden="true"></span><?php endif; ?>
               </button>
               <style>
                 .vs-an-menu { width: 380px; max-width: calc(100vw - 24px); padding: 0; border-radius: 14px; overflow: hidden; }
@@ -439,6 +502,14 @@ vs_admin_log_page_view(
                       );
                   };
                   $vsAnItems = [];
+                  foreach ($adminPremiumPending as $pp) {
+                      $vsAnItems[] = [
+                          'unread' => true, 'href' => 'notifications.php', 'name' => (string)$pp['username'],
+                          'title' => (string)$pp['username'] . ' wants Premium',
+                          'sub' => ucfirst((string)$pp['plan']) . ' plan · $' . number_format((float)$pp['amount'], 2) . ' · ' . date('M j, g:i A', strtotime((string)$pp['created_at'])),
+                          'form' => false,
+                      ];
+                  }
                   // Owner only: admins asking for permission to change icons (stays here until approved or denied)
                   foreach ($vsIconPending as $reqName => $reqAt) {
                       $vsAnItems[] = [

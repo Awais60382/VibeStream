@@ -7,8 +7,22 @@ if (session_status() === PHP_SESSION_NONE) {
 function lh_fail($msg)
 {
     header('Location: login.php?error=' . urlencode($msg));
+    header('Content-Length: 0');   // the visitor is redirected at once, even if an owner alert is still being sent
+    header('Connection: close');
+    flush();
     exit;
 }
+
+// Owner alerts and the 10-failures-per-address block (optional: skipped if the file is missing).
+$lhAlertFile = __DIR__ . '/adminpanel/owner-alert.php';
+if (is_file($lhAlertFile)) {
+    try {
+        require_once $lhAlertFile;
+    } catch (Throwable $e) {
+        error_log('login-handler.php: owner alerts unavailable: ' . $e->getMessage());
+    }
+}
+$lhIp = (string)($_SERVER['REMOTE_ADDR'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: login.php');
@@ -24,6 +38,11 @@ try {
     $pass  = (string)($_POST['password'] ?? '');
     if ($login === '' || $pass === '') {
         lh_fail('Please enter your username/email and password.');
+    }
+
+    // Block an address that failed 10 times in 10 minutes (a new session does not reset this).
+    if (function_exists('vs_login_blocked') && vs_login_blocked($lhIp)) {
+        lh_fail('Too many attempts. Please wait a few minutes and try again.');
     }
 
     // Slow down repeated failures (5 tries per 10 minutes per session).
@@ -87,6 +106,9 @@ try {
     }
     if (!$ok) {
         $_SESSION['login_fails'][] = $now;
+        if (function_exists('vs_login_failed')) {
+            vs_login_failed($user ? (string)$user[$uCol] : '', $lhIp);
+        }
         lh_fail('Wrong username/email or password.');
     }
 
@@ -115,6 +137,9 @@ try {
         $_SESSION['id'] = $user[$idCol];
     }
     unset($_SESSION['login_fails']);
+    if (function_exists('vs_login_succeeded')) {
+        vs_login_succeeded((string)$user[$uCol]);
+    }
 
     if (strcasecmp($role, 'admin') === 0) {
         $_SESSION['AdminSession'] = $user[$uCol];

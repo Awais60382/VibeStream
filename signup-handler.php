@@ -7,8 +7,22 @@ if (session_status() === PHP_SESSION_NONE) {
 function sh_fail($msg)
 {
     header('Location: Signup.php?error=' . urlencode($msg));
+    header('Content-Length: 0');   // redirect at once, even if an owner alert is still being sent
+    header('Connection: close');
+    flush();
     exit;
 }
+
+// Owner alerts and the sign-up limit (optional: skipped if the file is missing).
+$shAlertFile = __DIR__ . '/adminpanel/owner-alert.php';
+if (is_file($shAlertFile)) {
+    try {
+        require_once $shAlertFile;
+    } catch (Throwable $e) {
+        error_log('signup-handler.php: owner alerts unavailable: ' . $e->getMessage());
+    }
+}
+$shIp = (string)($_SERVER['REMOTE_ADDR'] ?? '');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: Signup.php');
@@ -19,6 +33,10 @@ try {
     ob_start();
     include __DIR__ . '/connection.php'; // $conn (mysqli)
     ob_end_clean();
+
+    if (function_exists('vs_signup_blocked') && vs_signup_blocked($shIp)) {
+        sh_fail('Too many accounts were created from your connection. Please try again later.');
+    }
 
     $username = trim((string)($_POST['username'] ?? ''));
     $email    = strtolower(trim((string)($_POST['email'] ?? '')));
@@ -107,9 +125,15 @@ try {
         $_SESSION['user_id'] = $newId;
         $_SESSION['id'] = $newId;
     }
+    if (function_exists('vs_signup_done')) {
+        vs_signup_done($username, $email, $shIp);
+    }
     header('Location: index.php');
     exit;
 } catch (Throwable $e) {
+    if ($e instanceof mysqli_sql_exception && (int)$e->getCode() === 1062) {
+        sh_fail('That username or email is already registered.');   // two people signed up at the same moment
+    }
     error_log('signup-handler.php: ' . $e->getMessage());
     sh_fail('Could not create your account. Please try again later.');
 }

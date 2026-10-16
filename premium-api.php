@@ -75,8 +75,14 @@ try {
         vs_json(200, vs_premium_state($pdo, $username));
     }
     if ($action === 'request') {
-        if (vs_premium_is_active(vs_premium_get($pdo, $username))) {
-            vs_json(400, ['error' => 'You already have Premium.']);
+        $cur = vs_premium_get($pdo, $username);
+        if (vs_premium_is_active($cur)) {
+            // The only purchase allowed while Premium is active is the upgrade from Premium to Plus.
+            $isPlusNow = strpos((string)$cur['plan'], 'plus') === 0;
+            $wantsPlus = strpos((string)($in['plan'] ?? ''), 'plus') === 0;
+            if ($isPlusNow || !$wantsPlus) {
+                vs_json(400, ['error' => $isPlusNow ? 'You already have Premium Plus.' : 'You already have Premium.']);
+            }
         }
         $err = vs_premium_request_create($pdo, $username, (string)($in['plan'] ?? ''), (string)($in['ref'] ?? ''));
         if ($err !== null) {

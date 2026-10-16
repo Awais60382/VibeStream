@@ -11,8 +11,7 @@ require_once __DIR__ . '/connection.php';
 require_once __DIR__ . '/premium-store.php';
 
 $me = strtolower(trim((string)($_SESSION['username'] ?? '')));
-$admins = array_map('strtolower', VS_PREMIUM_ADMINS);
-if ($me === '' || !in_array($me, $admins, true)) {
+if ($me === '' || !vs_premium_is_admin($me)) {
     http_response_code(403);
     exit('Admins only.');
 }
@@ -30,6 +29,12 @@ if (empty($_SESSION['premium_csrf'])) {
 // Handle Approve / Reject before any page output.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ok = hash_equals((string)$_SESSION['premium_csrf'], (string)($_POST['csrf'] ?? ''));
+    // Save the "how to pay" lines that buyers see on premium.php
+    if (($_POST['action'] ?? '') === 'payinfo') {
+        $saved = $ok && vs_premium_save_pay_info(preg_split('/\R/', (string)($_POST['pay_info'] ?? '')) ?: []);
+        header('Location: premium-requests.php?r=' . ($saved ? 'payinfo' : 'payinfofail'));
+        exit;
+    }
     $id = (int)($_POST['id'] ?? 0);
     $decision = (string)($_POST['decision'] ?? '');
     $result = 'error';
@@ -50,6 +55,8 @@ $flash = [
     'reject'  => 'Rejected.',
     'gone'    => 'That request was already handled.',
     'error'   => 'Something went wrong. Try again.',
+    'payinfo' => 'Payment details saved. Buyers can now pay.',
+    'payinfofail' => 'Could not save. Make sure the VibeStream folder is writable.',
 ][$_GET['r'] ?? ''] ?? '';
 
 function vs_h($v): string
@@ -74,11 +81,25 @@ include __DIR__ . '/header.php';
 .pr-page form{display:inline}
 .pr-btn{border:0;border-radius:8px;padding:7px 12px;font:inherit;font-weight:600;cursor:pointer;color:#fff;background:#2e9e5b}
 .pr-btn.no{background:#c0392b}
+.pr-box{margin:18px 0;padding:16px;border-radius:12px;border:1px solid rgba(128,128,128,.28)}
+.pr-box h2{font-size:18px;margin:0 0 6px}
+.pr-box textarea{width:100%;box-sizing:border-box;min-height:90px;padding:10px;border-radius:8px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font:inherit}
+.pr-box .pr-btn{margin-top:10px;background:#f9433f}
 </style>
 <main class="pr-page">
   <h1>Premium payments</h1>
   <p>Check that the money arrived, then approve. Approving turns Premium on for that user.</p>
   <?php if ($flash !== ''): ?><div class="pr-flash"><?php echo vs_h($flash); ?></div><?php endif; ?>
+  <div class="pr-box">
+    <h2>Payment details</h2>
+    <p>Where buyers send money. One line per method (up to 6). Buying stays closed until you save something here.</p>
+    <form method="post">
+      <input type="hidden" name="csrf" value="<?php echo vs_h($_SESSION['premium_csrf']); ?>">
+      <input type="hidden" name="action" value="payinfo">
+      <textarea name="pay_info" maxlength="1300" placeholder="Bank transfer: Bank name, account number, account title&#10;Wallet: number and account name"><?php echo vs_h(implode("\n", vs_premium_pay_info())); ?></textarea>
+      <button class="pr-btn" type="submit">Save payment details</button>
+    </form>
+  </div>
   <div class="pr-wrap">
     <table>
       <thead>

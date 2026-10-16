@@ -17,30 +17,28 @@ async function fetchVideoStats() {
 }
 
 async function handleLogin(isGuest) {
-    let usernameInput = document.getElementById('username-input').value.trim();
-    if (!isGuest && !usernameInput) {
-        alert("Please enter a username!");
+    if (!isGuest) {
+        window.location.assign('login.php');
         return;
     }
 
     try {
-        let response = await fetch('code.php?action=auth', {
+        let response = await fetch('auth.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: usernameInput, isGuest: isGuest })
+            body: JSON.stringify({ isGuest: true })
         });
         let data = await response.json();
         
-        if (data.success) {
+        if (response.ok && data.success) {
             document.getElementById('display-user').innerText = data.user.username;
             closeModal();
         } else {
-            alert("Login failed");
+            alert("Guest sign-in failed: " + (data.message || 'Please try again.'));
         }
     } catch (err) {
-        let fallbackName = isGuest ? "Guest_" + Math.floor(Math.random() * 9000 + 1000) : usernameInput;
-        document.getElementById('display-user').innerText = fallbackName;
-        closeModal();
+        console.error("Guest sign-in request failed:", err);
+        alert("Guest sign-in failed. Please try again.");
     }
 }
 

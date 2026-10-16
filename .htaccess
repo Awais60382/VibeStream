@@ -1,0 +1,11 @@
+
+# VibeStream private files: never send these to a browser
+<Files "client_secret_778247495161-37fq631q2nm026vm5ofn1qj79vib9au4.apps.googleusercontent.com.json">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</Files>

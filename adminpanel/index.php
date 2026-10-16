@@ -106,8 +106,12 @@ $actTotal = 0;
 $actError = '';
 
 $hourData = [];
+$heat = []; // [weekday 0=Sun..6=Sat][hour 0..23] => uploads, for the peak-hours heatmap
 for ($h = 0; $h < 24; $h++) {
     $hourData[$h] = ['n' => 0, 'who' => []];
+}
+for ($d0 = 0; $d0 < 7; $d0++) {
+    $heat[$d0] = array_fill(0, 24, 0);
 }
 $dayData = [];
 for ($d = 0; $d < 7; $d++) {
@@ -149,6 +153,7 @@ if (isset($pdo) && $pdo instanceof PDO) {
 
                 $hourData[$h]['n']++;
                 $dayData[$w]['n']++;
+                $heat[$w][$h]++;
                 if ($who !== '') {
                     $hourData[$h]['who'][$who] = true;
                     $dayData[$w]['who'][$who]  = true;
@@ -1733,6 +1738,64 @@ include "header.php";
               <?php endif; ?>
             </div>
           </div>
+          </section>
+
+          <?php
+            $heatMax = 0; $heatPeak = null;
+            foreach ($heat as $hd => $hrow) {
+                foreach ($hrow as $hh => $hn) {
+                    if ($hn > $heatMax) { $heatMax = $hn; $heatPeak = [$hd, $hh]; }
+                }
+            }
+            $heatDays = [1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 0 => 'Sun'];
+            $heatFull = [1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday', 0 => 'Sunday'];
+          ?>
+          <section class="panel mt-3" aria-label="Peak upload hours">
+            <style>
+              .vs-heat{overflow-x:auto}
+              .vs-heat-grid{display:grid;grid-template-columns:44px repeat(24,minmax(18px,1fr));gap:3px;min-width:640px}
+              .vs-heat-lab{font-size:.7rem;opacity:.65;display:flex;align-items:center}
+              .vs-heat-hr{font-size:.66rem;opacity:.6;text-align:center}
+              .vs-heat-cell{aspect-ratio:1/1;border-radius:4px;background:rgba(127,127,127,.14);background-image:linear-gradient(rgba(94,165,251,var(--a,0)),rgba(94,165,251,var(--a,0)))}
+              .vs-heat-key{display:flex;align-items:center;gap:6px;margin-top:12px;font-size:.75rem}
+              .vs-heat-key i{display:inline-block;width:14px;height:14px;border-radius:3px}
+            </style>
+            <div class="panel-header">
+              <div>
+                <h2 class="h5 mb-1 section-title"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i><span>Peak upload hours</span></h2>
+                <p class="text-muted mb-0">When uploads happen, by weekday and hour (last 6 months). Brighter means busier.</p>
+              </div>
+            </div>
+            <?php if ($heatMax === 0): ?>
+              <div class="vs-empty text-muted">No uploads with a date in the last 6 months, so there is nothing to show.</div>
+            <?php else: ?>
+              <div class="vs-heat" role="img" aria-label="Heatmap of uploads by weekday and hour">
+                <div class="vs-heat-grid">
+                  <span></span>
+                  <?php for ($hh = 0; $hh < 24; $hh++): ?>
+                    <span class="vs-heat-hr"><?php echo $hh % 3 === 0 ? vs_e($hourShort($hh)) : ''; ?></span>
+                  <?php endfor; ?>
+                  <?php foreach ($heatDays as $hd => $hl): ?>
+                    <span class="vs-heat-lab"><?php echo vs_e($hl); ?></span>
+                    <?php for ($hh = 0; $hh < 24; $hh++):
+                        $hn = $heat[$hd][$hh];
+                        $ha = $hn > 0 ? round(0.18 + 0.82 * ($hn / $heatMax), 2) : 0;
+                        $htip = $heatFull[$hd] . ', ' . $hourText($hh) . ': ' . $hn . ' upload' . ($hn === 1 ? '' : 's');
+                    ?>
+                      <span class="vs-heat-cell" style="--a:<?php echo $ha; ?>" title="<?php echo vs_e($htip); ?>"></span>
+                    <?php endfor; ?>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+              <div class="vs-heat-key text-muted">
+                <span>Quiet</span>
+                <i style="background:rgba(94,165,251,.18)"></i><i style="background:rgba(94,165,251,.45)"></i><i style="background:rgba(94,165,251,.72)"></i><i style="background:rgba(94,165,251,1)"></i>
+                <span>Busy</span>
+                <?php if ($heatPeak): ?>
+                  <span class="ms-auto">Busiest slot: <strong><?php echo vs_e($heatFull[$heatPeak[0]] . ' at ' . $hourText($heatPeak[1])); ?></strong> (<?php echo (int)$heatMax; ?> uploads)</span>
+                <?php endif; ?>
+              </div>
+            <?php endif; ?>
           </section>
 
           <section class="row g-3 mt-1" aria-label="Top content and creators">

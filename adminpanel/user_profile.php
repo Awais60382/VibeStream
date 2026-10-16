@@ -12,6 +12,8 @@ include_once "../connection.php";
 include_once "ui_helpers.php";
 require_once __DIR__ . '/release-username.php';
 require_once __DIR__ . '/owner-guard.php';
+require_once __DIR__ . '/admin-activity-store.php';
+require_once __DIR__ . '/owner-alert.php';
 
 $USERS_TABLE  = 'users';
 $VIDEOS_TABLE = 'videos';
@@ -19,7 +21,7 @@ $AVATAR_BASE  = '../';
 $ADMIN_ROLE   = 'Admin';
 $USER_ROLE    = 'user';
 
-$myId = $_SESSION['user_id'] ?? $_SESSION['id'] ?? $_SESSION['userid'] ?? $_SESSION['uid'] ?? null;
+$myId = $_SESSION['user_id'] ?? $_SESSION['AdminID'] ?? $_SESSION['id'] ?? $_SESSION['userid'] ?? $_SESSION['uid'] ?? null;
 $id   = trim((string)($_GET['id'] ?? $_POST['id'] ?? ''));
 
 if (empty($_SESSION['vs_user_edit_csrf'])) {
@@ -98,6 +100,10 @@ $isSelf   = ($myId !== null && $id !== '' && (string)$myId === $id);
 $username = ($user && $map['username']) ? trim((string)($user[$map['username']] ?? '')) : '';
 $curRole  = ($user && $map['role']) ? trim((string)($user[$map['role']] ?? '')) : '';
 $isAdminUser = strcasecmp($curRole, $ADMIN_ROLE) === 0;
+$targetEmail   = ($user && $map['email']) ? trim((string)($user[$map['email']] ?? '')) : '';
+$targetIsOwner = ($targetEmail !== '' && function_exists('vs_is_site_owner_email') && vs_is_site_owner_email($targetEmail));
+$logWho        = $username !== '' ? '"' . mb_substr($username, 0, 60) . '"' : '#' . mb_substr($id, 0, 20);
+$freedName     = 'deleted_' . preg_replace('/\W/', '', $id);
 
 $countAdmins = static function () use ($pdo, $USERS_TABLE, $map, $ADMIN_ROLE, $run): int {
     $st = $run($pdo, 'SELECT COUNT(*) FROM ' . vs_q($USERS_TABLE) . ' WHERE LOWER(' . vs_q($map['role']) . ') = LOWER(:r)', [':r' => $ADMIN_ROLE]);
@@ -163,6 +169,8 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new InvalidArgumentException('This account is already an admin.');
             }
             $run($pdo, 'UPDATE ' . vs_q($USERS_TABLE) . ' SET ' . vs_q($map['role']) . ' = :r WHERE ' . vs_q($map['id']) . ' = :id', [':r' => $ADMIN_ROLE, ':id' => $id]);
+            vs_admin_log($pdo, 'user', 'Made ' . $logWho . ' an admin');
+            vs_owner_alert($pdo, 'admin_added', 'Admin access given to ' . $logWho, 'An admin made ' . $logWho . ' an admin.');
             $_SESSION['vs_user_flash'] = ($username !== '' ? $username : 'The user') . ' is now an admin.';
             header('Location: user_profile.php?id=' . urlencode($id));
             exit;
@@ -174,12 +182,17 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($isSelf) {
                 throw new InvalidArgumentException('You cannot remove your own admin role.');
             }
+            if ($targetIsOwner) {
+                throw new InvalidArgumentException('The owner account cannot be changed to a user.');
+            }
             if ($countAdmins() <= 1) {
                 throw new InvalidArgumentException('This is the last admin account, so it cannot be changed to a user.');
             }
             // The database lock only lets the owner remove admin access, so check that here on the server
             // and tell the database ("@vs_owner_ok") for this one change.
             if (!vs_is_owner($pdo)) {
+                vs_admin_log($pdo, 'user', 'Tried to remove admin access from ' . $logWho . ' (blocked: owner only)');
+                vs_owner_alert($pdo, 'blocked', 'Blocked: someone tried to remove admin access from ' . $logWho, 'Only the owner can do this, so it was refused.');
                 throw new InvalidArgumentException('Only the site owner can remove admin access.');
             }
             $pdo->exec('SET @vs_owner_ok = 1');
@@ -203,6 +216,8 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             } finally {
                 $pdo->exec('SET @vs_owner_ok = 0');
             }
+            vs_admin_log($pdo, 'user', 'Removed admin access from ' . $logWho);
+            vs_owner_alert($pdo, 'admin_removed', 'Admin access removed from ' . $logWho);
             $_SESSION['vs_user_flash'] = ($username !== '' ? $username : 'The admin') . ' is now a normal user.';
             header('Location: user_profile.php?id=' . urlencode($id));
             exit;
@@ -212,6 +227,8 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new InvalidArgumentException('Videos could not be matched to this user.');
             }
             $st = $run($pdo, 'DELETE FROM ' . vs_q($VIDEOS_TABLE) . ' WHERE LOWER(' . vs_q($vmap['uploader']) . ') = LOWER(:u)', [':u' => $username]);
+            vs_admin_log($pdo, 'video', 'Deleted ' . (int)$st->rowCount() . ' upload(s) from ' . $logWho);
+            vs_owner_alert($pdo, 'uploads_deleted', 'Uploads deleted from ' . $logWho, (int)$st->rowCount() . ' upload(s) were deleted by an admin.');
             $_SESSION['vs_user_flash'] = 'Deleted ' . (int)$st->rowCount() . ' upload(s) from ' . $username . '.';
             header('Location: user_profile.php?id=' . urlencode($id));
             exit;
@@ -220,11 +237,16 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($isSelf) {
                 throw new InvalidArgumentException('You cannot delete your own account.');
             }
+            if ($targetIsOwner) {
+                throw new InvalidArgumentException('The owner account cannot be deleted.');
+            }
             if ($isAdminUser && $countAdmins() <= 1) {
                 throw new InvalidArgumentException('This is the last admin account, so it cannot be deleted.');
             }
             if ($isAdminUser) {
                 if (!vs_is_owner($pdo)) {
+                    vs_admin_log($pdo, 'user', 'Tried to delete admin account ' . $logWho . ' (blocked: owner only)');
+                    vs_owner_alert($pdo, 'blocked', 'Blocked: someone tried to delete admin account ' . $logWho, 'Only the owner can do this, so it was refused.');
                     throw new InvalidArgumentException('Only the site owner can delete admin accounts.');
                 }
                 $pdo->exec('SET @vs_owner_ok = 1');
@@ -257,13 +279,15 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 // Free the name everywhere so it can be used again.
                 try {
-                    vs_release_username($pdo, $username, 'deleted_' . preg_replace('/\W/', '', $id));
+                    vs_release_username($pdo, $username, $freedName);
                 } catch (Throwable $releaseError) {
                     error_log('Could not free user name: ' . $releaseError->getMessage());
                 }
             }
+            vs_admin_log($pdo, 'user', 'Deleted ' . ($isAdminUser ? 'admin ' : 'user ') . 'account ' . $logWho . ($alsoVideos ? ' and ' . $removedVideos . ' upload(s)' : ' (uploads kept)'));
+            vs_owner_alert($pdo, 'account_deleted', ($isAdminUser ? 'Admin' : 'User') . ' account deleted: ' . $logWho, $alsoVideos ? 'Their ' . $removedVideos . ' upload(s) were deleted too.' : 'Their uploads were kept.');
             $deleted = ($username !== '' ? $username : 'The account') . ' was deleted. '
-                . ($alsoVideos ? 'Their ' . $removedVideos . ' upload(s) were deleted too.' : 'Their uploads were kept and now show under the name deleted_' . preg_replace('/\\W/', '', $id) . '.');
+                . ($alsoVideos ? 'Their ' . $removedVideos . ' upload(s) were deleted too.' : 'Their uploads were kept and now show under the name ' . $freedName . '.');
             $user = null;
         }
     } catch (InvalidArgumentException $e) {
@@ -293,8 +317,8 @@ if ($user && $username !== '' && !empty($vmap['uploader'])) {
 $uploadTotal = $videoCount + $shortCount;
 
 $full = ($user && $map['name']) ? trim((string)($user[$map['name']] ?? '')) : '';
-$email = ($user && $map['email']) ? trim((string)($user[$map['email']] ?? '')) : '';
-$isOwnerUser = ($email !== '' && function_exists('vs_is_site_owner_email') && vs_is_site_owner_email($email));
+$email = $targetEmail;
+$isOwnerUser = $targetIsOwner;
 $display = $full !== '' ? $full : ($username !== '' ? $username : 'User');
 $avatar = ($user && $map['avatar']) ? vs_avatar_src($user[$map['avatar']] ?? '', $AVATAR_BASE) : '';
 $joined = '';

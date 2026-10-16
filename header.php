@@ -58,7 +58,7 @@ foreach (vs_si_load()['site'] as $k => $entry) {
 }
 ?>
 <script>window.VS_SIDEBAR_ICONS = <?php echo json_encode($vsSiteIcons, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
-<script src="sidebar-icons.js?v=1" defer></script><script src="theme.js?v=3"></script>
+<script src="sidebar.js" defer></script><script src="theme.js?v=3"></script>
     <script>window.VS_PREMIUM_STATE = <?php echo json_encode($vsPremiumState, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
     <script src="premium.js" defer></script>
     <link rel="stylesheet" href="style.css?v=5">

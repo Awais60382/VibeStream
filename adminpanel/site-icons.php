@@ -15,7 +15,6 @@ if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecm
 include_once "../connection.php";
 include_once "ui_helpers.php";
 require_once __DIR__ . '/owner-guard.php';
-require_once __DIR__ . '/admin-activity-store.php';
 require_once __DIR__ . '/../site-branding.php';
 require_once __DIR__ . '/../category-presets.php';
 require_once __DIR__ . '/../category-icons.php';
@@ -77,7 +76,9 @@ function vs_si_save_logo(array $file, string $adminName): void
     $state = vs_branding_state();
     $state['logo'] = 'uploads/site-branding/' . $filename;
     $state['notification'] = ['message' => 'The site logo was updated by ' . $adminName . '.', 'created_at' => date(DATE_ATOM)];
-    if (!vs_branding_save_state($state)) {
+    try {
+        vs_branding_save_state($state);   // throws when it cannot save
+    } catch (Throwable $e) {
         @unlink($dest);
         throw new RuntimeException('Could not save the settings. Check folder permissions.');
     }
@@ -96,37 +97,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'logo':
                 vs_si_save_logo($_FILES['icon'] ?? [], $adminName);
                 vs_si_flash('success', 'The app logo and icon were updated.');
-                vs_admin_log($pdo, 'settings', 'Changed the app logo');
                 break;
             case 'logo_reset':
                 $state = vs_branding_state();
                 $state['logo'] = VS_DEFAULT_LOGO_PATH;
                 $state['notification'] = ['message' => 'The site logo was reset by ' . $adminName . '.', 'created_at' => date(DATE_ATOM)];
-                if (!vs_branding_save_state($state)) {
+                try {
+                    vs_branding_save_state($state);   // throws when it cannot save
+                } catch (Throwable $e) {
                     throw new RuntimeException('Could not save the settings. Check folder permissions.');
                 }
                 vs_si_flash('success', 'The app logo was reset to the default.');
-                vs_admin_log($pdo, 'settings', 'Reset the app logo to the default');
                 break;
             case 'cat_icon':
                 vs_cat_icon_set($name, $_FILES['icon'] ?? []);
                 vs_si_flash('success', 'Category icon updated for "' . $name . '".');
-                vs_admin_log($pdo, 'settings', 'Changed the category icon for "' . mb_substr($name, 0, 40) . '"');
                 break;
             case 'cat_icon_remove':
                 vs_cat_icon_remove($name);
                 vs_si_flash('success', 'Category icon removed for "' . $name . '".');
-                vs_admin_log($pdo, 'settings', 'Removed the category icon for "' . mb_substr($name, 0, 40) . '"');
                 break;
             case 'ui_icon':
                 vs_ui_icon_set($name, $_FILES['icon'] ?? []);
                 vs_si_flash('success', 'Icon updated: ' . (vs_ui_icon_all_names()[$name] ?? $name) . '.');
-                vs_admin_log($pdo, 'settings', 'Changed icon: ' . (vs_ui_icon_all_names()[$name] ?? mb_substr($name, 0, 40)));
                 break;
             case 'ui_icon_remove':
                 vs_ui_icon_remove($name);
                 vs_si_flash('success', 'Icon reset to the built-in one: ' . (vs_ui_icon_all_names()[$name] ?? $name) . '.');
-                vs_admin_log($pdo, 'settings', 'Reset icon to the built-in one: ' . (vs_ui_icon_all_names()[$name] ?? mb_substr($name, 0, 40)));
                 break;
             default:
                 vs_si_flash('danger', 'Unknown action.');
@@ -223,7 +220,7 @@ function vs_si_upload_form(string $csrf, string $action, string $name, string $l
               <div class="table-responsive">
                 <table class="table align-middle mb-0">
                   <tbody>
-                    <?php foreach ($categories as $cat): $cname = (string)$cat; $has = function_exists('vs_cat_icon_get') ? vs_cat_icon_get($cname) !== null : false; ?>
+                    <?php foreach ($categories as $cat): $cname = (string)$cat; $has = vs_cat_icon_url($cname) !== null; ?>
                       <tr>
                         <td style="width:56px"><?php echo vs_category_icon_html($cname, 28, '../'); ?></td>
                         <td class="fw-semibold"><?php echo vs_e($cname); ?></td>

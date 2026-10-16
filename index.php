@@ -165,6 +165,10 @@ if (!preg_match('/^[a-z0-9 _-]{1,40}$/', $selectedCategory)) {
     $selectedCategory = '';
 }
 $search = trim($_GET['q'] ?? '');
+$feedMode = strtolower(trim((string)($_GET['feed'] ?? 'for_you')));
+if (!in_array($feedMode, ['for_you', 'latest', 'popular'], true)) {
+    $feedMode = 'for_you';
+}
 if (!$hasCategoryColumn) {
     if ($selectedCategory !== '' && $search === '') {
         $search = $selectedCategory;
@@ -204,22 +208,52 @@ if ($page > $totalPages) {
     $offset = ($page - 1) * $perPage;
 }
 
-// Shuffle: a new random order on every refresh of page 1; pages 2+ keep the same order while you page.
-// (Searches stay newest-first.)
-if ($page <= 1 || empty($_SESSION['feed_seed'])) {
-    $_SESSION['feed_seed'] = random_int(1, 2147483646);
+$followedCreators = [];
+$userId = filter_var($_SESSION['user_id'] ?? null, FILTER_VALIDATE_INT);
+if ($search === '' && $feedMode === 'for_you' && $userId !== false && $userId > 0) {
+    try {
+        $followedStmt = $conn->prepare('SELECT `channel_name`, `channel_username` FROM `user_subscriptions` WHERE `subscriber_id` = ?');
+        $followedStmt->bind_param('i', $userId);
+        $followedStmt->execute();
+        foreach ($followedStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $followed) {
+            foreach (['channel_username', 'channel_name'] as $column) {
+                $name = trim((string)($followed[$column] ?? ''));
+                if ($name !== '') {
+                    $followedCreators[mb_strtolower($name)] = $name;
+                }
+            }
+        }
+        $followedStmt->close();
+    } catch (Throwable $followedError) {
+        error_log('Home feed could not load followed creators: ' . $followedError->getMessage());
+    }
 }
-$feedSeed = (int)$_SESSION['feed_seed'];
-$videoOrder = $search === '' ? "RAND($feedSeed)" : 'created_at DESC';
+
+$orderParams = [];
+$orderTypes = '';
+if ($search !== '' || $feedMode === 'latest') {
+    $videoOrder = 'created_at DESC';
+} elseif ($feedMode === 'for_you' && $followedCreators) {
+    $placeholders = implode(',', array_fill(0, count($followedCreators), '?'));
+    $videoOrder = "CASE WHEN LOWER(COALESCE(NULLIF(username, ''), channel_name, '')) IN ($placeholders) THEN 0 ELSE 1 END, COALESCE(views, 0) DESC, created_at DESC";
+    $orderParams = array_values($followedCreators);
+    $orderTypes = str_repeat('s', count($orderParams));
+} else {
+    $videoOrder = 'COALESCE(views, 0) DESC, created_at DESC';
+}
 $sql = "SELECT * FROM videos WHERE $where ORDER BY $videoOrder LIMIT ? OFFSET ?";
 $stmt = $conn->prepare($sql);
-$bindTypes = $types . 'ii';
-$bindParams = array_merge($params, [$perPage, $offset]);
+$bindTypes = $types . $orderTypes . 'ii';
+$bindParams = array_merge($params, $orderParams, [$perPage, $offset]);
 $stmt->bind_param($bindTypes, ...$bindParams);
 $stmt->execute();
 $videos = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
+if ($page <= 1 || empty($_SESSION['feed_seed'])) {
+    $_SESSION['feed_seed'] = random_int(1, 2147483646);
+}
+$feedSeed = (int)$_SESSION['feed_seed'];
 $shortsPerPage = 48;   // shorts loaded per page (2 shorts after every video, so 2 x the videos per page)
 $shorts = [];
 if ($hasTypeColumn) {
@@ -295,7 +329,7 @@ $categories = array_values(array_unique($categories));
     }
     ?>
     <script>window.VS_SIDEBAR_ICONS = <?php echo json_encode($vsSiteIcons, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
-    <script src="sidebar-icons.js?v=1" defer></script>
+    <script src="sidebar.js" defer></script>
     <script src="theme.js?v=3"></script>
     <link rel="stylesheet" href="style.css?v=5">
     <style>
@@ -724,6 +758,7 @@ $categories = array_values(array_unique($categories));
         .video-card-link:hover .video-info h3 {
             color: var(--blue);
         }
+        .video-info h3 a:hover { color: var(--blue); }
 
         .channel-name,
         .video-meta {
@@ -843,15 +878,23 @@ $categories = array_values(array_unique($categories));
 
         @media (max-width: 760px) {
             .app-navbar {
-                grid-template-columns: auto 1fr;
+                grid-template-columns: minmax(0, 1fr) auto;
+                grid-template-rows: 48px 44px;
+                height: 112px;
+                align-content: center;
+                gap: 4px 8px;
                 padding: 0 12px;
             }
 
+            :root { --navbar-height: 112px; }
+
+            .nav-left { grid-column: 1; grid-row: 1; min-width: 0; }
+            .nav-center { grid-column: 1 / -1; grid-row: 2; width: 100%; min-width: 0; }
+            .nav-right { grid-column: 2; grid-row: 1; gap: 6px; min-width: 0; }
+            .search-form { max-width: none; }
             .brand { font-size: 20px; }
 
-            .nav-right {
-                justify-content: flex-end;
-            }
+            .nav-right { justify-content: flex-end; }
 
             .create-btn {
                 display: none;
@@ -881,12 +924,19 @@ $categories = array_values(array_unique($categories));
 
         @media (max-width: 540px) {
             .app-navbar {
-                height: 68px;
+                height: 112px;
+                padding: 0 10px;
             }
 
             :root {
-                --navbar-height: 68px;
+                --navbar-height: 112px;
             }
+
+            .brand { font-size: 18px; }
+            .nav-toggle { flex: 0 0 40px; width: 40px; height: 40px; }
+            .nav-left { gap: 8px; }
+            .nav-right { gap: 4px; }
+            #search-input { height: 40px; }
 
             .shorts-grid {
                 grid-template-columns: 1fr 1fr;
@@ -1119,6 +1169,20 @@ $categories = array_values(array_unique($categories));
                         var act = bar.querySelector('.chip.active'); if (act && act.offsetLeft > bar.clientWidth - 80) { bar.scrollLeft = act.offsetLeft - 80; }
                     })();
                     </script>
+                    <?php if ($search === ''): ?>
+                    <nav class="chips-bar" aria-label="Video feed">
+                        <?php foreach (['for_you' => 'For you', 'latest' => 'Latest', 'popular' => 'Popular'] as $mode => $label):
+                            $feedQuery = $_GET;
+                            unset($feedQuery['page']);
+                            $feedQuery['feed'] = $mode;
+                            $feedHref = 'index.php?' . http_build_query($feedQuery);
+                        ?>
+                            <a class="chip<?php echo $feedMode === $mode ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($feedHref, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $feedMode === $mode ? ' aria-current="page"' : ''; ?>>
+                                <?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
+                            </a>
+                        <?php endforeach; ?>
+                    </nav>
+                    <?php endif; ?>
 
                     <?php
                     // ----- Feed layout: videos, shorts, videos, shorts ... ending with videos -----
@@ -1155,21 +1219,21 @@ $categories = array_values(array_unique($categories));
                                         <span class="duration-badge"><?php echo htmlspecialchars($duration); ?></span>
                                     <?php endif; ?>
                                 </div>
-                                <div class="video-details-flex">
-                                    <div class="channel-avatar">
-                                        <?php if ($uploaderAvatar !== ''): ?>
-                                            <img src="<?php echo htmlspecialchars($uploaderAvatar); ?>" alt="<?php echo htmlspecialchars($uploader); ?> avatar" loading="lazy">
-                                        <?php else: ?>
-                                            <span class="avatar-initial"><?php echo htmlspecialchars(mb_strtoupper(mb_substr($uploader, 0, 1))); ?></span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="video-info">
-                                        <h3><?php echo $title; ?></h3>
-                                        <p class="channel-name"><?php echo $username; ?></p>
-                                        <p class="video-meta"><?php echo $views; ?> views &bull; <?php echo $uploaded; ?></p>
-                                    </div>
-                                </div>
                             </a>
+                            <div class="video-details-flex">
+                                <a class="channel-avatar" href="profile.php?u=<?php echo rawurlencode($uploader); ?>" aria-label="Visit <?php echo $username; ?>'s channel">
+                                    <?php if ($uploaderAvatar !== ''): ?>
+                                        <img src="<?php echo htmlspecialchars($uploaderAvatar); ?>" alt="" loading="lazy">
+                                    <?php else: ?>
+                                        <span class="avatar-initial"><?php echo htmlspecialchars(mb_strtoupper(mb_substr($uploader, 0, 1))); ?></span>
+                                    <?php endif; ?>
+                                </a>
+                                <div class="video-info">
+                                    <h3><a href="<?php echo htmlspecialchars($watchHref); ?>"><?php echo $title; ?></a></h3>
+                                    <a class="channel-name" href="profile.php?u=<?php echo rawurlencode($uploader); ?>"><?php echo $username; ?></a>
+                                    <p class="video-meta"><?php echo $views; ?> views &bull; <?php echo $uploaded; ?></p>
+                                </div>
+                            </div>
                         </div>
                         <?php
                     };
@@ -1274,7 +1338,6 @@ $categories = array_values(array_unique($categories));
     </div>
 
     <?php /* The Report popup loads on demand from video-menu.js (report-widget.php), so the cards' three dots never depend on it. */ ?>
-    <script src="sidebar.js"></script>
     <script src="video-menu.js?v=3"></script>
 </body>
 </html>
