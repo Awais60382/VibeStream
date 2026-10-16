@@ -8,4 +8,6 @@ uploads/
 backups/
 adminpanel/data/
 *.zip
-"@ | Set-Content .gitignore
+"@ | Set-Content .gitignorenode_modules/
+client_secret*.json
+*.apps.googleusercontent.com.json
