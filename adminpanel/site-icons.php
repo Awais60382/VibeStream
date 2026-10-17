@@ -148,6 +148,9 @@ try {
 }
 $categories = function_exists('vs_default_categories') ? vs_default_categories() : [];
 $uiMap = vs_ui_icons_map();
+// When the sidebar icon editor (sidebar-icons-store.php) is installed it handles the Menu and Explore icons,
+// so they are not offered here a second time.
+$vsSidebarEditor = is_file(__DIR__ . '/../sidebar-icons-store.php');
 
 include "header.php";
 if (function_exists('vs_print_styles')) {
@@ -243,7 +246,10 @@ function vs_si_upload_form(string $csrf, string $action, string $name, string $l
             <?php endif; ?>
           </section>
 
-          <?php foreach (vs_ui_icon_groups() as $group => $names): ?>
+          <?php if ($vsSidebarEditor): ?>
+            <p class="text-muted small mt-3 mb-0">The Menu and Explore icons are managed by the sidebar icon editor.</p>
+          <?php endif; ?>
+          <?php foreach (vs_ui_icon_groups() as $group => $names): if ($vsSidebarEditor && in_array($group, ['Menu', 'Explore'], true)) { continue; } ?>
             <section class="panel mt-3" aria-label="<?php echo vs_e($group); ?> icons">
               <div class="panel-header">
                 <h2 class="h5 mb-1 section-title"><i class="bi bi-grid" aria-hidden="true"></i><span><?php echo vs_e($group); ?> icons</span></h2>

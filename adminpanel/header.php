@@ -14,6 +14,10 @@ require_once __DIR__ . '/checkin-guard.php';
 // --- Update "last active" timestamp for the logged-in admin ---
 require_once __DIR__ . '/../connection.php'; // creates $pdo
 require_once __DIR__ . '/ui_helpers.php';
+// System check engine: gives the owner a red bar on every admin page when something is failing
+if (is_file(__DIR__ . '/system-check-core.php')) {
+    require_once __DIR__ . '/system-check-core.php';
+}
 require_once __DIR__ . '/../site-branding.php';
 require_once __DIR__ . '/../sidebar-icons-store.php';
 require_once __DIR__ . '/icon-access-store.php';
@@ -268,6 +272,7 @@ vs_admin_log_page_view(
   <link rel="stylesheet" href="./assets/css/bootstrap.min.css">
   <link rel="stylesheet" href="./assets/vendors/bootstrap-icons/bootstrap-icons.css">
   <link rel="stylesheet" href="./assets/css/style.css?v=<?php echo (int)@filemtime(__DIR__ . '/assets/css/style.css'); ?>">
+  <link rel="stylesheet" href="./assets/css/sidebar-modern.css?v=<?php echo (int)@filemtime(__DIR__ . '/assets/css/sidebar-modern.css'); ?>">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../search-suggest.css?v=<?php echo (int)@filemtime(__DIR__ . '/../search-suggest.css'); ?>">
 </head>
@@ -640,3 +645,9 @@ vs_admin_log_page_view(
             });
           }
         </script>
+<?php
+// Red bar for the owner when the System check finds a problem (it never breaks the page)
+if (function_exists('vs_syscheck_banner')) {
+    vs_syscheck_banner(isset($pdo) && $pdo instanceof PDO ? $pdo : null);
+}
+?>
