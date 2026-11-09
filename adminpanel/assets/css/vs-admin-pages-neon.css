@@ -1,0 +1,179 @@
+html[data-theme="dark"] body.vs-neon {
+  --vap-bg: #040920;
+  --vap-panel: linear-gradient(155deg, rgba(16, 24, 68, .96), rgba(7, 12, 39, .98));
+  --vap-panel-soft: rgba(13, 22, 62, .78);
+  --vap-line: rgba(112, 104, 255, .38);
+  --vap-line-soft: rgba(112, 104, 255, .22);
+  --vap-text: #eaf0ff;
+  --vap-muted: #9aa8d1;
+  --vap-violet: #a78bfa;
+  --vap-cyan: #22d3ee;
+  --vap-glow: 0 0 24px -8px rgba(112, 104, 255, .52), inset 0 1px 0 rgba(255, 255, 255, .035);
+  --vap-cyan-glow: 0 0 22px -6px rgba(34, 211, 238, .52);
+}
+
+html[data-theme="light"] body.vs-neon {
+  --vap-bg: #f4f6ff;
+  --vap-panel: linear-gradient(155deg, #fff, #f7f8ff);
+  --vap-panel-soft: rgba(240, 242, 255, .92);
+  --vap-line: rgba(124, 77, 255, .34);
+  --vap-line-soft: rgba(124, 77, 255, .2);
+  --vap-text: #171b3b;
+  --vap-muted: #5d6688;
+  --vap-violet: #7047df;
+  --vap-cyan: #008daa;
+  --vap-glow: 0 0 22px -10px rgba(124, 77, 255, .34);
+  --vap-cyan-glow: 0 0 20px -8px rgba(0, 184, 230, .42);
+}
+
+body.vs-neon main.dashboard-content {
+  color: var(--vap-text);
+  background:
+    radial-gradient(1000px 480px at 8% -8%, rgba(124, 77, 255, .13), transparent 70%),
+    radial-gradient(850px 440px at 100% 0, rgba(0, 184, 230, .09), transparent 70%),
+    var(--vap-bg) !important;
+}
+
+body.vs-neon main.dashboard-content .vx {
+  background: transparent !important;
+}
+
+body.vs-neon main.dashboard-content h1,
+body.vs-neon main.dashboard-content h2,
+body.vs-neon main.dashboard-content h3,
+body.vs-neon main.dashboard-content h4,
+body.vs-neon main.dashboard-content h5 {
+  color: var(--vap-text);
+}
+
+body.vs-neon main.dashboard-content .text-muted,
+body.vs-neon main.dashboard-content .form-text {
+  color: var(--vap-muted) !important;
+}
+
+body.vs-neon main.dashboard-content .panel,
+body.vs-neon main.dashboard-content .page-heading,
+body.vs-neon main.dashboard-content .ps-sec,
+body.vs-neon main.dashboard-content .ps-card,
+body.vs-neon main.dashboard-content .ac-stat,
+body.vs-neon main.dashboard-content .nt-card,
+body.vs-neon main.dashboard-content .nt-group,
+body.vs-neon main.dashboard-content .vx-card,
+body.vs-neon main.dashboard-content .vx-mini {
+  color: var(--vap-text) !important;
+  background: var(--vap-panel) !important;
+  border: 1px solid var(--vap-line) !important;
+  box-shadow: var(--vap-glow) !important;
+  backdrop-filter: blur(7px);
+}
+
+body.vs-neon main.dashboard-content .page-heading {
+  border-radius: 14px;
+}
+
+body.vs-neon main.dashboard-content .nt-page {
+  --nt-card: var(--vap-panel);
+  --nt-card2: var(--vap-panel-soft);
+  --nt-line: var(--vap-line-soft);
+  --nt-text: var(--vap-text);
+  --nt-muted: var(--vap-muted);
+  --nt-acc: var(--vap-violet);
+  --nt-ico-bg: rgba(124, 77, 255, .2);
+  --nt-ico: var(--vap-violet);
+  --nt-chip-bg: var(--vap-panel-soft);
+  --nt-chip-bd: var(--vap-line);
+  --nt-chip: var(--vap-text);
+  --nt-link: var(--vap-cyan);
+  --nt-th: var(--vap-panel-soft);
+  --nt-row-hover: rgba(34, 211, 238, .08);
+}
+
+body.vs-neon main.dashboard-content .nt-card-head,
+body.vs-neon main.dashboard-content .nt-foot,
+body.vs-neon main.dashboard-content .nt-set,
+body.vs-neon main.dashboard-content .nt-table td,
+body.vs-neon main.dashboard-content .nt-team li,
+body.vs-neon main.dashboard-content .nt-item {
+  border-color: var(--vap-line-soft);
+}
+
+body.vs-neon main.dashboard-content .ps-quick,
+body.vs-neon main.dashboard-content .nt-btn,
+body.vs-neon main.dashboard-content .ac-chip,
+body.vs-neon main.dashboard-content .ac-pager a,
+body.vs-neon main.dashboard-content .vx-month a,
+body.vs-neon main.dashboard-content .vx-month span.dis {
+  color: var(--vap-text);
+  background: var(--vap-panel-soft);
+  border: 1px solid var(--vap-line);
+  box-shadow: 0 0 12px -5px rgba(124, 77, 255, .55);
+}
+
+body.vs-neon main.dashboard-content .ps-quick:hover,
+body.vs-neon main.dashboard-content .nt-btn:hover,
+body.vs-neon main.dashboard-content .ac-chip:hover,
+body.vs-neon main.dashboard-content .ac-pager a:hover,
+body.vs-neon main.dashboard-content .vx-month a:hover {
+  color: var(--vap-text);
+  border-color: var(--vap-cyan);
+  background: rgba(34, 211, 238, .12);
+  box-shadow: var(--vap-cyan-glow);
+}
+
+body.vs-neon main.dashboard-content .page-icon,
+body.vs-neon main.dashboard-content .ps-tile,
+body.vs-neon main.dashboard-content .nt-head-ico,
+body.vs-neon main.dashboard-content .nt-card-ico,
+body.vs-neon main.dashboard-content .ac-tile,
+body.vs-neon main.dashboard-content .vx-ico {
+  filter: drop-shadow(0 0 10px rgba(167, 139, 250, .45));
+}
+
+body.vs-neon main.dashboard-content .form-control,
+body.vs-neon main.dashboard-content .form-select,
+body.vs-neon main.dashboard-content input[type="month"] {
+  color: var(--vap-text);
+  border-color: var(--vap-line);
+}
+
+body.vs-neon main.dashboard-content .form-control:focus,
+body.vs-neon main.dashboard-content .form-select:focus {
+  border-color: var(--vap-cyan);
+  box-shadow: 0 0 0 1px var(--vap-cyan), 0 0 18px rgba(34, 211, 238, .34);
+}
+
+body.vs-neon main.dashboard-content .table-responsive {
+  border-color: var(--vap-line);
+  box-shadow: 0 0 18px -8px rgba(112, 104, 255, .45);
+}
+
+body.vs-neon main.dashboard-content .ac-stat,
+body.vs-neon main.dashboard-content .vx-stat,
+body.vs-neon main.dashboard-content .ps-quick,
+body.vs-neon main.dashboard-content .nt-card,
+body.vs-neon main.dashboard-content .vx-card {
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+body.vs-neon main.dashboard-content .ac-stat:hover,
+body.vs-neon main.dashboard-content .vx-stat:hover,
+body.vs-neon main.dashboard-content .nt-card:hover,
+body.vs-neon main.dashboard-content .vx-card:hover {
+  border-color: var(--vap-cyan) !important;
+  box-shadow: var(--vap-cyan-glow) !important;
+}
+
+body.vs-neon main.dashboard-content .ac-val,
+body.vs-neon main.dashboard-content .vx-title {
+  text-shadow: 0 0 14px rgba(167, 139, 250, .38);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.vs-neon main.dashboard-content .ac-stat,
+  body.vs-neon main.dashboard-content .vx-stat,
+  body.vs-neon main.dashboard-content .ps-quick,
+  body.vs-neon main.dashboard-content .nt-card,
+  body.vs-neon main.dashboard-content .vx-card {
+    transition: none;
+  }
+}

@@ -1,0 +1,718 @@
+/* VibeStream - what "neon off" removes. Only does anything while <html> has the class vs-neon-off
+   (set by neon-switch.js). Put this file in the MAIN folder; admin pages load it as ../neon-off.css */
+
+/* every glow: box-shadow + text-shadow (focus rings are kept so keyboard users can still see where they are) */
+html.vs-neon-off *:not(:focus):not(:focus-visible):not(:focus-within),
+html.vs-neon-off *::before,
+html.vs-neon-off *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+/* glow filters on icons, charts and the ring */
+html.vs-neon-off .vsd-ring, html.vs-neon-off .vsd-ring svg, html.vs-neon-off .vsd-chart,
+html.vs-neon-off .site-brand-icon, html.vs-neon-off .page-icon, html.vs-neon-off .ps-tile,
+html.vs-neon-off .nt-head-ico, html.vs-neon-off .nt-card-ico, html.vs-neon-off .ac-tile, html.vs-neon-off .vx-ico,
+html.vs-neon-off .theme-toggle svg, html.vs-neon-off .shorts-title-icon, html.vs-neon-off .ca-card::before {
+  filter: none !important;
+}
+
+/* Keep admin layouts while replacing every page's neon palette with theme colors. */
+html.vs-neon-off .dashboard-content {
+  --vn-bg: var(--admin-bg) !important;
+  --vn-card: var(--admin-surface) !important;
+  --vn-card2: var(--admin-surface-soft) !important;
+  --vn-line: var(--admin-border) !important;
+  --vn-line-soft: var(--admin-border) !important;
+  --vn-text: var(--admin-text) !important;
+  --vn-strong: var(--admin-text) !important;
+  --vn-muted: var(--admin-muted) !important;
+  --vn-accent: var(--admin-primary) !important;
+  --vn-accent2: var(--admin-primary) !important;
+  --vn-blue: var(--admin-primary) !important;
+  --vn-green: var(--admin-success) !important;
+  --vn-red: var(--admin-danger) !important;
+  --vn-amber: var(--admin-warning) !important;
+  --vn-cyan: var(--admin-primary) !important;
+  --vn-pink: var(--admin-primary) !important;
+  --vn-violet: var(--admin-primary) !important;
+  --vn-cyan-rgb: 104, 86, 232 !important;
+  --vn-pink-rgb: 104, 86, 232 !important;
+  --vn-violet-rgb: 104, 86, 232 !important;
+  --vn-cyan-ink: var(--admin-primary) !important;
+  --vn-pink-ink: var(--admin-primary) !important;
+  --vn-btn-bg: var(--admin-surface-soft) !important;
+  --vn-btn-hover: rgba(127, 127, 127, .12) !important;
+  --vn-btn-text: var(--admin-text) !important;
+  --vn-input-bg: var(--admin-surface) !important;
+  --vn-placeholder: var(--admin-muted) !important;
+  --vn-table-bg: var(--admin-surface) !important;
+  --vn-thead-bg: var(--admin-surface-soft) !important;
+  --vn-row-hover: rgba(127, 127, 127, .08) !important;
+  --vn-iconbox: var(--admin-surface-soft) !important;
+  --vn-tile-dark: var(--admin-surface-soft) !important;
+  --vn-tile-dark-ico: var(--admin-text) !important;
+  --vn-danger-text: var(--admin-danger) !important;
+  --vn-danger-bg: rgba(127, 127, 127, .12) !important;
+  --vn-shadow: none !important;
+  --vn-backdrop: none !important;
+  --vn-page: var(--admin-bg) !important;
+  color: var(--admin-text) !important;
+  background: var(--admin-bg) !important;
+}
+
+html[data-theme="dark"].vs-neon-off .dashboard-content {
+  --vn-cyan-rgb: 138, 117, 255 !important;
+  --vn-pink-rgb: 138, 117, 255 !important;
+  --vn-violet-rgb: 138, 117, 255 !important;
+}
+
+html.vs-neon-off main.dashboard-content {
+  background: var(--admin-bg, var(--bg, transparent)) !important;
+}
+
+html.vs-neon-off .dashboard-content .panel,
+html.vs-neon-off .dashboard-content .page-heading,
+html.vs-neon-off .dashboard-content .metric-card,
+html.vs-neon-off .dashboard-content .vn-stat,
+html.vs-neon-off .dashboard-content .vn-card {
+  color: var(--admin-text) !important;
+  background: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  backdrop-filter: none !important;
+}
+
+html.vs-neon-off .dashboard-content .vn-ico,
+html.vs-neon-off .dashboard-content .vn-tile,
+html.vs-neon-off .dashboard-content .metric-icon {
+  color: var(--admin-primary) !important;
+  background: var(--admin-surface-soft) !important;
+  border-color: var(--admin-border) !important;
+}
+
+html.vs-neon-off .dashboard-content .vn-list a,
+html.vs-neon-off .dashboard-content .vn-list .vn-row {
+  color: var(--admin-text) !important;
+}
+
+html.vs-neon-off .dashboard-content .vn-list a.active,
+html.vs-neon-off .dashboard-content .badge.text-bg-primary {
+  color: #fff !important;
+  background: var(--admin-primary) !important;
+}
+
+/* Shared page-theme components are emitted inline, so neutralize their tokens here too. */
+html.vs-neon-off body .vx {
+  --vx-wrap: var(--admin-bg) !important;
+  --vx-card: var(--admin-surface) !important;
+  --vx-card-shadow: none !important;
+  --vx-line: var(--admin-border) !important;
+  --vx-line-soft: var(--admin-border) !important;
+  --vx-text: var(--admin-text) !important;
+  --vx-strong: var(--admin-text) !important;
+  --vx-muted: var(--admin-muted) !important;
+  --vx-link: var(--admin-primary) !important;
+  --vx-brand: var(--admin-primary) !important;
+  --vx-brand2: var(--admin-primary) !important;
+  --vx-btn-shadow: none !important;
+  --vx-soft: var(--admin-surface-soft) !important;
+  --vx-qa: var(--admin-surface-soft) !important;
+  --vx-qa-h: var(--admin-surface-soft) !important;
+  --vx-detail: var(--admin-surface-soft) !important;
+  --vx-sel: rgba(127, 127, 127, .12) !important;
+  --vx-ico-bg: var(--admin-surface-soft) !important;
+  --vx-ico-bd: var(--admin-border) !important;
+  --vx-ico-fg: var(--admin-primary) !important;
+  --vx-ico-glow: none !important;
+  --vx-fi-bg: var(--admin-surface-soft) !important;
+  --vx-fi-bd: var(--admin-border) !important;
+  --vx-fi-fg: var(--admin-primary) !important;
+  --vx-ghost-bg: var(--admin-surface-soft) !important;
+  --vx-ghost-bd: var(--admin-border) !important;
+  --vx-ghost-fg: var(--admin-text) !important;
+  --vx-hover: rgba(127, 127, 127, .12) !important;
+  --vx-input: var(--admin-surface) !important;
+  --vx-ph: var(--admin-muted) !important;
+  --vx-code-bg: var(--admin-surface-soft) !important;
+  --vx-code-fg: var(--admin-primary) !important;
+  --vx-bar: var(--admin-surface-soft) !important;
+  --vx-tag-bg: var(--admin-surface-soft) !important;
+  --vx-tag-bd: var(--admin-border) !important;
+  --vx-tag-fg: var(--admin-primary) !important;
+  --vx-info-t: var(--admin-primary) !important;
+  --vx-info-bg: var(--admin-surface-soft) !important;
+  --vx-info-bd: var(--admin-border) !important;
+  --vx-pur-t: var(--admin-primary) !important;
+  --vx-pur-bg: var(--admin-surface-soft) !important;
+  --vx-pur-bd: var(--admin-border) !important;
+  --vx-st-ok: var(--admin-surface) !important;
+  --vx-st-warn: var(--admin-surface) !important;
+  --vx-st-bad: var(--admin-surface) !important;
+}
+
+html.vs-neon-off body .vx .vx-btn:not(.vx-btn-ghost),
+html.vs-neon-off body .vx .vx-btn:not(.vx-btn-ghost):hover {
+  background: var(--admin-primary) !important;
+  border-color: var(--admin-primary) !important;
+  box-shadow: none !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+html.vs-neon-off body .vx .vx-stat-ico {
+  background: var(--admin-primary) !important;
+}
+
+/* The dashboard has its own token set rather than using the shared .vx theme. */
+html.vs-neon-off #vsdPage {
+  --vsd-text: var(--admin-text) !important;
+  --vsd-muted: var(--admin-muted) !important;
+  --vsd-line: var(--admin-border) !important;
+  --vsd-border: var(--admin-border) !important;
+  --vsd-card: var(--admin-surface) !important;
+  --nx-cyan: var(--admin-primary) !important;
+  --nx-pink: var(--admin-primary) !important;
+  --nx-violet: var(--admin-primary) !important;
+  --nx-green: var(--admin-success) !important;
+  --nx-amber: var(--admin-warning) !important;
+  --nx-red: var(--admin-danger) !important;
+  --nx-cyan-rgb: 104, 86, 232 !important;
+  --nx-pink-rgb: 104, 86, 232 !important;
+  --nx-violet-rgb: 104, 86, 232 !important;
+  --nx-text: var(--admin-text) !important;
+  --nx-card: var(--admin-surface) !important;
+  --nx-solid: var(--admin-surface) !important;
+  --nx-track: var(--admin-surface-soft) !important;
+  color: var(--admin-text) !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-card,
+html.vs-neon-off #vsdPage .vsd-date,
+html.vs-neon-off #vsdPage .vsd-btn,
+html.vs-neon-off #vsdPage .dropdown-menu,
+html.vs-neon-off #vsdPage .vsd-tip {
+  color: var(--admin-text) !important;
+  background: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-card h1,
+html.vs-neon-off #vsdPage .vsd-card h2,
+html.vs-neon-off #vsdPage .vsd-card h3,
+html.vs-neon-off #vsdPage .vsd-card h4,
+html.vs-neon-off #vsdPage .vsd-card h5,
+html.vs-neon-off #vsdPage .vsd-card p,
+html.vs-neon-off #vsdPage .vsd-card li,
+html.vs-neon-off #vsdPage .vsd-card td,
+html.vs-neon-off #vsdPage .vsd-card strong,
+html.vs-neon-off #vsdPage .vsd-card b,
+html.vs-neon-off #vsdPage .vsd-card .n,
+html.vs-neon-off #vsdPage .vsd-card small,
+html.vs-neon-off #vsdPage .vsd-card .vsd-last,
+html.vs-neon-off #vsdPage .vsd-share,
+html.vs-neon-off #vsdPage .vsd-viewall,
+html.vs-neon-off #vsdPage .vsd-tbl th,
+html.vs-neon-off #vsdPage .vsd-top .vsd-tx strong a,
+html.vs-neon-off #vsdPage .vsd-hello p,
+html.vs-neon-off #vsdPage .vsd-head .vsd-sub,
+html.vs-neon-off #vsdPage .vsd-stat-label {
+  color: var(--admin-text) !important;
+  text-shadow: none !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-muted,
+html.vs-neon-off #vsdPage .vsd-top .vsd-tx small,
+html.vs-neon-off #vsdPage .vsd-feed .vsd-tx small,
+html.vs-neon-off #vsdPage .vsd-time,
+html.vs-neon-off #vsdPage .vsd-updated,
+html.vs-neon-off #vsdPage .vsd-card .vsd-empty {
+  color: var(--admin-muted) !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-ico,
+html.vs-neon-off #vsdPage .vsd-overview-icon,
+html.vs-neon-off #vsdPage .vsd-overview-row-icon,
+html.vs-neon-off #vsdPage .vsd-hico:not(.plain),
+html.vs-neon-off #vsdPage .vsd-fi,
+html.vs-neon-off #vsdPage .vsd-rank,
+html.vs-neon-off #vsdPage .vsd-badge {
+  color: var(--admin-primary) !important;
+  background: var(--admin-surface-soft) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-hello h1,
+html.vs-neon-off #vsdPage .vsd-head h2,
+html.vs-neon-off #vsdPage .vsd-stat-val {
+  color: var(--admin-text) !important;
+  text-shadow: none !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-top li,
+html.vs-neon-off #vsdPage .vsd-feed li,
+html.vs-neon-off #vsdPage .vsd-tbl th,
+html.vs-neon-off #vsdPage .vsd-tbl td {
+  border-color: var(--admin-border) !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-tbl tbody tr:hover,
+html.vs-neon-off #vsdPage .vsd-top li:hover {
+  background: var(--admin-surface-soft) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-thumb {
+  background: var(--admin-surface-soft) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-ring svg defs stop {
+  stop-color: var(--admin-primary) !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-ring svg circle:first-of-type {
+  stroke: var(--admin-border) !important;
+}
+
+html.vs-neon-off #vsdPage .vsd-ring svg circle:last-of-type {
+  stroke: var(--admin-primary) !important;
+}
+
+/* Keep the admin shell's layout rules loaded, but give its surfaces the regular theme. */
+html.vs-neon-off body .admin-sidebar {
+  background: var(--admin-sidebar, var(--admin-surface)) !important;
+  border-color: var(--admin-border) !important;
+}
+
+html.vs-neon-off body .admin-sidebar .sidebar-header,
+html.vs-neon-off body .admin-sidebar .sidebar-user,
+html.vs-neon-off body .admin-sidebar .sidebar-footer {
+  border-color: var(--admin-border) !important;
+}
+
+html.vs-neon-off body .admin-sidebar .brand-title {
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--admin-text) !important;
+  filter: none !important;
+}
+
+html.vs-neon-off body .admin-sidebar .brand-subtitle,
+html.vs-neon-off body .admin-sidebar .sidebar-section-title,
+html.vs-neon-off body .admin-sidebar .nav-link,
+html.vs-neon-off body .admin-sidebar .nav-link .nav-icon {
+  color: var(--admin-sidebar-text, var(--admin-text)) !important;
+  text-shadow: none !important;
+}
+
+html.vs-neon-off body .admin-sidebar .nav-link:hover,
+html.vs-neon-off body .admin-sidebar .nav-link.active {
+  color: var(--admin-sidebar-text-strong, var(--admin-text)) !important;
+  background: var(--admin-sidebar-soft, var(--admin-surface-soft)) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body .admin-sidebar .sidebar-owner-card {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+  margin: 10px 14px !important;
+  padding: 12px 14px !important;
+  border: 1px solid var(--admin-border) !important;
+  border-radius: 12px !important;
+  background: var(--admin-surface) !important;
+  color: var(--admin-text) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body .admin-sidebar .sidebar-owner-card > i {
+  flex: 0 0 auto !important;
+  margin-top: 2px;
+  color: var(--admin-primary) !important;
+}
+
+html.vs-neon-off body .admin-sidebar .sidebar-owner-copy,
+html.vs-neon-off body .admin-sidebar .sidebar-owner-card > div {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  min-width: 0 !important;
+  line-height: 1.25 !important;
+}
+
+html.vs-neon-off body .admin-sidebar .sidebar-owner-copy strong,
+html.vs-neon-off body .admin-sidebar .sidebar-owner-copy small {
+  display: block !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+html.vs-neon-off body .admin-navbar {
+  background: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html.vs-neon-off body .admin-navbar .search-input {
+  background: var(--admin-bg) !important;
+  color: var(--admin-text) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body .admin-navbar .sidebar-toggle span {
+  color: var(--admin-text) !important;
+  background: var(--admin-text) !important;
+  filter: none !important;
+}
+
+html.vs-neon-off body .admin-navbar .theme-toggle i {
+  color: var(--admin-text) !important;
+  filter: none !important;
+}
+
+html.vs-neon-off body .admin-navbar .dropdown-menu {
+  background: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+}
+
+html.vs-neon-off {
+  --nx-cyan: var(--admin-primary) !important;
+  --nx-pink: var(--admin-primary) !important;
+  --nx-violet: var(--admin-primary) !important;
+  --nx-green: var(--admin-success) !important;
+  --nx-amber: var(--admin-warning) !important;
+  --nx-red: var(--admin-danger) !important;
+  --nx-cyan-rgb: 104, 86, 232 !important;
+  --nx-pink-rgb: 104, 86, 232 !important;
+  --nx-violet-rgb: 104, 86, 232 !important;
+  --nx-text: var(--admin-text) !important;
+  --nx-card: var(--admin-surface) !important;
+  --nx-solid: var(--admin-surface) !important;
+  --nx-field: var(--admin-surface) !important;
+  --nx-track: var(--admin-surface-soft) !important;
+  --nx-page: var(--admin-bg) !important;
+  --nx-nav: var(--admin-surface) !important;
+  --nx-side: var(--admin-sidebar, var(--admin-surface)) !important;
+}
+
+/* Normalize recurring neon card and control systems used by the requested admin pages. */
+html.vs-neon-off body main.dashboard-content {
+  color: var(--admin-text) !important;
+  background: var(--admin-bg) !important;
+}
+
+html.vs-neon-off body main.admin-content {
+  color: var(--admin-text) !important;
+  background: var(--admin-bg) !important;
+}
+
+html.vs-neon-off body main.dashboard-content h1,
+html.vs-neon-off body main.dashboard-content h2,
+html.vs-neon-off body main.dashboard-content h3,
+html.vs-neon-off body main.dashboard-content h4,
+html.vs-neon-off body main.dashboard-content h5 {
+  color: var(--admin-text) !important;
+  text-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .text-muted,
+html.vs-neon-off body main.dashboard-content .form-text {
+  color: var(--admin-muted) !important;
+}
+
+html.vs-neon-off body main.admin-content h1,
+html.vs-neon-off body main.admin-content h2,
+html.vs-neon-off body main.admin-content h3,
+html.vs-neon-off body main.admin-content h4,
+html.vs-neon-off body main.admin-content h5 {
+  color: var(--admin-text) !important;
+  text-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .panel,
+html.vs-neon-off body main.dashboard-content .page-heading,
+html.vs-neon-off body main.dashboard-content .metric-card,
+html.vs-neon-off body main.dashboard-content .ps-sec,
+html.vs-neon-off body main.dashboard-content .ps-card,
+html.vs-neon-off body main.dashboard-content .ac-stat,
+html.vs-neon-off body main.dashboard-content .nt-card,
+html.vs-neon-off body main.dashboard-content .nt-group,
+html.vs-neon-off body main.dashboard-content .vx-card,
+html.vs-neon-off body main.dashboard-content .vx-mini,
+html.vs-neon-off body main.dashboard-content .nt-item,
+html.vs-neon-off body main.dashboard-content .nt-set {
+  color: var(--admin-text) !important;
+  background: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html.vs-neon-off body main.admin-content .msg-side,
+html.vs-neon-off body main.admin-content .msg-main,
+html.vs-neon-off body main.admin-content .msg-info,
+html.vs-neon-off body main.admin-content .msg-info-card,
+html.vs-neon-off body main.admin-content .msg-modal,
+html.vs-neon-off body main.admin-content .msg-modal-box,
+html.vs-neon-off body main.admin-content .msg-menu,
+html.vs-neon-off body main.admin-content .msg-add-box {
+  color: var(--admin-text) !important;
+  background: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .ps-quick,
+html.vs-neon-off body main.dashboard-content .ac-chip,
+html.vs-neon-off body main.dashboard-content .nt-btn,
+html.vs-neon-off body main.dashboard-content .vx-btn-ghost,
+html.vs-neon-off body main.dashboard-content .vx-ibtn {
+  color: var(--admin-text) !important;
+  background: var(--admin-surface-soft) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .form-control,
+html.vs-neon-off body main.dashboard-content .form-select,
+html.vs-neon-off body main.dashboard-content input[type="month"],
+html.vs-neon-off body main.dashboard-content textarea {
+  color: var(--admin-text) !important;
+  background-color: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .form-control:focus,
+html.vs-neon-off body main.dashboard-content .form-select:focus,
+html.vs-neon-off body main.dashboard-content input[type="month"]:focus,
+html.vs-neon-off body main.dashboard-content textarea:focus {
+  border-color: var(--admin-primary) !important;
+  box-shadow: 0 0 0 2px rgba(127, 127, 127, .18) !important;
+}
+
+html.vs-neon-off body main.dashboard-content .vi,
+html.vs-neon-off body main.dashboard-content .pl {
+  --g: var(--admin-success) !important;
+  --r: var(--admin-danger) !important;
+  --b: var(--admin-primary) !important;
+  --v: var(--admin-primary) !important;
+  --o: var(--admin-warning) !important;
+  --card: var(--admin-surface) !important;
+  --line: var(--admin-border) !important;
+  --muted: var(--admin-muted) !important;
+  --pl-card: var(--admin-surface) !important;
+  --pl-line: var(--admin-border) !important;
+  --pl-muted: var(--admin-muted) !important;
+  --pl-blue: var(--admin-primary) !important;
+}
+
+html.vs-neon-off body main.dashboard-content .vi-card,
+html.vs-neon-off body main.dashboard-content .pl-card,
+html.vs-neon-off body main.dashboard-content .pm-stat,
+html.vs-neon-off body main.dashboard-content .pm-plan,
+html.vs-neon-off body main.dashboard-content .pm-pay {
+  color: var(--admin-text) !important;
+  background: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .vi-head .ico,
+html.vs-neon-off body main.dashboard-content .pl-kpi .ico,
+html.vs-neon-off body main.dashboard-content .pm-stat-ico,
+html.vs-neon-off body main.dashboard-content .pm-tile,
+html.vs-neon-off body main.dashboard-content .pm-quick .ic {
+  color: var(--admin-primary) !important;
+  background: var(--admin-surface-soft) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .pm-ico-purple,
+html.vs-neon-off body main.dashboard-content .pm-ico-blue,
+html.vs-neon-off body main.dashboard-content .pm-ico-pink,
+html.vs-neon-off body main.dashboard-content .pm-ico-green,
+html.vs-neon-off body main.dashboard-content .pm-pager button.on,
+html.vs-neon-off body main.dashboard-content .pm-tag {
+  color: #fff !important;
+  background: var(--admin-primary) !important;
+  border-color: var(--admin-primary) !important;
+}
+
+html.vs-neon-off body main.dashboard-content .ac-tile,
+html.vs-neon-off body main.dashboard-content .ac-ico,
+html.vs-neon-off body main.dashboard-content .ad-tile,
+html.vs-neon-off body main.dashboard-content .ct-tile {
+  color: var(--admin-primary) !important;
+  background: var(--admin-surface-soft) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .pm-quick,
+html.vs-neon-off body main.dashboard-content .pl-range,
+html.vs-neon-off body main.dashboard-content .pl-sums > div,
+html.vs-neon-off body main.dashboard-content .vi-note,
+html.vs-neon-off body main.dashboard-content .vi-warnbox {
+  background: var(--admin-surface-soft) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .vi-kpi::before {
+  display: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .at-page {
+  --at-card: var(--admin-surface) !important;
+  --at-card2: var(--admin-surface-soft) !important;
+  --at-line: var(--admin-border) !important;
+  --at-text: var(--admin-text) !important;
+  --at-muted: var(--admin-muted) !important;
+  --at-ico-bg: var(--admin-surface-soft) !important;
+  --at-head-ico: var(--admin-primary) !important;
+  --at-chip-bg: var(--admin-surface-soft) !important;
+  --at-chip-bd: var(--admin-border) !important;
+  --at-chip: var(--admin-text) !important;
+  --at-input: var(--admin-surface) !important;
+  --at-hover: rgba(127, 127, 127, .08) !important;
+  --at-ghost-bd: var(--admin-border) !important;
+  --at-ghost: var(--admin-text) !important;
+  --at-shadow: none !important;
+  --neon-a: var(--admin-primary) !important;
+  --neon-b: var(--admin-primary) !important;
+  --neon-c: var(--admin-primary) !important;
+}
+
+html.vs-neon-off body main.dashboard-content .at-card {
+  color: var(--admin-text) !important;
+  background: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .at-page h1 {
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--admin-text) !important;
+  filter: none !important;
+  text-shadow: none !important;
+}
+
+html.vs-neon-off body main.dashboard-content .at-btn.primary {
+  color: #fff !important;
+  background: var(--admin-primary) !important;
+  border-color: var(--admin-primary) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.admin-content .msg-page {
+  --msg-card: var(--admin-surface) !important;
+  --msg-panel: var(--admin-surface) !important;
+  --msg-line: var(--admin-border) !important;
+}
+
+html.vs-neon-off body main.admin-content .msg-main {
+  background-image: none !important;
+}
+
+html.vs-neon-off body main.admin-content .msg-contact.active,
+html.vs-neon-off body main.admin-content .msg-filter-tabs button.active {
+  color: var(--admin-text) !important;
+  background: var(--admin-surface-soft) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.admin-content .msg-new,
+html.vs-neon-off body main.admin-content .msg-bubble.me,
+html.vs-neon-off body main.admin-content .msg-modal-actions button:not(.ghost) {
+  color: #fff !important;
+  background: var(--admin-primary) !important;
+  border-color: var(--admin-primary) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.admin-content.profile-page {
+  --pf-bg: var(--admin-bg) !important;
+  --pf-card: var(--admin-surface) !important;
+  --pf-line: var(--admin-border) !important;
+  --pf-muted: var(--admin-muted) !important;
+  --pf-text: var(--admin-text) !important;
+  --pf-acc: var(--admin-primary) !important;
+  --pf-acc2: var(--admin-primary) !important;
+}
+
+html.vs-neon-off body main.admin-content.profile-page .pf-card,
+html.vs-neon-off body main.admin-content.profile-page .pf-hero,
+html.vs-neon-off body main.admin-content.profile-page .pf-metric {
+  color: var(--admin-text) !important;
+  background: var(--admin-surface) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.admin-content.profile-page .pf-hero::after {
+  display: none !important;
+}
+
+html.vs-neon-off body main.admin-content.profile-page .pf-title,
+html.vs-neon-off body main.admin-content.profile-page .pf-title .bi,
+html.vs-neon-off body main.admin-content.profile-page .pf-brand,
+html.vs-neon-off body main.admin-content.profile-page .pf-desc,
+html.vs-neon-off body main.admin-content.profile-page .pf-meta,
+html.vs-neon-off body main.admin-content.profile-page .pf-meta .bi,
+html.vs-neon-off body main.admin-content.profile-page .pf-row-label,
+html.vs-neon-off body main.admin-content.profile-page .pf-row-value,
+html.vs-neon-off body main.admin-content.profile-page .pf-metric-label,
+html.vs-neon-off body main.admin-content.profile-page .pf-metric-value {
+  color: var(--admin-text) !important;
+  text-shadow: none !important;
+}
+
+html.vs-neon-off body main.admin-content.profile-page .pf-btn,
+html.vs-neon-off body main.admin-content.profile-page .pf-btn.solid,
+html.vs-neon-off body main.admin-content.profile-page .pf-pill,
+html.vs-neon-off body main.admin-content.profile-page .pf-tabs a.active {
+  color: #fff !important;
+  background: var(--admin-primary) !important;
+  border-color: var(--admin-primary) !important;
+  box-shadow: none !important;
+}
+
+html.vs-neon-off body main.admin-content.profile-page .pf-tabs a {
+  color: var(--admin-muted) !important;
+}
+
+html.vs-neon-off body main.dashboard-content .vx,
+html.vs-neon-off body main.dashboard-content .nt-page {
+  --nt-card: var(--admin-surface) !important;
+  --nt-card2: var(--admin-surface-soft) !important;
+  --nt-line: var(--admin-border) !important;
+  --nt-text: var(--admin-text) !important;
+  --nt-muted: var(--admin-muted) !important;
+  --nt-acc: var(--admin-primary) !important;
+  --nt-ico-bg: var(--admin-surface-soft) !important;
+  --nt-ico: var(--admin-primary) !important;
+  --nt-head-ico: var(--admin-primary) !important;
+  --nt-chip-bg: var(--admin-surface-soft) !important;
+  --nt-chip-bd: var(--admin-border) !important;
+  --nt-chip: var(--admin-text) !important;
+  --nt-link: var(--admin-primary) !important;
+  --nt-off: var(--admin-border) !important;
+  --nt-shadow: none !important;
+  --nt-th: var(--admin-surface-soft) !important;
+  --nt-row-hover: rgba(127, 127, 127, .08) !important;
+}
+
+/* the lightning button itself */
+html.vs-neon-off .vs-neon-toggle svg, html.vs-neon-off .vs-neon-toggle i { filter: none !important; }

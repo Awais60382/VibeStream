@@ -1596,3 +1596,37 @@ body.shorts-body {
         gap: var(--space-3);
     }
 }
+
+/* ===== Accessibility additions (keyboard focus, reduced motion, tap targets) ===== */
+/* Visible keyboard focus everywhere (only for keyboard users, mouse clicks look the same as before). */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+summary:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #5b8cff;
+  outline-offset: 2px;
+}
+
+/* Respect "reduce motion" in the device settings. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Easier tap targets on phones. */
+@media (pointer: coarse) {
+  .nav-bell, .vs-theme-toggle, .vs-user-toggle { min-width: 44px; min-height: 44px; }
+}
+
+/* Hidden-but-readable text helper for screen readers. */
+.vs-sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}

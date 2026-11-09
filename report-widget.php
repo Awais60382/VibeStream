@@ -17,6 +17,24 @@ if (session_status() === PHP_SESSION_NONE) {
 
 if (!function_exists('vs_rw_button')) {
 
+function vs_rw_csrf(): string
+{
+    if (empty($_SESSION['vs_report_csrf']) || !is_string($_SESSION['vs_report_csrf'])) {
+        $_SESSION['vs_report_csrf'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['vs_report_csrf'];
+}
+
+function vs_rw_reporter(): string
+{
+    foreach (['username', 'user', 'user_name', 'AdminSession'] as $key) {
+        if (isset($_SESSION[$key]) && is_string($_SESSION[$key]) && trim($_SESSION[$key]) !== '') {
+            return trim($_SESSION[$key]);
+        }
+    }
+    return '';
+}
+
 /** Loads report-helpers.php (also tolerates names like 123_report-helpers.php). */
 function vs_rw_load_helpers(): bool
 {

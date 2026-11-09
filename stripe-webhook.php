@@ -34,15 +34,24 @@ $event = json_decode($payload, true);
 $type = (string)($event['type'] ?? '');
 if (in_array($type, ['checkout.session.completed', 'checkout.session.async_payment_succeeded'], true)) {
     $pdo = vs_premium_pdo();
-    if ($pdo) {
-        try {
-            vs_premium_ensure($pdo);
-            vs_stripe_fulfil($pdo, (array)($event['data']['object'] ?? []));
-        } catch (Throwable $e) {
-            error_log('stripe-webhook: ' . $e->getMessage());
-            http_response_code(500);
-            exit;
+    if (!$pdo) {
+        error_log('stripe-webhook: database connection unavailable.');
+        http_response_code(500);
+        exit('Database unavailable.');
+    }
+    try {
+        vs_premium_ensure($pdo);
+        $session = (array)($event['data']['object'] ?? []);
+        if (($session['payment_status'] ?? '') === 'paid') {
+            $error = vs_stripe_fulfil($pdo, $session);
+            if ($error !== null) {
+                throw new RuntimeException($error);
+            }
         }
+    } catch (Throwable $e) {
+        error_log('stripe-webhook: ' . $e->getMessage());
+        http_response_code(500);
+        exit('Payment could not be recorded.');
     }
 }
 http_response_code(200);

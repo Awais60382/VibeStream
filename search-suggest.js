@@ -84,6 +84,7 @@
   function addMic(input) {
     if (input.getAttribute('data-vs-mic') || input.hasAttribute('data-vs-no-mic')) { return; }
     if (input.id === 'vs-search-input' || input.disabled || input.readOnly) { return; }
+    if (input.closest('.vs-searchable-select')) { return; }
     if (input.closest('.vs-search-box') || input.closest('.input-group') || input.parentNode.classList.contains('vs-mic-field')) { return; }
     input.setAttribute('data-vs-mic', '1');
 

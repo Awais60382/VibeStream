@@ -94,6 +94,55 @@
     toastTimer = setTimeout(function () { if (toastEl) toastEl.remove(); }, 5000);
   }
 
+  /* ---------- Premium perks: what this account's plan allows (asked from the server, cached for a minute) ---------- */
+  var perksCache = null, perksAt = 0;
+  function perks(cb) {
+    if (perksCache && Date.now() - perksAt < 60000) { cb(perksCache); return; }
+    if (!window.fetch) { cb(null); return; }
+    fetch('premium-perks-api.php', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (p) { if (p && p.limits) { perksCache = p; perksAt = Date.now(); } cb(p && p.limits ? p : null); })
+      .catch(function () { cb(null); });
+  }
+  function addToWatchLater(info) {
+    fetch('watch-later-store-api.php', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('Watch Later is temporarily unavailable.')); })
+      .then(function (state) {
+        if (!state || !state.loggedIn) {
+          perks(function (p) {
+            var cap = p && p.limits ? +p.limits.watch_later : 0;
+            var unlimited = p && p.unlimited ? +p.unlimited : 100000;
+            var list = load(K.later, []);
+            var has = list.some(function (x) { return x.id === info.id; });
+            if (cap && cap < unlimited && !has && list.length >= cap) {
+              toast('Watch Later is full (' + cap + ' videos). Sign in or upgrade for more room.', 'Go Premium', goPremium);
+              return;
+            }
+            addTo(K.later, info, 'Saved to Watch Later in this browser', 'Already in Watch Later');
+          });
+          return;
+        }
+        return fetch('watch-later-store-api.php', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'add', id: info.id, csrf: state.csrf })
+        }).then(function (r) {
+          return r.json().then(function (result) {
+            if (!r.ok) throw new Error(result.error || 'Could not save this video.');
+            if (result.skipped) {
+              var message = 'Your account Watch Later limit is ' + result.limit + ' videos. Remove a saved video.';
+              if (state.tier === 'plus') { toast(message); }
+              else { toast(message + ' or upgrade.', 'Go Premium', goPremium); }
+              return;
+            }
+            toast((state.ids || []).indexOf(info.id) !== -1 ? 'Already in Watch Later' : 'Saved to Watch Later');
+          });
+        });
+      })
+      .catch(function (e) { toast(e.message || 'Could not save this video.'); });
+  }
+  function goPremium() { location.href = 'premium.php'; }
+
   function addTo(key, info, doneMsg, dupMsg) {
     var list = load(key, []);
     for (var i = 0; i < list.length; i++) if (list[i].id === info.id) { toast(dupMsg); return; }
@@ -169,12 +218,15 @@
   /* ---------- actions ---------- */
   var ACTIONS = [
     { key: 'queue', label: 'Add to queue', run: function (i) { addTo(K.queue, i, 'Added to queue', 'Already in your queue'); } },
-    { key: 'later', label: 'Save to Watch Later', run: function (i) { addTo(K.later, i, 'Saved to Watch Later', 'Already in Watch Later'); } },
+    { key: 'later', label: 'Save to Watch Later', run: addToWatchLater },
     { key: 'list', label: 'Save to playlist', run: openPlaylists },
     { key: 'down', label: 'Download', run: function (i) {
-        if (!i.download) { toast('Download is not available for this video.'); return; }
-        var a = document.createElement('a'); a.href = i.download; a.download = ''; a.rel = 'noopener';
-        document.body.appendChild(a); a.click(); a.remove();
+        perks(function (p) {
+          if (p && p.limits && !p.limits.downloads) { toast('Downloads are a Premium perk.', 'Go Premium', goPremium); return; }
+          if (!i.download) { toast('Download is not available for this video.'); return; }
+          var a = document.createElement('a'); a.href = i.download; a.download = ''; a.rel = 'noopener';
+          document.body.appendChild(a); a.click(); a.remove();
+        });
       } },
     { key: 'share', label: 'Share', run: function (i) {
         var url = absUrl(i.url);

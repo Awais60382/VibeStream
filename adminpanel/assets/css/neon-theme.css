@@ -1,0 +1,225 @@
+/*
+ * VibeStream admin - NEON THEME (same palette as index.php / creator-analytics.php)
+ * One file for: admin-activity, admin-pay, owner-notices, notifications,
+ *               platform-settings, system-check, backup.
+ * (index.php already has this look built in, it does not need the file.)
+ * Save as adminpanel/assets/css/neon-theme.css and add to each page, right after header.php:
+ *   <link rel="stylesheet" href="./assets/css/neon-theme.css?v=1">
+ * This REPLACES neon-pages.css (remove that link if you added it).
+ */
+
+/* ---------- palette: dark (default) + light, same tokens as index.php ---------- */
+html:not([data-bs-theme="light"]):not([data-theme="light"]){
+  --nx-cyan:#00e5ff;--nx-pink:#ff2e93;--nx-violet:#8a5cff;--nx-green:#22e58a;--nx-amber:#ffd23f;--nx-red:#ff4d6d;
+  --nx-cyan-rgb:0,229,255;--nx-pink-rgb:255,46,147;--nx-violet-rgb:138,92,255;--nx-green-rgb:34,229,138;--nx-amber-rgb:255,210,63;--nx-red-rgb:255,77,109;
+  --nx-cyan-ink:#00e5ff;--nx-pink-ink:#ff7ac0;--nx-muted:#8f9bd0;
+  --nx-text:#eaf0ff;--nx-card:rgba(10,13,31,.88);--nx-solid:#0a0d1f;--nx-field:rgba(10,13,31,.9);
+  --nx-track:#05060f;--nx-active:#fff;
+  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(138,92,255,.16),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,229,255,.10),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.08),transparent 70%),#05060f;
+}
+html[data-bs-theme="light"],html[data-theme="light"]{
+  --nx-cyan:#00b8e6;--nx-pink:#ff2e93;--nx-violet:#7c4dff;--nx-green:#0fb86a;--nx-amber:#f59e0b;--nx-red:#e11d63;
+  --nx-cyan-rgb:0,184,230;--nx-pink-rgb:255,46,147;--nx-violet-rgb:124,77,255;--nx-green-rgb:15,184,106;--nx-amber-rgb:245,158,11;--nx-red-rgb:225,29,99;
+  --nx-cyan-ink:#0086b3;--nx-pink-ink:#d4147a;--nx-muted:#55608f;
+  --nx-text:#0b1030;--nx-card:#ffffff;--nx-solid:#ffffff;--nx-field:#ffffff;
+  --nx-track:#eceffd;--nx-active:#0b1030;
+  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(124,77,255,.14),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,184,230,.14),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.10),transparent 70%),#f4f6ff;
+}
+
+/* ---------- page, scrollbar, selection ---------- */
+html body{background:var(--nx-page);background-attachment:fixed}
+html body ::-webkit-scrollbar{width:10px;height:10px}
+html body ::-webkit-scrollbar-track{background:var(--nx-track)}
+html body ::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--nx-violet),var(--nx-pink));border-radius:8px}
+html body ::selection{background:rgba(var(--nx-pink-rgb),.4);color:var(--nx-text)}
+
+/* ---------- cards / panels (every page) ---------- */
+html body .vx-card,
+html body .panel,
+html body .page-heading,
+html body .ps-sec,
+html body .ps-card,
+html body .ac-stat,
+html body .nt-card,
+html body .nt-group{
+  background:var(--nx-card);
+  border:1px solid rgba(var(--nx-violet-rgb),.4);
+  box-shadow:0 0 26px -10px rgba(var(--nx-violet-rgb),.55);
+  transition:box-shadow .18s ease,border-color .18s ease,transform .18s ease;
+}
+html body .vx-card:hover,
+html body .panel:hover,
+html body .ps-sec:hover,
+html body .ac-stat:hover,
+html body .nt-card:hover{
+  border-color:var(--nx-cyan);
+  box-shadow:0 0 26px -4px rgba(var(--nx-cyan-rgb),.55),0 0 50px -16px rgba(var(--nx-violet-rgb),.55);
+}
+html body .ps-card,html body .nt-group{box-shadow:none}
+html body .ps-card:hover,html body .nt-group:hover{border-color:rgba(var(--nx-cyan-rgb),.6)}
+html body .vx-stat:hover,html body .ac-stat:hover{transform:translateY(-2px)}
+html body .ps-sec-head,html body .ps-bar,html body .nt-card-head,html body .nt-foot,html body .nt-item,html body .nt-set,
+html body .nt-team li,html body .nt-row,html body .ps-kv,html body .ps-rec,html body .ac-live li a{border-color:rgba(var(--nx-violet-rgb),.28)}
+
+/* notifications.php keeps its own tokens: just point them at the neon palette */
+html body .nt-page.nt-page{
+  --nt-card:var(--nx-card);--nt-card2:rgba(var(--nx-violet-rgb),.08);--nt-line:rgba(var(--nx-violet-rgb),.35);
+  --nt-text:var(--nx-text);--nt-muted:var(--nx-muted);--nt-acc:var(--nx-violet);
+  --nt-ico-bg:rgba(var(--nx-violet-rgb),.2);--nt-ico:var(--nx-cyan-ink);--nt-head-ico:var(--nx-cyan-ink);
+  --nt-chip-bg:rgba(var(--nx-cyan-rgb),.08);--nt-chip-bd:rgba(var(--nx-cyan-rgb),.5);--nt-chip:var(--nx-cyan-ink);
+  --nt-link:var(--nx-cyan-ink);--nt-off:rgba(var(--nx-violet-rgb),.25);--nt-shadow:0 0 26px -10px rgba(var(--nx-violet-rgb),.55);
+  --nt-ok-bg:rgba(var(--nx-green-rgb),.15);--nt-ok:var(--nx-green);--nt-bad-bg:rgba(var(--nx-red-rgb),.15);--nt-bad:var(--nx-red);
+  --nt-row-hover:rgba(var(--nx-cyan-rgb),.07);--nt-ghost-bd:rgba(var(--nx-violet-rgb),.6);--nt-ghost:var(--nx-text);--nt-th:rgba(var(--nx-violet-rgb),.12);
+}
+
+/* ---------- titles ---------- */
+html body .vx-title,html body .page-heading h1,html body .nt-head h1,html body .ps-sec-head h2{text-shadow:0 0 18px rgba(var(--nx-violet-rgb),.7)}
+html body .vx-card-title,html body .ac-head h2,html body .nt-card-head h2,html body .nt-head h2{text-shadow:0 0 12px rgba(var(--nx-violet-rgb),.5)}
+html body .vx-stat b,html body .ac-val{text-shadow:0 0 14px rgba(var(--nx-cyan-rgb),.45)}
+
+/* ---------- icon tiles ---------- */
+html body .vx-ico,html body .ps-tile,html body .page-icon,html body .ac-tile,html body .nt-tile,
+html body .nt-head-ico,html body .nt-card-ico{
+  border:1px solid rgba(var(--nx-violet-rgb),.55);
+  box-shadow:0 0 14px -2px rgba(var(--nx-violet-rgb),.75);
+}
+html body .vx-ico,html body .ps-tile,html body .page-icon,html body .ac-tile,html body .nt-tile{
+  background:linear-gradient(135deg,var(--nx-violet),var(--nx-pink));color:#fff;
+}
+html body .vx-fileico,html body .ps-quick .ic,html body .nt-set-ico{
+  background:rgba(var(--nx-violet-rgb),.2);color:var(--nx-cyan-ink);
+  border:1px solid rgba(var(--nx-violet-rgb),.45);box-shadow:0 0 10px -2px rgba(var(--nx-violet-rgb),.6);
+}
+html body .vx-stat-ico{border:1px solid rgba(255,255,255,.25)}
+html body .vx-s-admins .vx-stat-ico{box-shadow:0 0 18px rgba(var(--nx-violet-rgb),.7)}
+html body .vx-s-hours .vx-stat-ico{box-shadow:0 0 18px rgba(var(--nx-cyan-rgb),.7)}
+html body .vx-s-pending .vx-stat-ico{box-shadow:0 0 18px rgba(var(--nx-pink-rgb),.7)}
+html body .vx-s-paid .vx-stat-ico{box-shadow:0 0 18px rgba(var(--nx-green-rgb),.7)}
+html body .ac-ico{box-shadow:0 0 16px -2px currentColor,0 0 14px rgba(var(--nx-violet-rgb),.5)}
+html body .pay-av,html body .nt-av img,html body .avatar-img{box-shadow:0 0 10px -2px rgba(var(--nx-violet-rgb),.7)}
+
+/* ---------- tags / badges ---------- */
+html body .vx-tag,html body .vn-owner-badge,html body .eyebrow{
+  color:var(--nx-pink-ink);text-shadow:0 0 10px rgba(var(--nx-pink-rgb),.5);
+}
+html body .vx-tag{background:rgba(var(--nx-pink-rgb),.12);border:1px solid rgba(var(--nx-pink-rgb),.5);box-shadow:0 0 10px -3px rgba(var(--nx-pink-rgb),.6)}
+
+/* ---------- buttons ---------- */
+html body .vx-btn,html body .btn-primary,html body .nt-btn.give{
+  background:linear-gradient(135deg,var(--nx-violet),var(--nx-pink));
+  border:1px solid rgba(var(--nx-pink-rgb),.55);color:#fff;
+  box-shadow:0 0 16px -2px rgba(var(--nx-violet-rgb),.7);
+  transition:box-shadow .18s ease,transform .18s ease,filter .18s ease;
+}
+html body .vx-btn:hover,html body .btn-primary:hover,html body .btn-primary:focus,html body .nt-btn.give:hover{
+  color:#fff;filter:brightness(1.1);transform:translateY(-1px);
+  box-shadow:0 0 22px rgba(var(--nx-pink-rgb),.7),0 0 34px -6px rgba(var(--nx-violet-rgb),.8);
+}
+html body .vx-btn-ghost,html body .btn-outline-primary,html body .btn-outline-secondary,html body .nt-btn:not(.give){
+  background:rgba(var(--nx-violet-rgb),.16);color:var(--nx-text);
+  border:1px solid rgba(var(--nx-violet-rgb),.55);box-shadow:none;
+  transition:box-shadow .18s ease,border-color .18s ease,background .18s ease;
+}
+html body .vx-btn-ghost:hover,html body .btn-outline-primary:hover,html body .btn-outline-secondary:hover,html body .nt-btn:not(.give):hover{
+  background:rgba(var(--nx-cyan-rgb),.12);color:var(--nx-text);border-color:var(--nx-cyan);
+  box-shadow:0 0 16px rgba(var(--nx-cyan-rgb),.55);transform:none;filter:none;
+}
+html body .vx-ibtn{background:rgba(var(--nx-violet-rgb),.12);border:1px solid rgba(var(--nx-violet-rgb),.5);color:var(--nx-text)}
+html body .vx-ibtn:hover,html body .vx-ibtn-on{border-color:var(--nx-cyan);box-shadow:0 0 14px rgba(var(--nx-cyan-rgb),.6);color:var(--nx-cyan-ink)}
+html body .vx-ibtn-danger:hover{border-color:var(--nx-red);box-shadow:0 0 14px rgba(var(--nx-red-rgb),.6);color:var(--nx-red)}
+html body .vx-qa,html body .ps-quick,html body .vx-tool,html body .vx-set{border-color:rgba(var(--nx-violet-rgb),.4)}
+html body .vx-qa:hover,html body .ps-quick:hover{border-color:var(--nx-cyan);box-shadow:0 0 16px rgba(var(--nx-cyan-rgb),.5);background:rgba(var(--nx-cyan-rgb),.07)}
+
+/* ---------- links ---------- */
+html body .ac-live li a:hover .nm{color:var(--nx-cyan-ink)}
+html body .nt-foot a,html body .vsd-viewall,html body .ps-sec a.small{color:var(--nx-cyan-ink);text-shadow:0 0 10px rgba(var(--nx-cyan-rgb),.5)}
+
+/* ---------- inputs ---------- */
+html body .form-control,html body .form-select,html body .input-group-text,html body .vx-modal .form-control{
+  background-color:var(--nx-field);color:var(--nx-text);border:1px solid rgba(var(--nx-violet-rgb),.45);
+}
+html body .form-control:focus,html body .form-select:focus{
+  border-color:var(--nx-cyan);box-shadow:0 0 0 .15rem rgba(var(--nx-cyan-rgb),.2),0 0 16px rgba(var(--nx-cyan-rgb),.45);
+}
+html body .form-check-input:checked{background-color:var(--nx-violet);border-color:var(--nx-pink);box-shadow:0 0 10px rgba(var(--nx-pink-rgb),.6)}
+html body .nt-switch input:checked{border-color:var(--nx-pink);background:linear-gradient(90deg,var(--nx-violet),var(--nx-pink));box-shadow:0 0 12px rgba(var(--nx-pink-rgb),.55)}
+html body .ps-theme span{border-color:rgba(var(--nx-violet-rgb),.5)}
+html body .ps-theme input:checked + span{background:linear-gradient(135deg,var(--nx-violet),var(--nx-pink));border-color:var(--nx-pink);color:#fff;box-shadow:0 0 18px rgba(var(--nx-pink-rgb),.6)}
+html body .vx-modal{background:var(--nx-solid);border:1px solid var(--nx-cyan);box-shadow:0 0 30px -6px rgba(var(--nx-cyan-rgb),.55)}
+
+/* ---------- tables ---------- */
+html body .vx-table th,html body .ac-table th,html body .nt-table th{color:var(--nx-cyan-ink);opacity:.95}
+html body .vx-table th,html body .vx-table td,html body .ac-table th,html body .ac-table td,
+html body .nt-table td{border-bottom-color:rgba(var(--nx-violet-rgb),.28)}
+html body .vx-table tbody tr,html body .ac-table tbody tr,html body .nt-table tbody tr{transition:background .15s ease,box-shadow .15s ease}
+html body .vx-table tbody tr:hover,html body .ac-table tbody tr:hover,html body .nt-table tbody tr:hover{
+  background:rgba(var(--nx-cyan-rgb),.07);box-shadow:inset 3px 0 0 var(--nx-cyan);
+}
+html body .nt-table tr.pick,html body .nt-team li.on{background:rgba(var(--nx-violet-rgb),.16);box-shadow:inset 3px 0 0 var(--nx-pink)}
+
+/* ---------- status colours (glow) ---------- */
+html body .vx-pill{border:1px solid currentColor}
+html body .vx-pill-ok{color:var(--nx-green);background:rgba(var(--nx-green-rgb),.12);box-shadow:0 0 10px -2px rgba(var(--nx-green-rgb),.6)}
+html body .vx-pill-warn{color:var(--nx-amber);background:rgba(var(--nx-amber-rgb),.12);box-shadow:0 0 10px -2px rgba(var(--nx-amber-rgb),.6)}
+html body .vx-pill-bad{color:var(--nx-red);background:rgba(var(--nx-red-rgb),.12);box-shadow:0 0 10px -2px rgba(var(--nx-red-rgb),.6)}
+html body .vx-pill-info{color:var(--nx-cyan-ink);background:rgba(var(--nx-cyan-rgb),.12);box-shadow:0 0 10px -2px rgba(var(--nx-cyan-rgb),.6)}
+html body .vx-pill-purple{color:var(--nx-pink-ink);background:rgba(var(--nx-violet-rgb),.16);box-shadow:0 0 10px -2px rgba(var(--nx-violet-rgb),.7)}
+
+html body .ac-b{box-shadow:0 0 12px -2px currentColor,0 0 10px -3px rgba(var(--nx-violet-rgb),.6)}
+html body .ac-b-green{background:var(--nx-green);color:#04210f}
+html body .ac-b-purple{background:var(--nx-violet)}
+html body .ac-b-blue{background:#2f7bff}
+html body .ac-b-teal{background:var(--nx-cyan);color:#021a1f}
+html body .ac-b-amber{background:var(--nx-amber);color:#2a1d00}
+html body .ac-b-pink{background:var(--nx-pink)}
+
+html body .nt-pill.sent{background:rgba(var(--nx-violet-rgb),.16);color:var(--nx-pink-ink);border-color:rgba(var(--nx-violet-rgb),.6);box-shadow:0 0 10px -3px rgba(var(--nx-violet-rgb),.7)}
+html body .nt-pill.seen{background:rgba(var(--nx-cyan-rgb),.14);color:var(--nx-cyan-ink);border-color:rgba(var(--nx-cyan-rgb),.6);box-shadow:0 0 10px -3px rgba(var(--nx-cyan-rgb),.7)}
+html body .nt-pill.done{background:rgba(var(--nx-green-rgb),.14);color:var(--nx-green);border-color:rgba(var(--nx-green-rgb),.6);box-shadow:0 0 10px -3px rgba(var(--nx-green-rgb),.7)}
+html body .nt-badge.ok{box-shadow:0 0 10px -3px rgba(var(--nx-green-rgb),.7)}
+html body .nt-badge.bad{box-shadow:0 0 10px -3px rgba(var(--nx-red-rgb),.7)}
+html body .nt-box{border-color:rgba(var(--nx-cyan-rgb),.5);background:rgba(var(--nx-cyan-rgb),.07);box-shadow:inset 0 0 18px -8px rgba(var(--nx-cyan-rgb),.5)}
+html body .nt-tl li:not(:last-child)::before{background:rgba(var(--nx-violet-rgb),.5)}
+html body .nt-tl li.ok .ck{background:var(--nx-cyan);color:#021a1f;box-shadow:0 0 12px rgba(var(--nx-cyan-rgb),.8)}
+
+html body .vx-stat-ok{border-color:rgba(var(--nx-green-rgb),.6);box-shadow:0 0 24px -8px rgba(var(--nx-green-rgb),.6)}
+html body .vx-stat-warn{border-color:rgba(var(--nx-amber-rgb),.6);box-shadow:0 0 24px -8px rgba(var(--nx-amber-rgb),.55)}
+html body .vx-stat-bad{border-color:rgba(var(--nx-red-rgb),.65);box-shadow:0 0 24px -8px rgba(var(--nx-red-rgb),.6)}
+html body .vx-act-ok{box-shadow:0 0 10px rgba(var(--nx-green-rgb),.6)}
+html body .vx-act-warn{box-shadow:0 0 10px rgba(var(--nx-amber-rgb),.6)}
+html body .vx-act-bad{box-shadow:0 0 10px rgba(var(--nx-red-rgb),.6)}
+html body .vx-trend-up{text-shadow:0 0 10px rgba(var(--nx-green-rgb),.6)}
+html body .vx-trend-down{text-shadow:0 0 10px rgba(var(--nx-red-rgb),.6)}
+
+html body .vx-alert,html body .alert,html body .nt-flash{border:1px solid rgba(var(--nx-violet-rgb),.5)}
+html body .vx-alert-success,html body .alert-success{border-color:rgba(var(--nx-green-rgb),.65);box-shadow:0 0 16px -4px rgba(var(--nx-green-rgb),.5)}
+html body .vx-alert-warning,html body .alert-warning{border-color:rgba(var(--nx-amber-rgb),.65);box-shadow:0 0 16px -4px rgba(var(--nx-amber-rgb),.45)}
+html body .vx-alert-danger,html body .alert-danger{border-color:rgba(var(--nx-red-rgb),.7);box-shadow:0 0 16px -4px rgba(var(--nx-red-rgb),.55)}
+html body .nt-flash{box-shadow:0 0 16px -4px rgba(var(--nx-cyan-rgb),.5);border-color:rgba(var(--nx-cyan-rgb),.55)}
+
+/* online dots */
+html body .ac-dot.online,html body .nt-dot.on,html body .ps-dot.on{background:var(--nx-green);box-shadow:0 0 10px var(--nx-green),0 0 18px rgba(var(--nx-green-rgb),.7)}
+html body .ac-dot.away{background:var(--nx-amber);box-shadow:0 0 8px var(--nx-amber)}
+html body .ac-dot.offline{background:var(--nx-pink);box-shadow:0 0 8px var(--nx-pink)}
+
+/* pager / chips */
+html body .ac-pager a,html body .ac-chip{border-color:rgba(var(--nx-violet-rgb),.5)}
+html body .ac-pager a:hover,html body .ac-chip:hover{border-color:var(--nx-cyan);box-shadow:0 0 12px rgba(var(--nx-cyan-rgb),.5);background:rgba(var(--nx-cyan-rgb),.08)}
+html body .ac-pager a.on,html body .ac-chip.on{background:linear-gradient(135deg,var(--nx-violet),var(--nx-pink));border-color:var(--nx-pink);color:#fff;box-shadow:0 0 14px rgba(var(--nx-pink-rgb),.6)}
+
+/* storage bar (backup) */
+html body .vx-bar{border:1px solid rgba(var(--nx-violet-rgb),.5);background:var(--nx-track)}
+html body .vx-bar>i{background:linear-gradient(90deg,var(--nx-cyan),var(--nx-violet),var(--nx-pink));box-shadow:0 0 14px rgba(var(--nx-cyan-rgb),.8)}
+
+/* charts on admin-pay */
+html body .vx svg polyline{filter:drop-shadow(0 0 5px rgba(var(--nx-violet-rgb),.8))}
+html body .vx svg rect[fill^="url"]{filter:drop-shadow(0 0 5px rgba(var(--nx-cyan-rgb),.55))}
+html body .vx svg circle[stroke]{filter:drop-shadow(0 0 4px currentColor)}
+
+/* soft pulse on the page icon */
+@keyframes nxPulse{0%,100%{box-shadow:0 0 12px -2px rgba(var(--nx-violet-rgb),.7)}50%{box-shadow:0 0 24px rgba(var(--nx-pink-rgb),.85)}}
+html body .vx-head>.vx-ico,html body .page-heading .page-icon,html body .nt-head-ico{animation:nxPulse 3.2s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){
+  html body .vx-head>.vx-ico,html body .page-heading .page-icon,html body .nt-head-ico{animation:none}
+  html body .vx-card,html body .panel,html body .ac-stat,html body .vx-btn,html body .vx-table tbody tr,html body .ac-table tbody tr,html body .nt-table tbody tr{transition:none}
+}

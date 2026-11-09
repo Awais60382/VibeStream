@@ -3,40 +3,51 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+require_once __DIR__ . '/csrf.php';
+require_once __DIR__ . '/dashboard-events.php';
 
+/** Back to the form with a message (kept in the session, not in the URL) and the typed username/email. */
 function sh_fail($msg)
 {
-    header('Location: Signup.php?error=' . urlencode($msg));
-    header('Content-Length: 0');   // redirect at once, even if an owner alert is still being sent
-    header('Connection: close');
-    flush();
-    exit;
-}
-
-// Owner alerts and the sign-up limit (optional: skipped if the file is missing).
-$shAlertFile = __DIR__ . '/adminpanel/owner-alert.php';
-if (is_file($shAlertFile)) {
-    try {
-        require_once $shAlertFile;
-    } catch (Throwable $e) {
-        error_log('signup-handler.php: owner alerts unavailable: ' . $e->getMessage());
-    }
-}
-$shIp = (string)($_SERVER['REMOTE_ADDR'] ?? '');
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $_SESSION['signup_error'] = (string)$msg;
     header('Location: Signup.php');
     exit;
 }
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    header('Location: Signup.php');
+    exit;
+}
+
+// Remember what was typed (never the password) so the form can be refilled after an error.
+$_SESSION['signup_old'] = [
+    'username' => mb_substr(trim((string)($_POST['username'] ?? '')), 0, 60),
+    'email'    => mb_substr(trim((string)($_POST['email'] ?? '')), 0, 190),
+];
+
+if (!vs_csrf_valid($_POST['csrf_token'] ?? null)) {
+    sh_fail('Your session expired. Please try again.');
+}
+
+// Hidden "website" field: real people leave it empty, simple bots fill it in.
+if (trim((string)($_POST['website'] ?? '')) !== '') {
+    header('Location: index.php');
+    exit;
+}
+
+// Basic throttle: at most 8 attempts per 10 minutes per browser session.
+$now = time();
+$attempts = array_values(array_filter((array)($_SESSION['signup_attempts'] ?? []), fn($t) => $t > $now - 600));
+if (count($attempts) >= 8) {
+    sh_fail('Too many attempts. Please wait a few minutes and try again.');
+}
+$attempts[] = $now;
+$_SESSION['signup_attempts'] = $attempts;
 
 try {
     ob_start();
     include __DIR__ . '/connection.php'; // $conn (mysqli)
     ob_end_clean();
-
-    if (function_exists('vs_signup_blocked') && vs_signup_blocked($shIp)) {
-        sh_fail('Too many accounts were created from your connection. Please try again later.');
-    }
 
     $username = trim((string)($_POST['username'] ?? ''));
     $email    = strtolower(trim((string)($_POST['email'] ?? '')));
@@ -46,14 +57,20 @@ try {
     if (!preg_match('/^[\p{L}\p{N}_.-]{3,30}$/u', $username)) {
         sh_fail('Username must be 3-30 characters: letters, numbers, dot, dash or underscore (no spaces).');
     }
-    if (in_array(mb_strtolower($username), ['admin', 'administrator', 'root', 'system', 'support', 'guest'], true)) {
+    if (in_array(mb_strtolower($username), ['admin', 'administrator', 'root', 'system', 'support', 'guest', 'moderator', 'vibestream'], true)) {
         sh_fail('That username is reserved. Please choose another one.');
     }
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    if (strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         sh_fail('Please enter a valid email address.');
     }
-    if (strlen($pass) < 6) {
-        sh_fail('Password must be at least 6 characters.');
+    if (strlen($pass) < 8) {
+        sh_fail('Password must be at least 8 characters.');
+    }
+    if (strlen($pass) > 72) {
+        sh_fail('Password must be 72 characters or fewer.');
+    }
+    if (mb_strtolower($pass) === mb_strtolower($username) || mb_strtolower($pass) === $email) {
+        sh_fail('Password cannot be the same as your username or email.');
     }
     if ($pass !== $confirm) {
         sh_fail('The two passwords do not match.');
@@ -115,9 +132,11 @@ try {
     $ins->execute();
     $newId = $conn->insert_id;
     $ins->close();
+    vs_dashboard_log_signup_ip($conn, (int)$newId);
 
     // Sign the new user straight in.
     session_regenerate_id(true);
+    unset($_SESSION['signup_old'], $_SESSION['signup_error'], $_SESSION['signup_attempts']);
     $_SESSION['username'] = $username;
     $_SESSION['email']    = $email;
     $_SESSION['role']     = 'User';
@@ -125,15 +144,13 @@ try {
         $_SESSION['user_id'] = $newId;
         $_SESSION['id'] = $newId;
     }
-    if (function_exists('vs_signup_done')) {
-        vs_signup_done($username, $email, $shIp);
-    }
-    header('Location: index.php');
+    header('Location: about.php');   // welcome page; its button leads on to index.php
     exit;
 } catch (Throwable $e) {
-    if ($e instanceof mysqli_sql_exception && (int)$e->getCode() === 1062) {
-        sh_fail('That username or email is already registered.');   // two people signed up at the same moment
-    }
     error_log('signup-handler.php: ' . $e->getMessage());
+    // 1062 = duplicate key: two people registered the same name/email at the same moment.
+    if ($e instanceof mysqli_sql_exception && (int)$e->getCode() === 1062) {
+        sh_fail('That username or email is already registered.');
+    }
     sh_fail('Could not create your account. Please try again later.');
 }

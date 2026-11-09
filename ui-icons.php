@@ -15,7 +15,8 @@ function vs_ui_icon_groups(): array
         'Menu' => [
             'home' => 'Home', 'shorts' => 'Shorts', 'watch' => 'Watch', 'subscriptions' => 'All subscriptions',
             'profile' => 'Your channel', 'history' => 'History', 'later' => 'Watch later', 'upload' => 'Upload video',
-            'premium' => 'Premium', 'trend' => 'Trending',
+            'premium' => 'Premium', 'trend' => 'Trending', 'live' => 'Live streams',
+            'membership' => 'Channel memberships', 'creator-analytics' => 'Creator Analytics',
         ],
         'Explore' => [
             'music' => 'Music', 'gaming' => 'Gaming', 'movies' => 'Movies', 'live' => 'Live',
@@ -48,11 +49,43 @@ function vs_ui_icons_ensure_dir(): bool
     if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
         return false;
     }
+    // No PHP in this folder, and uploaded SVGs may never run scripts even if opened directly.
     $ht = $dir . '/.htaccess';
-    if (!is_file($ht)) {
-        @file_put_contents($ht, "Options -Indexes -ExecCGI\n<FilesMatch \"\\.(php|phtml|phar)$\">\n  Require all denied\n</FilesMatch>\n");
+    $current = is_file($ht) ? (string)@file_get_contents($ht) : '';
+    if (strpos($current, 'Content-Security-Policy') === false) {
+        @file_put_contents(
+            $ht,
+            "Options -Indexes -ExecCGI\n"
+            . "<FilesMatch \"\\.(php|phtml|phar)$\">\n  Require all denied\n</FilesMatch>\n"
+            . "<IfModule mod_headers.c>\n"
+            . "  Header set X-Content-Type-Options \"nosniff\"\n"
+            . "  Header set Content-Security-Policy \"default-src 'none'; style-src 'unsafe-inline'; sandbox\"\n"
+            . "</IfModule>\n"
+        );
     }
     return is_writable($dir);
+}
+
+/** Strict check for an uploaded SVG: well-formed XML, root <svg>, nothing that can run code or load other files. */
+function vs_ui_icon_svg_is_safe(string $svg): bool
+{
+    if ($svg === '' || stripos($svg, '<svg') === false) {
+        return false;
+    }
+    $bad = '/<\s*(script|foreignObject|iframe|object|embed|audio|video|image|a|use|set|animate\w*|handler|listener)\b'
+         . '|\son[a-z]+\s*=|javascript:|vbscript:|data:text|<!ENTITY|<!DOCTYPE|<\?(?!xml\b)|@import|url\(\s*+[\'"]?+\s*+(?!#)/i';
+    if (preg_match($bad, $svg)) {
+        return false;
+    }
+    // Any href must point inside the file (#id).
+    if (preg_match('/href\s*=\s*["\']?+\s*+(?!#)/i', $svg)) {
+        return false;
+    }
+    $previous = libxml_use_internal_errors(true);
+    $xml = simplexml_load_string($svg, 'SimpleXMLElement', LIBXML_NONET);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+    return $xml !== false && strtolower($xml->getName()) === 'svg';
 }
 
 /** @return array<string,string> icon name => file name */
@@ -112,8 +145,7 @@ function vs_ui_icon_store(array $file): string
     }
     if ($ext === null) {
         $svg = (string)@file_get_contents($tmp);
-        $unsafe = '/<\s*(script|foreignObject|iframe|object|embed)|\son[a-z]+\s*=|javascript:|<!ENTITY|<!DOCTYPE/i';
-        if (stripos($svg, '<svg') !== false && !preg_match($unsafe, $svg)) {
+        if (vs_ui_icon_svg_is_safe($svg)) {
             $ext = 'svg';
         }
     }

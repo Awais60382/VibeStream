@@ -43,6 +43,7 @@ if ($origin !== '') {
 }
 
 include_once __DIR__ . '/connection.php';
+require_once __DIR__ . '/adminpanel/admin-alert-store.php';
 (static function (): void {
     $dirs = [__DIR__];
     foreach ($dirs as $d) {
@@ -107,6 +108,19 @@ try {
         ':t' => $content['table'], ':i' => $content['id'], ':k' => $content['type'],
         ':r' => $reason, ':d' => $details, ':u' => $user, ':c' => date('Y-m-d H:i:s'),
     ]);
+    try {
+        vs_admin_alerts_ensure($pdo);
+        vs_admin_alert_add(
+            $pdo,
+            'content-report-' . (string)$pdo->lastInsertId(),
+            'report',
+            'New content report',
+            ucfirst((string)$content['type']) . ' reported for ' . $reason . ' by ' . $user . '.',
+            'reported.php?status=open'
+        );
+    } catch (Throwable $e) {
+        error_log('Could not save report alert: ' . $e->getMessage());
+    }
     // Tell the owner (e-mail + System check page). Never allowed to break the report.
     $ownerAlertFile = __DIR__ . '/adminpanel/owner-alert.php';
     if (is_file($ownerAlertFile)) {

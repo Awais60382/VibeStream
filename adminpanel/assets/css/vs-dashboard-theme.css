@@ -1,0 +1,88 @@
+/* VibeStream admin - makes the dashboard (index.php) follow the light / dark theme.
+   Load it AFTER vs-neon.css and vs-dashboard.css. Put this file at adminpanel/assets/css/vs-dashboard-theme.css
+   It only changes colours (backgrounds, text, borders), never the layout. The colours come from the --vn-* variables
+   in vs-neon.css, which switch between light and dark with the admin theme toggle. */
+
+main.dashboard-content{background:var(--vn-page)!important;color:var(--vn-text)}
+
+#vsdPage{color:var(--vn-text)}
+
+/* Cards */
+#vsdPage .vsd-card{background:var(--vn-card)!important;border:1px solid var(--vn-line)!important;box-shadow:var(--vn-shadow)!important;
+  backdrop-filter:var(--vn-backdrop);color:var(--vn-text)}
+
+/* Greeting row */
+#vsdPage .vsd-hello h1{color:var(--vn-strong)!important}
+#vsdPage .vsd-hello p{color:var(--vn-muted)!important}
+#vsdPage .vsd-btn{background:var(--vn-btn-bg)!important;border:1px solid var(--vn-line)!important;color:var(--vn-btn-text)!important}
+#vsdPage .vsd-btn:hover{background:var(--vn-btn-hover)!important}
+#vsdPage .vsd-date{background:var(--vn-card2)!important;border:1px solid var(--vn-line)!important;color:var(--vn-text)!important}
+#vsdPage .vsd-date i{color:var(--vn-accent)!important}
+
+/* Stat cards */
+#vsdPage .vsd-stat-label{color:var(--vn-text)!important}
+#vsdPage .vsd-stat-val{color:var(--vn-strong)!important}
+#vsdPage .vsd-stat small{color:var(--vn-muted)!important}
+#vsdPage .vsd-trend.flat{color:var(--vn-muted)!important}
+
+/* Card headings */
+#vsdPage .vsd-head h2{color:var(--vn-strong)!important}
+#vsdPage .vsd-sub,#vsdPage .vsd-updated,#vsdPage .vsd-legend span{color:var(--vn-muted)!important}
+#vsdPage .vsd-hico{color:var(--vn-accent)!important}
+#vsdPage .vsd-hico:not(.plain){background:var(--vn-iconbox)!important;border:1px solid var(--vn-line)!important}
+#vsdPage .vsd-viewall{color:var(--vn-accent)!important}
+
+/* Growth chart (text and grid lines drawn by PHP as an SVG) */
+#vsdPage .vsd-chart svg text{fill:var(--vn-muted)!important}
+#vsdPage .vsd-chart svg line{stroke:var(--vn-line-soft)!important}
+
+/* Live online ring */
+#vsdPage .vsd-ring-c strong{color:var(--vn-strong)!important}
+#vsdPage .vsd-ring-c span{color:var(--vn-muted)!important}
+#vsdPage .vsd-ring-c i{color:var(--vn-text)!important}
+
+/* Top videos / shorts / feeds */
+#vsdPage .vsd-empty{color:var(--vn-muted)!important}
+#vsdPage .vsd-rank{background:var(--vn-iconbox)!important;color:var(--vn-strong)!important}
+#vsdPage .vsd-thumb{background:var(--vn-iconbox)!important}
+#vsdPage .vsd-tx strong,#vsdPage .vsd-tx strong a{color:var(--vn-strong)!important}
+#vsdPage .vsd-tx strong a:hover{color:var(--vn-accent)!important}
+#vsdPage .vsd-tx small{color:var(--vn-muted)!important}
+#vsdPage .vsd-share,#vsdPage .vsd-time{color:var(--vn-muted)!important}
+#vsdPage .vsd-top li,#vsdPage .vsd-feed li{border-color:var(--vn-line-soft)!important}
+#vsdPage .vsd-badge{background:var(--vn-iconbox)!important;color:var(--vn-text)!important;border-color:var(--vn-line)!important}
+
+/* Tables (Top admins / Top creators) */
+#vsdPage .vsd-tbl{color:var(--vn-text)!important}
+#vsdPage .vsd-tbl th{background:var(--vn-thead-bg)!important;color:var(--vn-muted)!important;border-color:var(--vn-line)!important}
+#vsdPage .vsd-tbl td{color:var(--vn-text)!important;border-color:var(--vn-line-soft)!important;background:transparent!important}
+#vsdPage .vsd-tbl tbody tr:hover td{background:var(--vn-row-hover)!important}
+#vsdPage .vsd-who .n{color:var(--vn-strong)!important}
+
+/* ===== Neon glow layer (uses the neon --vn-* colours from vs-neon.css) ===== */
+#vsdPage .vsd-card{transition:box-shadow .18s ease,border-color .18s ease}
+#vsdPage .vsd-card:hover{border-color:var(--vn-cyan)!important;box-shadow:0 0 26px -4px rgba(var(--vn-cyan-rgb),.55),0 0 50px -16px rgba(var(--vn-violet-rgb),.55)!important}
+#vsdPage .vsd-hello h1{text-shadow:0 0 18px rgba(var(--vn-violet-rgb),.6)}
+#vsdPage .vsd-head h2{text-shadow:0 0 12px rgba(var(--vn-violet-rgb),.4)}
+#vsdPage .vsd-btn{transition:box-shadow .18s ease,border-color .18s ease,background .18s ease}
+#vsdPage .vsd-btn:hover{border-color:var(--vn-cyan)!important;box-shadow:0 0 16px rgba(var(--vn-cyan-rgb),.55)}
+#vsdPage .vsd-stat-val{text-shadow:0 0 14px rgba(var(--vn-cyan-rgb),.45)}
+#vsdPage .vsd-ico{box-shadow:0 0 18px -2px rgba(var(--vn-violet-rgb),.8)}
+#vsdPage .vsd-hico{box-shadow:0 0 12px -2px rgba(var(--vn-violet-rgb),.7)}
+#vsdPage .vsd-fi{box-shadow:0 0 10px -2px rgba(var(--vn-violet-rgb),.8)}
+#vsdPage .vsd-dot{background:var(--vn-green);box-shadow:0 0 12px var(--vn-green)}
+#vsdPage .vsd-ring svg{filter:drop-shadow(0 0 8px rgba(var(--vn-cyan-rgb),.6))}
+#vsdPage .vsd-chart{filter:drop-shadow(0 0 6px rgba(var(--vn-violet-rgb),.4))}
+#vsdPage .vsd-legend i{box-shadow:0 0 8px rgba(var(--vn-cyan-rgb),.7)}
+#vsdPage .vsd-rank{box-shadow:0 0 10px -2px rgba(var(--vn-pink-rgb),.6)}
+#vsdPage .vsd-thumb{box-shadow:0 0 12px -3px rgba(var(--vn-violet-rgb),.7)}
+#vsdPage .vsd-share{text-shadow:0 0 10px rgba(var(--vn-green-rgb),.5)}
+#vsdPage .vsd-viewall{text-shadow:0 0 10px rgba(var(--vn-violet-rgb),.5)}
+#vsdPage .vsd-badge{box-shadow:0 0 10px -3px rgba(var(--vn-violet-rgb),.6)}
+#vsdPage .vsd-tbl th{color:var(--vn-cyan-ink)!important}
+#vsdPage .vsd-tbl tbody tr:hover td:first-child{box-shadow:inset 3px 0 0 var(--vn-cyan)}
+#vsdPage .vsd-av{border-color:var(--vn-violet);box-shadow:0 0 10px -2px rgba(var(--vn-pink-rgb),.6)}
+#vsdPage .dropdown-menu{background:var(--vn-card);border:1px solid rgba(var(--vn-cyan-rgb),.5);box-shadow:0 0 24px -4px rgba(var(--vn-cyan-rgb),.5)}
+#vsdPage .dropdown-item{color:var(--vn-text)}
+#vsdPage .dropdown-item:hover{background:var(--vn-row-hover);color:var(--vn-strong)}
+@media (prefers-reduced-motion:reduce){#vsdPage .vsd-card,#vsdPage .vsd-btn{transition:none}}

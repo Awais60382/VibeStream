@@ -63,9 +63,9 @@ function vs_admin_log(?PDO $pdo, string $action, string $details = '', string $a
             ':p'  => mb_substr(basename((string)($_SERVER['SCRIPT_NAME'] ?? '')), 0, 100),
             ':ip' => mb_substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
         ]);
-        // Keep the table small: now and then drop lines older than 180 days.
-        if (random_int(1, 100) === 1) {
-            $pdo->exec('DELETE FROM admin_activity_log WHERE created_at < DATE_SUB(NOW(), INTERVAL 180 DAY)');
+        // Expire transient telemetry only; work actions are used in payroll calculations.
+        if (random_int(1, 20) === 1) {
+            $pdo->exec("DELETE FROM admin_activity_log WHERE action IN ('session', 'page_view') AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)");
         }
     } catch (Throwable $e) {
         // logging must never break the admin panel

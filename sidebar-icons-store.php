@@ -15,6 +15,10 @@ if (!defined('VS_SI_DIR')) {
     define('VS_SI_FILE', 'uploads/site-branding/sidebar-icons.json');
     define('VS_SI_MAX_BYTES', 1024 * 1024);
 }
+if (!defined('VS_SI_HIDDEN_FILE')) {
+    // Icons the owner chose to hide (built-in icons only). Kept apart from sidebar-icons.json.
+    define('VS_SI_HIDDEN_FILE', 'uploads/site-branding/sidebar-icons-hidden.json');
+}
 
 /** Every item that can get a custom icon: scope => key => [label, preview icon class]. */
 function vs_si_items(): array
@@ -28,6 +32,7 @@ function vs_si_items(): array
             'categories'  => ['Categories', 'bi bi-tags'],
             'reported'    => ['Reported content', 'bi bi-flag'],
             'users'       => ['Users', 'bi bi-people'],
+            'bannedusers' => ['Banned users', 'bi bi-person-fill-slash'],
             'admins'      => ['Admins', 'bi bi-shield-check'],
             'userprofile' => ['Users profile', 'bi bi-person-lines-fill'],
             'messages'    => ['Messages', 'bi bi-chat-dots'],
@@ -37,6 +42,21 @@ function vs_si_items(): array
             'icons'       => ['Icons', 'bi bi-image'],
             'activity'    => ['Admin activity', 'bi bi-activity'],
             'mainsite'    => ['Main Site', 'bi bi-house'],
+            'insights'    => ['Live Insights', 'bi bi-activity'],
+            'successchart' => ['Success Chart', 'bi bi-graph-up-arrow'],
+            'ownernotices' => ['Owner notices', 'bi bi-send-check'],
+            'notifications' => ['Notifications', 'bi bi-bell'],
+            'siteicons'   => ['Site icons', 'bi bi-images'],
+            'backup'      => ['Backups', 'bi bi-database-down'],
+            'syscheck'    => ['System check', 'bi bi-heart-pulse'],
+            'adminpay'    => ['Admin pay', 'bi bi-cash-stack'],
+            'topcreators' => ['Top Creators', 'bi bi-trophy-fill'],
+            'failedlogins' => ['Failed admin logins', 'bi bi-shield-exclamation'],
+            'contextnotes' => ['Context notes', 'bi bi-journal-check'],
+            'mytasks'     => ['My tasks', 'bi bi-list-check'],
+            'mypay'       => ['My pay', 'bi bi-wallet2'],
+            // Top bar
+            'topbar_bell' => ['Top bar: Notification bell', 'bi bi-bell'],
             // Profile dropdown (top-right menu of the admin panel)
             'menu_profile'  => ['Dropdown: Profile', 'bi bi-person-badge'],
             'menu_settings' => ['Dropdown: App settings', 'bi bi-sliders'],
@@ -49,10 +69,15 @@ function vs_si_items(): array
             'watch'         => ['Watch', 'bi bi-play-btn'],
             'profile'       => ['Your Channel', 'bi bi-person-square'],
             'history'       => ['History', 'bi bi-clock-history'],
+            'watch-later'   => ['Watch later', 'bi bi-clock'],
+            'playlists'     => ['Playlists', 'bi bi-collection'],
+            'creator-analytics' => ['Creator Analytics', 'bi bi-graph-up'],
             'liked'         => ['Liked videos', 'bi bi-hand-thumbs-up'],
             'subscriptions' => ['All subscriptions', 'bi bi-collection-play'],
             'upload'        => ['Upload Video', 'bi bi-upload'],
             'premium'       => ['Premium', 'bi bi-gem'],
+            'live'          => ['Live streams', 'bi bi-broadcast'],
+            'membership'    => ['Channel memberships', 'bi bi-shield-check'],
             'music'         => ['Music', 'bi bi-music-note-beamed'],
             'adminpanel'    => ['Admin Panel', 'bi bi-shield-check'],
             'adminpremium'  => ['Premium members', 'bi bi-stars'],
@@ -66,6 +91,77 @@ function vs_si_items(): array
             'menu_logout'        => ['Dropdown: Log out', 'bi bi-box-arrow-right'],
         ],
     ];
+}
+
+/** Loads the hidden built-in icons: ['admin' => [key => true], 'site' => [key => true]]. */
+function vs_si_hidden_load(): array
+{
+    if (isset($GLOBALS['vs_si_hidden_cache']) && is_array($GLOBALS['vs_si_hidden_cache'])) {
+        return $GLOBALS['vs_si_hidden_cache'];
+    }
+    $clean = ['admin' => [], 'site' => []];
+    $path = __DIR__ . '/' . VS_SI_HIDDEN_FILE;
+    $raw = is_file($path) ? @file_get_contents($path) : false;
+    $data = $raw !== false ? json_decode($raw, true) : null;
+    $items = vs_si_items();
+    if (is_array($data)) {
+        foreach ($clean as $scope => $unused) {
+            foreach ((array)($data[$scope] ?? []) as $key => $flag) {
+                if ($flag && isset($items[$scope][$key])) {
+                    $clean[$scope][$key] = true;
+                }
+            }
+        }
+    }
+    return $GLOBALS['vs_si_hidden_cache'] = $clean;
+}
+
+function vs_si_hidden_save(array $data): void
+{
+    $dir = __DIR__ . '/' . VS_SI_DIR;
+    if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+        throw new RuntimeException('Could not create the icon upload directory.');
+    }
+    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    if ($json === false || file_put_contents(__DIR__ . '/' . VS_SI_HIDDEN_FILE, $json, LOCK_EX) === false) {
+        throw new RuntimeException('The hidden-icon settings could not be saved.');
+    }
+    unset($GLOBALS['vs_si_hidden_cache']);
+}
+
+/** True when the owner hid the built-in icon of this item (a custom icon always wins over "hidden"). */
+function vs_si_is_hidden(string $scope, string $key): bool
+{
+    return !empty(vs_si_hidden_load()[$scope][$key]) && !isset(vs_si_load()[$scope][$key]);
+}
+
+/** Hides the built-in icon of one item (the text of the link stays). Returns a success message. */
+function vs_si_hide(string $scope, string $key): string
+{
+    $items = vs_si_items();
+    if (!isset($items[$scope][$key])) {
+        throw new RuntimeException('Unknown sidebar item.');
+    }
+    if (isset(vs_si_load()[$scope][$key])) {
+        throw new RuntimeException('This item has a custom icon. Use the trash button to go back to the built-in icon first.');
+    }
+    $hidden = vs_si_hidden_load();
+    $hidden[$scope][$key] = true;
+    vs_si_hidden_save($hidden);
+    return '“' . $items[$scope][$key][0] . '” icon hidden.';
+}
+
+/** Shows a hidden icon again. Returns a success message. */
+function vs_si_show(string $scope, string $key): string
+{
+    $items = vs_si_items();
+    if (!isset($items[$scope][$key])) {
+        throw new RuntimeException('Unknown sidebar item.');
+    }
+    $hidden = vs_si_hidden_load();
+    unset($hidden[$scope][$key]);
+    vs_si_hidden_save($hidden);
+    return '“' . $items[$scope][$key][0] . '” icon is visible again.';
 }
 
 /** Loads the saved icons: ['admin' => [key => ['file' => ..., 'mode' => 'mask'|'color']], 'site' => [...]]. */
@@ -118,7 +214,7 @@ function vs_si_html(string $scope, string $key, string $fallback = '', int $size
 {
     $entry = vs_si_load()[$scope][$key] ?? null;
     if (!$entry) {
-        return $fallback;
+        return vs_si_is_hidden($scope, $key) ? '' : $fallback;
     }
     if ($size <= 0) {
         $size = $scope === 'admin' ? 20 : 24;
@@ -139,7 +235,8 @@ function vs_si_html(string $scope, string $key, string $fallback = '', int $size
  */
 function vs_si_open(string $scope, string $key, int $size = 0): void
 {
-    $GLOBALS['vs_si_stack'][] = vs_si_html($scope, $key, '', $size);
+    // false = the owner hid this icon: show nothing at all (not even the built-in one)
+    $GLOBALS['vs_si_stack'][] = vs_si_is_hidden($scope, $key) ? false : vs_si_html($scope, $key, '', $size);
     ob_start();
 }
 
@@ -147,6 +244,9 @@ function vs_si_close(): void
 {
     $custom = array_pop($GLOBALS['vs_si_stack']);
     $original = (string)ob_get_clean();
+    if ($custom === false) {
+        return;
+    }
     echo ($custom !== null && $custom !== '') ? $custom : $original;
 }
 
@@ -342,6 +442,12 @@ function vs_si_set(string $scope, string $key, array $upload, bool $keepColors, 
     }
     if ($old !== '' && $old !== $relative) {
         vs_si_delete_file($old);
+    }
+    if (!empty(vs_si_hidden_load()[$scope][$key])) {
+        try {
+            vs_si_show($scope, $key); // uploading a new icon shows the item again
+        } catch (Throwable $ignore) {
+        }
     }
     return '“' . $items[$scope][$key][0] . '” icon updated.';
 }

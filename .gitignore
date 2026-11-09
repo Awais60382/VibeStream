@@ -1,13 +1,22 @@
-@"
+# Secrets and private settings: never put these on GitHub
 connection.php
 stripe-config.php
 google-oauth.php
 google-oauth.local.php
 .env
+client_secret*.json
+
+# Data created by the running site
 uploads/
 backups/
 adminpanel/data/
-node_modules/
-client_secret*.json
+
+# Database copies and archives (the migration files in database/migrations are kept)
+*.sql
+!database/migrations/*.sql
 *.zip
-"@ | Set-Content .gitignore
+
+# Tools and computer clutter
+node_modules/
+Thumbs.db
+.DS_Store

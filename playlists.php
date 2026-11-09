@@ -4,10 +4,77 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/connection.php';
+require_once __DIR__ . '/liked-store.php';
+
+if (!function_exists('extract_youtube_id')) {
+    function extract_youtube_id($raw, $allowBare = false) {
+        $raw = trim((string)$raw);
+        if ($raw === '') {
+            return null;
+        }
+        if ($allowBare && preg_match('/^[A-Za-z0-9_-]{11}$/', $raw)) {
+            return $raw;
+        }
+        if (preg_match('#(?:youtube\.com/(?:watch\?.*?v=|embed/|shorts/|live/|v/)|youtu\.be/)([A-Za-z0-9_-]{11})#', $raw, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/[?&]v=([A-Za-z0-9_-]{11})/', $raw, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+}
+
+if (!function_exists('find_source')) {
+    function find_source(array $row, $baseDir = __DIR__) {
+        $priority = ['video_url', 'video_path', 'video_file', 'video', 'url', 'file_path', 'filepath', 'file', 'filename', 'source', 'src', 'link', 'media_url', 'youtube_url', 'youtube_id', 'yt_id', 'video_link', 'embed_url', 'embed', 'id'];
+        foreach ($priority as $col) {
+            $value = trim((string)($row[$col] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+            if (extract_youtube_id($value, true)) {
+                return $value;
+            }
+            if (preg_match('#^(https?:)?//#i', $value)) {
+                return $value;
+            }
+            $value = ltrim($value, '/');
+            foreach ([$value, "uploads/$value", "videos/$value", "uploads/videos/$value", "media/$value"] as $path) {
+                if (is_file($baseDir . '/' . $path)) {
+                    return $path;
+                }
+            }
+            if (preg_match('/\.(mp4|webm|ogg|ogv|m4v|mov)(\?.*)?$/i', $value)) {
+                return $value;
+            }
+        }
+        return '';
+    }
+}
+
+if (!function_exists('thumb_for')) {
+    function thumb_for(array $row, $src, $realYt) {
+        if ($realYt) {
+            return "https://i.ytimg.com/vi/{$realYt}/hqdefault.jpg";
+        }
+        foreach (['thumbnail', 'thumb', 'image', 'img', 'poster'] as $column) {
+            if (!empty($row[$column])) {
+                return $row[$column];
+            }
+        }
+        return 'data:image/svg+xml;utf8,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#1e1e24"/><text x="50%" y="50%" fill="#6f6f7a" font-family="Arial" font-size="16" text-anchor="middle" dy=".3em">No preview</text></svg>');
+    }
+}
 
 $username = trim((string)($_SESSION['username'] ?? ''));
-$isLoggedIn = $username !== '' && strcasecmp((string)($_SESSION['role'] ?? ''), 'guest') !== 0;
-$userId = filter_var($_SESSION['user_id'] ?? null, FILTER_VALIDATE_INT);
+if ($username === '') {
+    $username = trim((string)($_SESSION['AdminSession'] ?? ''));
+}
+$isAdminSession = trim((string)($_SESSION['AdminSession'] ?? '')) !== '';
+$isLoggedIn = $username !== ''
+    && ($isAdminSession || strcasecmp((string)($_SESSION['role'] ?? ''), 'guest') !== 0);
+$userId = filter_var($_SESSION['user_id'] ?? $_SESSION['AdminId'] ?? $_SESSION['AdminID'] ?? null, FILTER_VALIDATE_INT);
 if (!$isLoggedIn) {
     $userId = 0;
 }
@@ -15,9 +82,7 @@ $pageError = '';
 $selectedId = false;
 $showLiked = (string)($_GET['list'] ?? '') === 'liked';
 $likedVideos = [];
-$likedVideoIds = isset($_SESSION['liked_videos']) && is_array($_SESSION['liked_videos'])
-    ? array_values(array_unique(array_filter(array_map('strval', $_SESSION['liked_videos']), static fn(string $id): bool => $id !== '' && strlen($id) <= 191)))
-    : [];
+$likedVideoIds = [];
 $addVideoId = trim((string)($_GET['add'] ?? ''));
 if (strlen($addVideoId) > 191) {
     $addVideoId = '';
@@ -34,6 +99,11 @@ $notice = (string)($_SESSION['playlist_notice'] ?? '');
 unset($_SESSION['playlist_notice']);
 
 try {
+    vs_likes_session_sync($conn);
+    $likedVideoIds = array_values(array_unique(array_filter(
+        array_map('strval', (array)($_SESSION['liked_videos'] ?? [])),
+        static fn(string $id): bool => $id !== '' && strlen($id) <= 191
+    )));
     if ($isLoggedIn && ($userId === false || $userId <= 0)) {
         $userColumns = [];
         $result = $conn->query('SHOW COLUMNS FROM `users`');
@@ -104,6 +174,21 @@ try {
                 $exists->close();
                 if (!$hasVideo) {
                     throw new RuntimeException('That video could not be found.');
+                }
+            }
+            // Premium perk: free accounts can own a limited number of playlists
+            if (is_file(__DIR__ . '/premium-perks.php')) {
+                require_once __DIR__ . '/premium-perks.php';
+                $playlistCap = vs_perk_limit($username, 'playlists');
+                if ($playlistCap !== null) {
+                    $countStmt = $conn->prepare('SELECT COUNT(*) FROM `playlists` WHERE `user_id` = ?');
+                    $countStmt->bind_param('i', $userId);
+                    $countStmt->execute();
+                    $ownedCount = (int)($countStmt->get_result()->fetch_row()[0] ?? 0);
+                    $countStmt->close();
+                    if ($ownedCount >= $playlistCap) {
+                        throw new RuntimeException('You have reached the limit of ' . $playlistCap . ' playlists on the free plan. Go Premium for more (premium.php).');
+                    }
                 }
             }
             $insert = $conn->prepare('INSERT INTO `playlists` (`user_id`, `name`, `visibility`) VALUES (?, ?, ?)');
@@ -398,6 +483,143 @@ $extraCss = <<<'CSS'
 @media(max-width:1000px){.pl-liked-layout{grid-template-columns:minmax(250px,320px) minmax(0,1fr);gap:20px}.pl-liked-hero{min-height:460px}}
 @media(max-width:760px){.pl-liked-layout{grid-template-columns:1fr}.pl-liked-hero{position:relative;top:auto;min-height:0;padding:20px}.pl-liked-cover{width:min(58%,190px);height:220px}.pl-liked-row{grid-template-columns:minmax(110px,160px) minmax(0,1fr) 32px}}
 @media(max-width:480px){.pl-liked-row{grid-template-columns:112px minmax(0,1fr) 28px;gap:9px}.pl-liked-title{font-size:14px}.pl-liked-open{width:28px;height:30px}}
+/* ===== NEON THEME (dark + light) ===== */
+html:not([data-theme="light"]) {
+            --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
+            --text: #eaf0ff; --muted: #8f9bd0; --border: #1d2557;
+            --accent: #ff2e93; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #00e5ff;
+            --neon-cyan: #00e5ff; --neon-pink: #ff2e93; --neon-violet: #8a5cff;
+        }
+        html:not([data-theme="light"]) body { background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.16), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.08), transparent 70%), #05060f; background-attachment: fixed; }
+        html:not([data-theme="light"]) body .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(0,229,255,.35); box-shadow: 0 1px 24px -4px rgba(0,229,255,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
+        html:not([data-theme="light"]) body .brand { background: linear-gradient(90deg, #00e5ff, #8a5cff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
+        html:not([data-theme="light"]) body .nav-toggle span { background: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.7); }
+        html:not([data-theme="light"]) body .nav-toggle:hover, html:not([data-theme="light"]) body .theme-toggle:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) body .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(138,92,255,.6)); }
+        html:not([data-theme="light"]) body .nav-link.active { background: rgba(255,46,147,.16); color: #ff7ac0; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) body .create-btn, html:not([data-theme="light"]) body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) body #search-input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.55); color: #eaf0ff; box-shadow: 0 0 10px -2px rgba(138,92,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html:not([data-theme="light"]) body #search-input:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 20px rgba(0,229,255,.55); }
+        html:not([data-theme="light"]) body .user-badge-pill { background: linear-gradient(180deg, rgba(23,28,66,.9), rgba(10,13,31,.95)); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html:not([data-theme="light"]) body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html:not([data-theme="light"]) body .app-sidebar { background: linear-gradient(180deg, rgba(10,13,31,.97), rgba(5,6,15,.98)); border-right: 1px solid rgba(138,92,255,.4); box-shadow: 4px 0 28px -10px rgba(138,92,255,.45); }
+        html:not([data-theme="light"]) body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html:not([data-theme="light"]) body .sidebar-link:hover { background: rgba(0,229,255,.10); box-shadow: inset 3px 0 0 #00e5ff, 0 0 16px -4px rgba(0,229,255,.5); }
+        html:not([data-theme="light"]) body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) body .sidebar-heading { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar-track { background: #05060f; }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
+        html:not([data-theme="light"]) body ::selection { background: rgba(255,46,147,.4); color: #fff; }
+
+/* ---- playlists / liked videos ---- */
+html:not([data-theme="light"]) body .pl-heading h1, html:not([data-theme="light"]) body .pl-detail-heading h1 { text-shadow: 0 0 16px rgba(138,92,255,.65); }
+html:not([data-theme="light"]) body .pl-button, html:not([data-theme="light"]) body .pl-filter, html:not([data-theme="light"]) body .pl-filter-link { border: 1px solid rgba(138,92,255,.4); transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease; }
+html:not([data-theme="light"]) body .pl-button:hover, html:not([data-theme="light"]) body .pl-filter:hover, html:not([data-theme="light"]) body .pl-filter-link:hover { border-color: #00e5ff; box-shadow: 0 0 14px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .pl-button-primary { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border-color: transparent; box-shadow: 0 0 18px rgba(255,46,147,.55); }
+html:not([data-theme="light"]) body .pl-button-primary:hover { background: linear-gradient(90deg, #8a5cff, #ff2e93); opacity: 1; transform: translateY(-1px); box-shadow: 0 0 26px rgba(255,46,147,.8); }
+html:not([data-theme="light"]) body .pl-filter-link[aria-current="page"], html:not([data-theme="light"]) body .pl-liked-toolbar .pl-filter-link[aria-current=page] { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border-color: transparent; box-shadow: 0 0 16px rgba(255,46,147,.5); }
+html:not([data-theme="light"]) body .pl-cover-link, html:not([data-theme="light"]) body .pl-liked-thumb-link { border: 1px solid rgba(138,92,255,.3); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
+html:not([data-theme="light"]) body .pl-card:hover .pl-cover-link, html:not([data-theme="light"]) body .pl-liked-row:hover .pl-liked-thumb-link { border-color: #00e5ff; box-shadow: 0 0 22px rgba(0,229,255,.55), 0 0 44px -8px rgba(138,92,255,.5); transform: translateY(-3px); }
+html:not([data-theme="light"]) body .pl-cover-count, html:not([data-theme="light"]) body .pl-liked-duration { background: rgba(5,6,15,.88); color: #00e5ff; border: 1px solid rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .pl-card-title:hover, html:not([data-theme="light"]) body .pl-liked-title:hover { color: #00e5ff; text-decoration: none; text-shadow: 0 0 10px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .pl-view-link:hover, html:not([data-theme="light"]) body .pl-back:hover { color: #00e5ff; text-decoration: none; text-shadow: 0 0 10px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .pl-card-menu summary:hover, html:not([data-theme="light"]) body .pl-liked-open:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 12px rgba(0,229,255,.45); }
+html:not([data-theme="light"]) body .pl-card-menu form { background: rgba(10,13,31,.88); border: 1px solid rgba(0,229,255,.5); box-shadow: 0 0 28px -4px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .pl-card-menu button:hover { background: rgba(0,229,255,.12); }
+html:not([data-theme="light"]) body .pl-note, html:not([data-theme="light"]) body .pl-liked-notice { background: rgba(10,13,31,.88); border: 1px solid rgba(0,229,255,.45); box-shadow: 0 0 18px -6px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .pl-empty-state, html:not([data-theme="light"]) body .pl-empty, html:not([data-theme="light"]) body .pl-liked-empty { background: rgba(10,13,31,.88); border: 1px dashed rgba(0,229,255,.5); box-shadow: 0 0 24px -8px rgba(0,229,255,.4); }
+html:not([data-theme="light"]) body .pl-video, html:not([data-theme="light"]) body .pl-liked-row { border-radius: 12px; transition: background .15s ease, box-shadow .15s ease; }
+html:not([data-theme="light"]) body .pl-video:hover, html:not([data-theme="light"]) body .pl-liked-row:hover { background: rgba(0,229,255,.07); box-shadow: inset 3px 0 0 #00e5ff, 0 0 20px -8px rgba(0,229,255,.6); }
+html:not([data-theme="light"]) body .pl-thumb { border: 1px solid rgba(138,92,255,.3); }
+html:not([data-theme="light"]) body .pl-dialog { background: rgba(10,13,31,.88); border: 1px solid rgba(0,229,255,.55); box-shadow: 0 0 40px -6px rgba(0,229,255,.55), 0 0 90px -20px rgba(138,92,255,.6); }
+html:not([data-theme="light"]) body .pl-dialog::backdrop { background: rgba(3,4,12,.75); }
+html:not([data-theme="light"]) body .pl-dialog h2 { text-shadow: 0 0 12px rgba(138,92,255,.5); }
+html:not([data-theme="light"]) body .pl-field { background: rgba(10,13,31,.9); color: #eaf0ff; border: 1px solid rgba(138,92,255,.5); }
+html:not([data-theme="light"]) body .pl-field:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 16px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .pl-button-outline { border: 1px solid rgba(0,229,255,.55); }
+html:not([data-theme="light"]) body .pl-save-row { transition: background .15s ease; }
+html:not([data-theme="light"]) body .pl-save-row:hover { background: rgba(0,229,255,.08); }
+html:not([data-theme="light"]) body .pl-save-row:hover .pl-save-name { text-decoration: none; color: #00e5ff; }
+html:not([data-theme="light"]) body .pl-save-check.is-saved { color: #ff2e93; filter: drop-shadow(0 0 6px rgba(255,46,147,.8)); }
+html:not([data-theme="light"]) body .pl-save-new { border: 1px dashed rgba(138,92,255,.6); }
+html:not([data-theme="light"]) body .pl-save-new:hover { border-color: #00e5ff; box-shadow: 0 0 14px rgba(0,229,255,.45); }
+html:not([data-theme="light"]) body .pl-liked-hero { border: 1px solid rgba(138,92,255,.55); box-shadow: 0 0 34px -6px rgba(0,229,255,.5), 0 0 80px -20px rgba(255,46,147,.45); }
+html:not([data-theme="light"]) body .pl-liked-cover { box-shadow: 0 0 24px -2px rgba(255,46,147,.65); }
+html:not([data-theme="light"]) body .pl-liked-hero h1 { text-shadow: 0 0 16px rgba(138,92,255,.8); }
+html:not([data-theme="light"]) body .pl-liked-play { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; box-shadow: 0 0 18px rgba(255,46,147,.55); border-color: transparent; }
+html:not([data-theme="light"]) body .pl-liked-shuffle { background: rgba(5,6,15,.55); color: #fff; border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+
+html[data-theme="light"] {
+            --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
+            --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
+            --accent: #ff2e93; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #00b8e6;
+            --neon-cyan: #00b8e6; --neon-pink: #ff2e93; --neon-violet: #7c4dff;
+        }
+        html[data-theme="light"] body { background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.14), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.10), transparent 70%), #f4f6ff; background-attachment: fixed; }
+        html[data-theme="light"] body .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(0,184,230,.55); box-shadow: 0 1px 22px -4px rgba(0,184,230,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
+        html[data-theme="light"] body .brand { background: linear-gradient(90deg, #00b8e6, #7c4dff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
+        html[data-theme="light"] body .nav-toggle span { background: #7c4dff; box-shadow: 0 0 6px rgba(124,77,255,.7); }
+        html[data-theme="light"] body .nav-toggle:hover, html[data-theme="light"] body .theme-toggle:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 14px rgba(0,184,230,.4); }
+        html[data-theme="light"] body .theme-toggle svg { color: #7c4dff; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
+        html[data-theme="light"] body .nav-link.active { background: rgba(255,46,147,.16); color: #d4147a; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html[data-theme="light"] body .create-btn, html[data-theme="light"] body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html[data-theme="light"] body #search-input { background: #ffffff; border: 1px solid rgba(124,77,255,.55); color: #0b1030; box-shadow: 0 0 10px -2px rgba(124,77,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html[data-theme="light"] body #search-input:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 20px rgba(0,184,230,.55); }
+        html[data-theme="light"] body .user-badge-pill { background: linear-gradient(180deg, #ffffff, #f1f3ff); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html[data-theme="light"] body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html[data-theme="light"] body .app-sidebar { background: linear-gradient(180deg, #ffffff, #f4f6ff); border-right: 1px solid rgba(124,77,255,.35); box-shadow: 4px 0 28px -10px rgba(124,77,255,.45); }
+        html[data-theme="light"] body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html[data-theme="light"] body .sidebar-link:hover { background: rgba(0,184,230,.12); box-shadow: inset 3px 0 0 #00b8e6, 0 0 16px -4px rgba(0,184,230,.5); }
+        html[data-theme="light"] body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html[data-theme="light"] body .sidebar-heading { color: #7c4dff; text-shadow: 0 0 8px rgba(124,77,255,.45); }
+        html[data-theme="light"] body ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html[data-theme="light"] body ::-webkit-scrollbar-track { background: #eceffd; }
+        html[data-theme="light"] body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
+        html[data-theme="light"] body ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
+
+/* ---- playlists / liked videos ---- */
+html[data-theme="light"] body .pl-heading h1, html[data-theme="light"] body .pl-detail-heading h1 { text-shadow: 0 0 16px rgba(124,77,255,.3); }
+html[data-theme="light"] body .pl-button, html[data-theme="light"] body .pl-filter, html[data-theme="light"] body .pl-filter-link { border: 1px solid rgba(124,77,255,.4); transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease; }
+html[data-theme="light"] body .pl-button:hover, html[data-theme="light"] body .pl-filter:hover, html[data-theme="light"] body .pl-filter-link:hover { border-color: #00b8e6; box-shadow: 0 0 14px rgba(0,184,230,.5); }
+html[data-theme="light"] body .pl-button-primary { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border-color: transparent; box-shadow: 0 0 18px rgba(255,46,147,.55); }
+html[data-theme="light"] body .pl-button-primary:hover { background: linear-gradient(90deg, #7c4dff, #ff2e93); opacity: 1; transform: translateY(-1px); box-shadow: 0 0 26px rgba(255,46,147,.8); }
+html[data-theme="light"] body .pl-filter-link[aria-current="page"], html[data-theme="light"] body .pl-liked-toolbar .pl-filter-link[aria-current=page] { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border-color: transparent; box-shadow: 0 0 16px rgba(255,46,147,.5); }
+html[data-theme="light"] body .pl-cover-link, html[data-theme="light"] body .pl-liked-thumb-link { border: 1px solid rgba(124,77,255,.3); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
+html[data-theme="light"] body .pl-card:hover .pl-cover-link, html[data-theme="light"] body .pl-liked-row:hover .pl-liked-thumb-link { border-color: #00b8e6; box-shadow: 0 0 22px rgba(0,184,230,.55), 0 0 44px -8px rgba(124,77,255,.5); transform: translateY(-3px); }
+html[data-theme="light"] body .pl-cover-count, html[data-theme="light"] body .pl-liked-duration { background: rgba(5,6,15,.88); color: #7defff; border: 1px solid rgba(0,184,230,.5); }
+html[data-theme="light"] body .pl-card-title:hover, html[data-theme="light"] body .pl-liked-title:hover { color: #0086b3; text-decoration: none; text-shadow: 0 0 10px rgba(0,184,230,.5); }
+html[data-theme="light"] body .pl-view-link:hover, html[data-theme="light"] body .pl-back:hover { color: #0086b3; text-decoration: none; text-shadow: 0 0 10px rgba(0,184,230,.5); }
+html[data-theme="light"] body .pl-card-menu summary:hover, html[data-theme="light"] body .pl-liked-open:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 12px rgba(0,184,230,.45); }
+html[data-theme="light"] body .pl-card-menu form { background: #ffffff; border: 1px solid rgba(0,184,230,.5); box-shadow: 0 0 28px -4px rgba(0,184,230,.5); }
+html[data-theme="light"] body .pl-card-menu button:hover { background: rgba(0,184,230,.12); }
+html[data-theme="light"] body .pl-note, html[data-theme="light"] body .pl-liked-notice { background: #ffffff; border: 1px solid rgba(0,184,230,.45); box-shadow: 0 0 18px -6px rgba(0,184,230,.5); }
+html[data-theme="light"] body .pl-empty-state, html[data-theme="light"] body .pl-empty, html[data-theme="light"] body .pl-liked-empty { background: #ffffff; border: 1px dashed rgba(0,184,230,.5); box-shadow: 0 0 24px -8px rgba(0,184,230,.4); }
+html[data-theme="light"] body .pl-video, html[data-theme="light"] body .pl-liked-row { border-radius: 12px; transition: background .15s ease, box-shadow .15s ease; }
+html[data-theme="light"] body .pl-video:hover, html[data-theme="light"] body .pl-liked-row:hover { background: rgba(0,184,230,.07); box-shadow: inset 3px 0 0 #00b8e6, 0 0 20px -8px rgba(0,184,230,.6); }
+html[data-theme="light"] body .pl-thumb { border: 1px solid rgba(124,77,255,.3); }
+html[data-theme="light"] body .pl-dialog { background: #ffffff; border: 1px solid rgba(0,184,230,.55); box-shadow: 0 0 40px -6px rgba(0,184,230,.55), 0 0 90px -20px rgba(124,77,255,.6); }
+html[data-theme="light"] body .pl-dialog::backdrop { background: rgba(3,4,12,.75); }
+html[data-theme="light"] body .pl-dialog h2 { text-shadow: 0 0 12px rgba(124,77,255,.5); }
+html[data-theme="light"] body .pl-field { background: #ffffff; color: #0b1030; border: 1px solid rgba(124,77,255,.5); }
+html[data-theme="light"] body .pl-field:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 16px rgba(0,184,230,.5); }
+html[data-theme="light"] body .pl-button-outline { border: 1px solid rgba(0,184,230,.55); }
+html[data-theme="light"] body .pl-save-row { transition: background .15s ease; }
+html[data-theme="light"] body .pl-save-row:hover { background: rgba(0,184,230,.08); }
+html[data-theme="light"] body .pl-save-row:hover .pl-save-name { text-decoration: none; color: #0086b3; }
+html[data-theme="light"] body .pl-save-check.is-saved { color: #ff2e93; filter: drop-shadow(0 0 6px rgba(255,46,147,.8)); }
+html[data-theme="light"] body .pl-save-new { border: 1px dashed rgba(124,77,255,.6); }
+html[data-theme="light"] body .pl-save-new:hover { border-color: #00b8e6; box-shadow: 0 0 14px rgba(0,184,230,.45); }
+html[data-theme="light"] body .pl-liked-hero { border: 1px solid rgba(124,77,255,.55); box-shadow: 0 0 34px -6px rgba(0,184,230,.5), 0 0 80px -20px rgba(255,46,147,.45); }
+html[data-theme="light"] body .pl-liked-cover { box-shadow: 0 0 24px -2px rgba(255,46,147,.65); }
+html[data-theme="light"] body .pl-liked-hero h1 { text-shadow: 0 0 16px rgba(124,77,255,.8); }
+html[data-theme="light"] body .pl-liked-play { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; box-shadow: 0 0 18px rgba(255,46,147,.55); border-color: transparent; }
+html[data-theme="light"] body .pl-liked-shuffle { background: rgba(5,6,15,.55); color: #fff; border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 14px rgba(0,184,230,.4); }
+
 CSS;
 
 vs_page_start($showLiked ? 'Liked videos' : 'Playlists', $showLiked ? 'liked' : 'playlists', $extraCss);

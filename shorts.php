@@ -1,6 +1,10 @@
 <?php
 session_start();
+if (is_file(__DIR__ . '/premium-perks.php')) {
+    require_once __DIR__ . '/premium-perks.php';
+}
 include "connection.php";
+require_once __DIR__ . '/dashboard-events.php';
 require_once __DIR__ . '/avatar.php';   
 require_once __DIR__ . '/site-branding.php';
 require_once __DIR__ . '/notifications-store.php';
@@ -9,7 +13,10 @@ require_once __DIR__ . '/icons.php';
 require_once __DIR__ . '/sidebar-navigation.php';
 require_once __DIR__ . '/subscription-store.php';
 require_once __DIR__ . '/history-store.php';
+require_once __DIR__ . '/liked-store.php';
 require_once __DIR__ . '/comment-store.php';
+require_once __DIR__ . '/context-notes-store.php';
+require_once __DIR__ . '/vip-badge.php';
 $siteName = vs_branding_app_name();
 $defaultTheme = vs_branding_default_theme();
 vs_maintenance_gate();
@@ -26,8 +33,6 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
         die('Database connection failed: ' . htmlspecialchars($e->getMessage()));
     }
 }
-
-$VIEW_COOLDOWN_SECONDS = 0;
 
 if (!function_exists('extract_youtube_id')) {
     function extract_youtube_id($raw, $allowBare = true) {
@@ -95,6 +100,9 @@ if (!function_exists('render_navbar')) {
             </div>
 
             <div class="nav-right">
+                <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
+                </button>
                 <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                 </button>
@@ -148,26 +156,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'like') {
-            $liked = in_array($vid, $_SESSION['liked_videos'], true);
-            $upd = $conn->prepare($liked
-                ? "UPDATE videos SET likes = GREATEST(COALESCE(likes,0) - 1, 0) WHERE id = ?"
-                : "UPDATE videos SET likes = COALESCE(likes,0) + 1 WHERE id = ?");
-            if (!$upd) {
-                throw new RuntimeException('Could not save your like. Please try again.');
-            }
-            $upd->bind_param("s", $vid);
-            if (!$upd->execute() || $upd->affected_rows !== 1) {
+            vs_likes_session_sync($conn);
+            $liked = vs_likes_has($conn, $vid);
+            $likedBefore = $_SESSION['liked_videos'];
+            try {
+                $conn->begin_transaction();
+                $upd = $conn->prepare($liked
+                    ? "UPDATE videos SET likes = GREATEST(COALESCE(likes,0) - 1, 0) WHERE id = ?"
+                    : "UPDATE videos SET likes = COALESCE(likes,0) + 1 WHERE id = ?");
+                if (!$upd) {
+                    throw new RuntimeException('Could not save your like. Please try again.');
+                }
+                $upd->bind_param("s", $vid);
+                if (!$upd->execute() || $upd->affected_rows !== 1) {
+                    $upd->close();
+                    throw new RuntimeException('Could not save your like. Please try again.');
+                }
                 $upd->close();
-                throw new RuntimeException('Could not save your like. Please try again.');
+                vs_likes_set($conn, $vid, !$liked);
+                $conn->commit();
+            } catch (Throwable $likeError) {
+                $conn->rollback();
+                $_SESSION['liked_videos'] = $likedBefore;
+                throw $likeError;
             }
-            $upd->close();
-            $_SESSION['liked_videos'] = $liked
-                ? array_values(array_diff($_SESSION['liked_videos'], [$vid]))
-                : array_merge($_SESSION['liked_videos'], [$vid]);
 
-            if (!$liked && !empty($_SESSION['username'])) {
+            if (!$liked && !empty($_SESSION['username'] ?? $_SESSION['AdminSession'] ?? '')) {
                 if (function_exists('vs_notify_video_event')) {
-                    vs_notify_video_event($conn, $v, 'like', (string)$_SESSION['username']);
+                    $actor = (string)($_SESSION['username'] ?? $_SESSION['AdminSession']);
+                    vs_notify_video_event($conn, $v, 'like', $actor);
                 }
             }
 
@@ -318,6 +335,9 @@ if (!$video) {
 
 $comments = [];
 $prev = $next = null;
+$nextId = '';
+$nextSrc = '';
+$nextYt = null;
 $src = '';
 $yt = null;
 $title = 'No shorts yet';
@@ -329,6 +349,7 @@ $description = 'Upload a short to get started.';
 $avatarUrl = '';
 $userLiked = false;
 $userSubbed = false;
+$isOwnChannel = false;
 $noVideo = !$video;
 
 if ($video) {
@@ -340,24 +361,6 @@ if ($video) {
             vs_history_record($conn, (string)$id);
         } catch (Throwable $historyError) {
             error_log('Watch history failed: ' . $historyError->getMessage());
-        }
-    }
-
-    if (!isset($_SESSION['view_times']) || !is_array($_SESSION['view_times'])) {
-        $_SESSION['view_times'] = [];
-    }
-    $now = time();
-    $lastView = isset($_SESSION['view_times'][$id]) ? (int)$_SESSION['view_times'][$id] : 0;
-
-    if ($lastView === 0 || ($now - $lastView) >= $VIEW_COOLDOWN_SECONDS) {
-        $upd = $conn->prepare("UPDATE videos SET views = COALESCE(views,0) + 1 WHERE id = ?");
-        if ($upd) {
-            $upd->bind_param("s", $id);
-            if ($upd->execute()) {
-                $_SESSION['view_times'][$id] = $now;
-                $video['views'] = (int)($video['views'] ?? 0) + 1;
-            }
-            $upd->close();
         }
     }
 
@@ -386,6 +389,29 @@ if ($video) {
     $prev = count($trail) > 1 ? ['id' => $trail[count($trail) - 2]] : null;
     $next = ['id' => $id];
 
+    // Choose the NEXT short now (and remember it), so the page can warm it up and the Next button opens it directly.
+    $nextShort = null;
+    $queued = (isset($_SESSION['shorts_next_for']) && is_array($_SESSION['shorts_next_for']) && (string)($_SESSION['shorts_next_for']['for'] ?? '') === (string)$id)
+        ? (string)($_SESSION['shorts_next_for']['next'] ?? '') : '';
+    if ($queued !== '') {
+        $qs = $conn->prepare("SELECT * FROM videos WHERE id = ? AND type = 'short'");
+        if ($qs) {
+            $qs->bind_param('s', $queued);
+            $qs->execute();
+            $nextShort = $qs->get_result()->fetch_assoc() ?: null;
+            $qs->close();
+        }
+    }
+    if (!$nextShort) {
+        $nextShort = vs_random_pick_video($conn, 'random_seen_shorts', "type = 'short'");
+        if ($nextShort) {
+            $_SESSION['shorts_next_for'] = ['for' => (string)$id, 'next' => (string)$nextShort['id']];
+        }
+    }
+    $nextId = $nextShort ? (string)$nextShort['id'] : '';
+    $nextSrc = $nextShort ? (string)find_source($nextShort, __DIR__) : '';
+    $nextYt = $nextSrc !== '' ? extract_youtube_id($nextSrc) : null;
+
     $src = find_source($video, __DIR__);
     $yt = $src ? extract_youtube_id($src) : null;
 
@@ -400,6 +426,10 @@ if ($video) {
 
     $channelOwner = trim((string)($video['username'] ?? ''));
     if ($channelOwner === '') $channelOwner = $channel;
+    $subsFallback = $subs;
+    $subs = vs_subscription_channel_count($conn, $channel, $channelOwner, $subsFallback);
+    $viewerName = trim((string)($_SESSION['username'] ?? ''));
+    $isOwnChannel = $viewerName !== '' && strcasecmp($viewerName, $channelOwner) === 0;
     $avatarUrl = avatar_for_record($channelOwner, $video);
     if ($avatarUrl === '' && $channelOwner !== $channel) $avatarUrl = avatar_url($channel);
     $channelInitial = mb_strtoupper(mb_substr(trim((string)$channel) !== '' ? trim((string)$channel) : 'V', 0, 1));
@@ -410,8 +440,22 @@ if ($video) {
         error_log('Comments failed: ' . $commentsError->getMessage());
         $comments = [];
     }
+    $contextNotes = [];
+    $contextNotesAvailable = true;
+    try {
+        $contextNotes = vs_context_notes_fetch($conn, (string)$id, 'short');
+    } catch (Throwable $contextNotesError) {
+        error_log('Community context notes failed: ' . $contextNotesError->getMessage());
+        $contextNotesAvailable = false;
+    }
 
-    $userLiked = in_array($id, $_SESSION['liked_videos'] ?? [], true);
+    try {
+        vs_likes_session_sync($conn);
+        $userLiked = vs_likes_has($conn, (string)$id);
+    } catch (Throwable $likesError) {
+        error_log('Could not synchronize saved video likes: ' . $likesError->getMessage());
+        $userLiked = in_array((string)$id, array_map('strval', (array)($_SESSION['liked_videos'] ?? [])), true);
+    }
     try {
         vs_subscription_session_sync($conn);
     } catch (Throwable $subscriptionError) {
@@ -419,6 +463,10 @@ if ($video) {
     }
     $userSubbed = in_array(vs_subscription_key((string)$channel), $_SESSION['subscribed_channels'] ?? [], true);
 }
+
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -434,7 +482,12 @@ if ($video) {
     <link rel="apple-touch-icon" href="branding-icon.php">
     <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?></title>
     <link rel="stylesheet" href="style.css?v=5">
+    <link rel="preconnect" href="https://www.youtube.com">
+    <link rel="preconnect" href="https://i.ytimg.com">
+    <script src="brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/brain.js'); ?>" defer></script>
     <script src="theme.js?v=3"></script>
+    <link rel="stylesheet" href="neon-off.css?v=7">
+    <script src="neon-switch.js?v=7"></script>
     <style>
         :root {
             --bg: #0f0f0f;
@@ -661,6 +714,33 @@ if ($video) {
             border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
         }
         .unmute-pill[hidden] { display: none; }
+        /* tap to pause / double-tap to like / progress bar / repeat toggle */
+        .short-card.slide-out-next { animation: slideOutUp .2s ease-in forwards; }
+        .short-card.slide-out-prev { animation: slideOutDown .2s ease-in forwards; }
+        .short-card.slide-in-next { animation: slideInUp .3s cubic-bezier(.2,.8,.2,1); }
+        .short-card.slide-in-prev { animation: slideInDown .3s cubic-bezier(.2,.8,.2,1); }
+        @keyframes slideOutUp { to { transform: translateY(-55%); opacity: 0; } }
+        @keyframes slideOutDown { to { transform: translateY(55%); opacity: 0; } }
+        @keyframes slideInUp { from { transform: translateY(55%); opacity: 0; } }
+        @keyframes slideInDown { from { transform: translateY(-55%); opacity: 0; } }
+        .player-loader { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: #000; pointer-events: none; transition: opacity .15s ease; }
+        .player-loader::after { content: ''; width: 46px; height: 46px; border-radius: 50%; border: 4px solid rgba(255,255,255,.2); border-top-color: #fff; animation: loaderSpin .8s linear infinite; }
+        .player-loader.done { opacity: 0; }
+        @keyframes loaderSpin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .short-card[class*="slide-"] { animation: none !important; } }
+        .tap-layer { position: absolute; left: 0; right: 0; top: 0; bottom: 56px; z-index: 1; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        .tap-layer.yt { top: 56px; bottom: 110px; }
+        .tap-burst { position: absolute; z-index: 5; width: 96px; height: 96px; margin: -48px 0 0 -48px; pointer-events: none; opacity: 0; }
+        .tap-burst svg { width: 100%; height: 100%; fill: #ff2d55; filter: drop-shadow(0 4px 14px rgba(0,0,0,.5)); }
+        .tap-burst.go { animation: tapBurst .8s ease-out; }
+        @keyframes tapBurst { 0% { opacity: 0; transform: scale(.4); } 20% { opacity: 1; transform: scale(1.1); } 60% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.25) translateY(-14px); } }
+        .tap-flash { position: absolute; left: 50%; top: 50%; z-index: 5; width: 72px; height: 72px; margin: -36px 0 0 -36px; border-radius: 50%; background: rgba(0,0,0,.55); display: grid; place-items: center; pointer-events: none; opacity: 0; }
+        .tap-flash svg { width: 34px; height: 34px; fill: #fff; }
+        .tap-flash.go { animation: tapFlash .6s ease-out; }
+        @keyframes tapFlash { 0% { opacity: 0; transform: scale(.7); } 25% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.15); } }
+        .short-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.22); z-index: 3; pointer-events: none; }
+        .short-progress i { display: block; height: 100%; width: 0; background: #ff2d55; }
+        .actions-column .icon-btn.on .circle { color: #00b8e6; background: rgba(0,229,255,.16); border-color: rgba(0,229,255,.9) !important; }
         .icon-btn.liked .circle svg { fill: #ff2d55; stroke: #ff2d55; }
         .icon-btn.liked .circle { animation: likePop 0.3s ease; }
         @keyframes likePop { 50% { transform: scale(1.22); } }
@@ -786,12 +866,117 @@ if ($video) {
         }
     </style>
     <link rel="stylesheet" href="sidebar.css">
-    <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="theme.css?v=5">
     <link rel="stylesheet" href="navbar-fix.css?v=3">
     <link rel="stylesheet" href="comments.css?v=1">
+    <!-- NEON THEME (dark + light). Stays after theme.css so it wins. -->
+    <style id="neon-dark">
+html:not([data-theme="light"]) {
+            --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
+            --text: #eaf0ff; --muted: #8f9bd0; --border: #1d2557;
+            --accent: #ff2e93; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #00e5ff;
+            --neon-cyan: #00e5ff; --neon-pink: #ff2e93; --neon-violet: #8a5cff;
+        }
+        html:not([data-theme="light"]) body { background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.16), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.08), transparent 70%), #05060f; background-attachment: fixed; }
+        html:not([data-theme="light"]) .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(0,229,255,.35); box-shadow: 0 1px 24px -4px rgba(0,229,255,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
+        html:not([data-theme="light"]) .brand { background: linear-gradient(90deg, #00e5ff, #8a5cff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
+        html:not([data-theme="light"]) .nav-toggle span { background: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.7); }
+        html:not([data-theme="light"]) .nav-toggle:hover, html:not([data-theme="light"]) .theme-toggle:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(138,92,255,.6)); }
+        html:not([data-theme="light"]) .nav-link.active { background: rgba(255,46,147,.16); color: #ff7ac0; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) .create-btn, html:not([data-theme="light"]) .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) #search-input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.55); color: #eaf0ff; box-shadow: 0 0 10px -2px rgba(138,92,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html:not([data-theme="light"]) #search-input:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 20px rgba(0,229,255,.55); }
+        html:not([data-theme="light"]) .user-badge-pill { background: linear-gradient(180deg, rgba(23,28,66,.9), rgba(10,13,31,.95)); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html:not([data-theme="light"]) .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html:not([data-theme="light"]) .app-sidebar { background: linear-gradient(180deg, rgba(10,13,31,.97), rgba(5,6,15,.98)); border-right: 1px solid rgba(138,92,255,.4); box-shadow: 4px 0 28px -10px rgba(138,92,255,.45); }
+        html:not([data-theme="light"]) .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html:not([data-theme="light"]) .sidebar-link:hover { background: rgba(0,229,255,.10); box-shadow: inset 3px 0 0 #00e5ff, 0 0 16px -4px rgba(0,229,255,.5); }
+        html:not([data-theme="light"]) .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) .sidebar-heading { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html:not([data-theme="light"]) ::-webkit-scrollbar-track { background: #05060f; }
+        html:not([data-theme="light"]) ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
+        html:not([data-theme="light"]) ::selection { background: rgba(255,46,147,.4); color: #fff; }
+
+        /* ---- shorts page ---- */
+        html:not([data-theme="light"]) .player-card { border: 1px solid rgba(138,92,255,.55); box-shadow: 0 0 30px -4px rgba(0,229,255,.5), 0 0 70px -16px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) .subscribe-btn { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 16px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) .subscribe-btn:hover { background: linear-gradient(90deg, #8a5cff, #ff2e93); }
+        html:not([data-theme="light"]) .subscribe-btn.on { background: rgba(10,13,31,.85); color: #fff; border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) .short-overlay .avatar { box-shadow: 0 0 0 2px rgba(255,46,147,.8), 0 0 12px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) .short-title { text-shadow: 0 0 12px rgba(138,92,255,.8); }
+        html:not([data-theme="light"]) .icon-btn .circle, html:not([data-theme="light"]) .nav-btn .circle, html:not([data-theme="light"]) .stat-item .circle { border: 1px solid rgba(138,92,255,.55); box-shadow: 0 0 12px -2px rgba(138,92,255,.55); transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease; }
+        html:not([data-theme="light"]) .icon-btn:hover .circle, html:not([data-theme="light"]) .nav-btn:hover .circle { border-color: #00e5ff; box-shadow: 0 0 18px rgba(0,229,255,.7); background: rgba(0,229,255,.16); }
+        html:not([data-theme="light"]) .icon-btn.liked .circle { border-color: #ff2e93; box-shadow: 0 0 20px rgba(255,46,147,.75); }
+        html:not([data-theme="light"]) .icon-btn.liked .circle svg { filter: drop-shadow(0 0 6px rgba(255,46,147,.9)); }
+        html:not([data-theme="light"]) .unmute-pill { border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 16px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) .comments-box { background: rgba(10,13,31,.88); border: 1px solid rgba(0,229,255,.5); box-shadow: 0 0 40px -6px rgba(0,229,255,.5), 0 0 80px -20px rgba(138,92,255,.6); }
+        html:not([data-theme="light"]) .comments-top h3 { text-shadow: 0 0 10px rgba(138,92,255,.6); }
+        html:not([data-theme="light"]) .comment-send input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.5); color: #eaf0ff; }
+        html:not([data-theme="light"]) .comment-send input:focus { border-color: #00e5ff; box-shadow: 0 0 16px rgba(0,229,255,.5); outline: none; }
+        html:not([data-theme="light"]) .comment-send button { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) .toast { border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 22px rgba(0,229,255,.45); }
+    </style>
+    <style id="neon-light">
+html[data-theme="light"] {
+            --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
+            --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
+            --accent: #ff2e93; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #00b8e6;
+            --neon-cyan: #00b8e6; --neon-pink: #ff2e93; --neon-violet: #7c4dff;
+        }
+        html[data-theme="light"] body { background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.14), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.10), transparent 70%), #f4f6ff; background-attachment: fixed; }
+        html[data-theme="light"] .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(0,184,230,.55); box-shadow: 0 1px 22px -4px rgba(0,184,230,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
+        html[data-theme="light"] .brand { background: linear-gradient(90deg, #00b8e6, #7c4dff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
+        html[data-theme="light"] .nav-toggle span { background: #7c4dff; box-shadow: 0 0 6px rgba(124,77,255,.7); }
+        html[data-theme="light"] .nav-toggle:hover, html[data-theme="light"] .theme-toggle:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 14px rgba(0,184,230,.4); }
+        html[data-theme="light"] .theme-toggle svg { color: #7c4dff; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
+        html[data-theme="light"] .nav-link.active { background: rgba(255,46,147,.16); color: #d4147a; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html[data-theme="light"] .create-btn, html[data-theme="light"] .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html[data-theme="light"] #search-input { background: #ffffff; border: 1px solid rgba(124,77,255,.55); color: #0b1030; box-shadow: 0 0 10px -2px rgba(124,77,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html[data-theme="light"] #search-input:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 20px rgba(0,184,230,.55); }
+        html[data-theme="light"] .user-badge-pill { background: linear-gradient(180deg, #ffffff, #f1f3ff); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html[data-theme="light"] .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html[data-theme="light"] .app-sidebar { background: linear-gradient(180deg, #ffffff, #f4f6ff); border-right: 1px solid rgba(124,77,255,.35); box-shadow: 4px 0 28px -10px rgba(124,77,255,.45); }
+        html[data-theme="light"] .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html[data-theme="light"] .sidebar-link:hover { background: rgba(0,184,230,.12); box-shadow: inset 3px 0 0 #00b8e6, 0 0 16px -4px rgba(0,184,230,.5); }
+        html[data-theme="light"] .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html[data-theme="light"] .sidebar-heading { color: #7c4dff; text-shadow: 0 0 8px rgba(124,77,255,.45); }
+        html[data-theme="light"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html[data-theme="light"] ::-webkit-scrollbar-track { background: #eceffd; }
+        html[data-theme="light"] ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
+        html[data-theme="light"] ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
+
+        /* ---- shorts page ---- */
+        html[data-theme="light"] .player-card { border: 1px solid rgba(124,77,255,.55); box-shadow: 0 0 30px -4px rgba(0,184,230,.5), 0 0 70px -16px rgba(255,46,147,.5); }
+        html[data-theme="light"] .subscribe-btn { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 16px rgba(255,46,147,.55); }
+        html[data-theme="light"] .subscribe-btn:hover { background: linear-gradient(90deg, #7c4dff, #ff2e93); }
+        html[data-theme="light"] .subscribe-btn.on { background: rgba(10,13,31,.85); color: #fff; border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 14px rgba(0,184,230,.4); }
+        html[data-theme="light"] .short-overlay .avatar { box-shadow: 0 0 0 2px rgba(255,46,147,.8), 0 0 12px rgba(255,46,147,.55); }
+        html[data-theme="light"] .short-title { text-shadow: 0 0 12px rgba(124,77,255,.8); }
+        html[data-theme="light"] .icon-btn .circle, html[data-theme="light"] .nav-btn .circle, html[data-theme="light"] .stat-item .circle { border: 1px solid rgba(124,77,255,.55); box-shadow: 0 0 12px -2px rgba(124,77,255,.55); transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease; }
+        html[data-theme="light"] .icon-btn:hover .circle, html[data-theme="light"] .nav-btn:hover .circle { border-color: #00b8e6; box-shadow: 0 0 18px rgba(0,184,230,.7); background: rgba(0,184,230,.16); }
+        html[data-theme="light"] .icon-btn.liked .circle { border-color: #ff2e93; box-shadow: 0 0 20px rgba(255,46,147,.75); }
+        html[data-theme="light"] .icon-btn.liked .circle svg { filter: drop-shadow(0 0 6px rgba(255,46,147,.9)); }
+        html[data-theme="light"] .unmute-pill { border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 16px rgba(0,184,230,.45); }
+        html[data-theme="light"] .comments-box { background: #ffffff; border: 1px solid rgba(0,184,230,.5); box-shadow: 0 0 40px -6px rgba(0,184,230,.5), 0 0 80px -20px rgba(124,77,255,.6); }
+        html[data-theme="light"] .comments-top h3 { text-shadow: 0 0 10px rgba(124,77,255,.6); }
+        html[data-theme="light"] .comment-send input { background: #ffffff; border: 1px solid rgba(124,77,255,.5); color: #0b1030; }
+        html[data-theme="light"] .comment-send input:focus { border-color: #00b8e6; box-shadow: 0 0 16px rgba(0,184,230,.5); outline: none; }
+        html[data-theme="light"] .comment-send button { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.5); }
+        html[data-theme="light"] .toast { border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 22px rgba(0,184,230,.45); }
+    </style>
+    <link rel="stylesheet" href="sidebar-rail.css?v=1">
+    <script src="sidebar-rail.js?v=1"></script>
+    <link rel="stylesheet" href="context-notes.css?v=1">
 </head>
 <body>
     <?php render_navbar('shorts'); ?>
+    <?php echo vs_site_announcement_html($GLOBALS['pdo'] ?? null); ?>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <div class="app-layout">
@@ -807,7 +992,7 @@ if ($video) {
                             <div class="player" id="playerWrap">
                                 <?php if ($yt): ?>
                                     <iframe id="ytFrame"
-                                        src="https://www.youtube.com/embed/<?= htmlspecialchars($yt) ?>?autoplay=1&amp;mute=1&amp;enablejsapi=1&amp;loop=1&amp;playlist=<?= htmlspecialchars($yt) ?>&amp;playsinline=1&amp;rel=0"
+                                        src="https://www.youtube.com/embed/<?= htmlspecialchars($yt) ?>?autoplay=1&amp;mute=1&amp;enablejsapi=1&amp;playsinline=1&amp;rel=0"
                                         allow="autoplay; encrypted-media; picture-in-picture"
                                         allowfullscreen></iframe>
                                 <?php elseif ($src): ?>
@@ -818,6 +1003,13 @@ if ($video) {
 
                                 <div class="player-gradient"></div>
                                 <button type="button" id="unmuteBtn" class="unmute-pill" hidden>&#128266; Tap to unmute</button>
+                                <?php if ($yt || $src): ?>
+                                    <div class="tap-layer<?= $yt ? ' yt' : '' ?>" id="tapLayer"></div>
+                                    <div class="tap-burst" id="tapBurst"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></div>
+                                    <div class="tap-flash" id="tapFlash"></div>
+                                    <div class="player-loader" id="playerLoader"></div>
+                                    <div class="short-progress"><i id="progressFill"></i></div>
+                                <?php endif; ?>
 
                                 <div class="short-overlay">
                                     <div class="meta-row">
@@ -829,10 +1021,12 @@ if ($video) {
                                             <?php endif; ?>
                                         </div>
                                         <div class="channel-stack">
-                                            <p class="channel-name">@<?= htmlspecialchars($channel) ?></p>
+                                            <p class="channel-name">@<?= htmlspecialchars($channel) ?><?php echo function_exists('vs_vip_badge_html') ? vs_vip_badge_html($channelOwner) : ''; ?></p>
                                             <p class="channel-meta" id="subCount"><?= short_num($subs) ?> subscriber<?= $subs == 1 ? '' : 's' ?></p>
                                         </div>
-                                        <button type="button" id="subBtn" class="subscribe-btn<?= $userSubbed ? ' on' : '' ?>"<?= $noVideo ? ' disabled' : '' ?>><?= $userSubbed ? 'Subscribed' : 'Subscribe' ?></button>
+                                        <?php if (!$isOwnChannel): ?>
+                                            <button type="button" id="subBtn" class="subscribe-btn<?= $userSubbed ? ' on' : '' ?>"<?= $noVideo ? ' disabled' : '' ?>><?= $userSubbed ? 'Subscribed' : 'Subscribe' ?></button>
+                                        <?php endif; ?>
                                     </div>
                                     <h1 class="short-title"><?= htmlspecialchars($title) ?></h1>
                                     <p class="short-description"><?= htmlspecialchars($description) ?></p>
@@ -845,7 +1039,7 @@ if ($video) {
                     <div class="actions-column">
                         <button class="icon-btn<?= $userLiked ? ' liked' : '' ?>" type="button" id="likeBtn" aria-label="Like this short" aria-pressed="<?= $userLiked ? 'true' : 'false' ?>"<?= $noVideo ? ' disabled' : '' ?>>
                             <span class="circle" id="likeIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
-                            <span id="likeCount"><?= short_num($likes) ?></span>
+                            <span id="likeCount"><?= number_format($likes) ?></span>
                         </button>
                         <button class="icon-btn" type="button" id="commentBtn">
                             <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 8h8M8 12h5"/></svg></span>
@@ -853,8 +1047,12 @@ if ($video) {
                         </button>
                         <div class="stat-item" title="Views">
                             <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
-                            <span id="viewCount"><?= short_num($views) ?></span>
+                            <span id="viewCount"><?= number_format($views) ?></span>
                         </div>
+                        <button class="icon-btn on" type="button" id="loopBtn" aria-pressed="true" title="Repeat this short, or go to the next one when it ends">
+                            <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg></span>
+                            <span id="loopLabel">Repeat</span>
+                        </button>
                         <?php if (!$noVideo && !empty($video['id'])) { $reportContentId = (string)$video['id']; $reportKind = 'short'; if (is_file(__DIR__ . '/report-widget.php')) { include __DIR__ . '/report-widget.php'; } } ?>
                     </div>
 
@@ -863,13 +1061,14 @@ if ($video) {
                         <a href="<?= !$noVideo && !empty($prev['id']) ? 'shorts.php?id=' . urlencode($prev['id']) : '#' ?>" class="nav-btn<?= ($noVideo || empty($prev['id'])) ? ' disabled' : '' ?>" id="prevBtn" title="Previous short">
                             <span class="circle">↑</span>
                         </a>
-                        <a href="<?= !$noVideo ? 'shorts.php' : '#' ?>" class="nav-btn<?= $noVideo ? ' disabled' : '' ?>" id="nextBtn" title="Next short (random)">
+                        <a href="<?= !$noVideo ? ($nextId !== '' ? 'shorts.php?id=' . urlencode($nextId) : 'shorts.php') : '#' ?>" class="nav-btn<?= $noVideo ? ' disabled' : '' ?>" id="nextBtn" title="Next short (random)">
                             <span class="circle">↓</span>
                         </a>
                     </div>
 
                 </div>
             </div>
+            <?php echo vs_ads_html(); ?>
         </main>
     </div>
 
@@ -889,10 +1088,14 @@ if ($video) {
         ]);
         ?>
     </div>
+    <?php if (!$noVideo): ?>
+        <?php echo vs_context_notes_panel_html($contextNotes ?? [], (string)($video['id'] ?? ''), 'short', vs_csrf_token(), !empty($_SESSION['username']), $contextNotesAvailable ?? true); ?>
+    <?php endif; ?>
 
     <div class="toast" id="toast"></div>
 
     <script src="comments.js?v=1"></script>
+    <script src="context-notes.js?v=1"></script>
     <script>
         const VIDEO_ID = <?= json_encode((string)($video['id'] ?? '')) ?>;
         const $ = id => document.getElementById(id);
@@ -940,6 +1143,7 @@ if ($video) {
             const likeBtn = $('likeBtn');
             const subBtn = $('subBtn');
             const player = $('playerWrap');
+            const shortCard = document.querySelector('.short-card');
             const prevBtn = $('prevBtn');
             const nextBtn = $('nextBtn');
 
@@ -979,7 +1183,7 @@ if ($video) {
                         const d = await send('like');
                         if (!d.success) return toast(d.error || 'Like failed');
                         likeBtn.classList.toggle('liked', !!d.liked);
-                        $('likeCount').textContent = shortNum(d.likes);
+                        $('likeCount').textContent = Number(d.likes).toLocaleString();
                         likeBtn.setAttribute('aria-pressed', String(d.liked));
                     } finally {
                         likeBtn.disabled = false;
@@ -1019,6 +1223,54 @@ if ($video) {
                     (dy < 0 ? nextBtn : prevBtn).click();
                 }, { passive: true });
             }
+
+            // moving to another short takes a second: buttons, arrow keys, swipes and the wheel all share one 1s lock
+            const NAV_LOCK_KEY = 'vs-shorts-wheel-lock-until';
+            [prevBtn, nextBtn].forEach((btn) => {
+                if (!btn) return;
+                btn.addEventListener('click', (e) => {
+                    if (Date.now() < Number(sessionStorage.getItem(NAV_LOCK_KEY) || 0)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+                    sessionStorage.setItem(NAV_LOCK_KEY, String(Date.now() + 600));
+                    // slide the short away like YouTube Shorts, then open the other one
+                    const href = btn.getAttribute('href');
+                    if (shortCard && href && href !== '#' && !btn.classList.contains('disabled') && !e.defaultPrevented) {
+                        const dir = btn === nextBtn ? 'next' : 'prev';
+                        e.preventDefault();
+                        try { sessionStorage.setItem('vs-shorts-dir', dir); } catch (err) {}
+                        shortCard.classList.add('slide-out-' + dir);
+                        setTimeout(() => { window.location.href = btn.href; }, 200);
+                    }
+                }, true);
+            });
+
+            // arriving from prev/next: slide the new short in from the matching side
+            try {
+                const arrived = sessionStorage.getItem('vs-shorts-dir');
+                if (arrived) { sessionStorage.removeItem('vs-shorts-dir'); if (shortCard) shortCard.classList.add('slide-in-' + arrived); }
+            } catch (err) {}
+
+            let wheelDistance = 0;
+            let wheelDirection = 0;
+            let wheelNavigating = false;
+            if (shortCard) shortCard.addEventListener('wheel', (e) => {
+                if ((modal && modal.classList.contains('open')) || Math.abs(e.deltaY) < Math.abs(e.deltaX) * 0.6) return;
+                e.preventDefault();
+                if (wheelNavigating || Date.now() < Number(sessionStorage.getItem('vs-shorts-wheel-lock-until') || 0)) return;
+
+                const delta = e.deltaY * (e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? window.innerHeight : 1);
+                const direction = Math.sign(delta);
+                if (!direction) return;
+                if (direction !== wheelDirection) wheelDistance = 0;
+                wheelDirection = direction;
+                wheelDistance += Math.abs(delta);
+
+                if (wheelDistance < 14) return;
+                const target = wheelDirection > 0 ? nextBtn : prevBtn;
+                wheelDistance = 0;
+                if (!target || target.classList.contains('disabled')) return;
+                wheelNavigating = true;
+                target.click();
+            }, { passive: false, capture: true });
         });
     </script>
     <script>
@@ -1029,8 +1281,117 @@ if ($video) {
             const vid = document.getElementById('shortVideo');
             const yt = document.getElementById('ytFrame');
             if (!pill || (!vid && !yt)) return;
+            let lastYoutubeViewState = -1;
+            let firstDirectPlayRecorded = false;
+            let lastViewRequestAt = 0;
+            const recordShortView = async () => {
+                const now = Date.now();
+                if (now - lastViewRequestAt < 800) return;
+                lastViewRequestAt = now;
+                try {
+                    const response = await fetch('view-api.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({
+                            video_id: <?= json_encode((string)$id) ?>,
+                            content_type: 'short'
+                        })
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        const label = document.getElementById('viewCount');
+                        if (label) label.textContent = Number(result.views).toLocaleString();
+                    }
+                } catch (error) {
+                    console.error('Could not record Short view:', error);
+                }
+            };
+            if (vid) {
+                vid.addEventListener('playing', () => {
+                    if (!firstDirectPlayRecorded) {
+                        firstDirectPlayRecorded = true;
+                        recordShortView();
+                    }
+                });
+                let previousTime = 0;
+                vid.addEventListener('timeupdate', () => {
+                    const duration = Number.isFinite(vid.duration) ? vid.duration : 0;
+                    if (duration > 1 && previousTime > duration - 0.75 && vid.currentTime < 1) {
+                        recordShortView();
+                    }
+                    previousTime = vid.currentTime;
+                });
+                let wasNearEnd = false;
+                vid.addEventListener('seeked', () => {
+                    const duration = Number.isFinite(vid.duration) ? vid.duration : 0;
+                    if (duration > 1 && wasNearEnd && vid.currentTime < 1) recordShortView();
+                    wasNearEnd = vid.currentTime > duration - 0.75;
+                });
+            }
+            const nextBtn = document.getElementById('nextBtn');
+            let advanced = false;
+            const advanceToNext = () => {
+                if (advanced || !nextBtn || nextBtn.classList.contains('disabled')) return;
+                const wait = Number(sessionStorage.getItem('vs-shorts-wheel-lock-until') || 0) - Date.now();
+                if (wait > 0) { setTimeout(advanceToNext, wait + 30); return; } // respect the 1s wait between shorts
+                advanced = true;
+                nextBtn.click();
+            };
 
-            const showPill = () => { pill.hidden = false; };
+            // Repeat (default) or go to the next short when this one ends. The choice is remembered.
+            let loopOn = true;
+            try { loopOn = localStorage.getItem('vs-shorts-loop') !== '0'; } catch (e) {}
+            let ytState = -1, ytCur = 0, ytDur = 0, ytStamp = 0, ytMuted = true;
+            const NEXT_SRC = <?= json_encode(($nextYt || $nextSrc === '') ? '' : $nextSrc) ?>;
+            const NEXT_YT = <?= json_encode((string)($nextYt ?: '')) ?>;
+
+            // remember a deliberate mute / unmute between shorts
+            let mutedPref = false;
+            try { mutedPref = localStorage.getItem('vs-shorts-muted') === '1'; } catch (e) {}
+            let lastAuto = 0;                          // changes the page makes by itself are not the viewer's choice
+            const markAuto = () => { lastAuto = Date.now(); };
+            const savePref = (m) => {
+                mutedPref = m;
+                try { localStorage.setItem('vs-shorts-muted', m ? '1' : '0'); } catch (e) {}
+                if (m) pill.hidden = true;
+            };
+
+            // black screen + spinner for about a second while the short loads, like YouTube Shorts
+            let warmed = false;
+            function warmNext() {
+                if (warmed) return;
+                warmed = true;
+                try {
+                    if (navigator.connection && navigator.connection.saveData) return;
+                    if (NEXT_YT) {
+                        const f = document.createElement('iframe');
+                        f.src = 'https://www.youtube.com/embed/' + encodeURIComponent(NEXT_YT) + '?autoplay=0&enablejsapi=1&playsinline=1&rel=0';
+                        f.tabIndex = -1; f.title = ''; f.setAttribute('aria-hidden', 'true');
+                        f.style.cssText = 'position:fixed;left:-9999px;top:0;width:200px;height:356px;border:0;opacity:0;pointer-events:none';
+                        document.body.appendChild(f);
+                    } else if (NEXT_SRC) {
+                        const v = document.createElement('video');
+                        v.preload = 'auto'; v.muted = true; v.src = NEXT_SRC; v.style.display = 'none';
+                        document.body.appendChild(v);
+                        v.load();
+                    }
+                } catch (e) {}
+            }
+            const loader = document.getElementById('playerLoader');
+            const loadStart = performance.now();
+            let loaderGone = false;
+            const hideLoader = () => {
+                if (loaderGone || !loader) return;
+                loaderGone = true;
+                setTimeout(() => loader.classList.add('done'), Math.max(0, 250 - (performance.now() - loadStart)));
+                setTimeout(warmNext, 1200);          // only after this short is up, so it never slows it down
+            };
+            if (vid) { vid.addEventListener('playing', hideLoader); if (!vid.paused && vid.readyState >= 3) hideLoader(); }
+            if (yt) yt.addEventListener('load', hideLoader);
+            setTimeout(hideLoader, 5000); // never leave the spinner stuck
+            setTimeout(warmNext, 6000);   // in case the loader never reported
+
+            const showPill = () => { if (!mutedPref) pill.hidden = false; };
             const hidePill = () => { pill.hidden = true; };
             const ytCmd = (func, args) => {
                 if (yt && yt.contentWindow) {
@@ -1038,12 +1399,14 @@ if ($video) {
                 }
             };
 
-            function unmute() {
+            function unmute(force) {
+                if (mutedPref && force !== true) return;   // the viewer chose to stay muted
+                if (force === true) savePref(false);
                 if (vid) {
                     vid.muted = false;
                     vid.volume = 1;
                     const p = vid.play();
-                    if (p && p.catch) p.catch(() => { vid.muted = true; vid.play().catch(() => {}); showPill(); });
+                    if (p && p.catch) p.catch(() => { markAuto(); vid.muted = true; vid.play().catch(() => {}); showPill(); });
                     if (!vid.muted) hidePill();
                 }
                 if (yt) {
@@ -1054,28 +1417,140 @@ if ($video) {
             }
 
             if (vid) {
-                vid.muted = false;
+                if (mutedPref) { markAuto(); vid.muted = true; } else vid.muted = false;
+                vid.addEventListener('volumechange', () => { if (Date.now() - lastAuto > 500) savePref(vid.muted || vid.volume === 0); });
                 const p = vid.play();
-                if (p && p.catch) p.catch(() => { vid.muted = true; vid.play().catch(() => {}); showPill(); });
+                if (p && p.catch) p.catch(() => { markAuto(); vid.muted = true; vid.play().catch(() => {}); showPill(); });
+                vid.addEventListener('ended', () => { if (loopOn) { vid.currentTime = 0; vid.play().catch(() => {}); } else advanceToNext(); });
             }
 
             if (yt) {
                 showPill();
                 yt.addEventListener('load', () => {
                     yt.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
-                    setTimeout(unmute, 600);
+                    yt.contentWindow.postMessage(JSON.stringify({
+                        event: 'command',
+                        func: 'addEventListener',
+                        args: ['onStateChange']
+                    }), '*');
+                    setTimeout(unmute, 600);   // does nothing when the viewer chose to stay muted
                 });
                 window.addEventListener('message', (e) => {
-                    if (!/youtube\.com$/.test(new URL(e.origin).hostname)) return;
+                    if (e.source !== yt.contentWindow || !/youtube\.com$/.test(new URL(e.origin).hostname)) return;
                     let d = e.data;
                     if (typeof d === 'string') { try { d = JSON.parse(d); } catch (err) { return; } }
+                    if (d && d.event === 'onStateChange' && typeof d.info === 'number') {
+                        ytState = d.info;
+                        if (ytState === 1 && lastYoutubeViewState !== 1) recordShortView();
+                        lastYoutubeViewState = ytState;
+                    }
+                    if (d && d.event === 'infoDelivery' && d.info) {
+                        if (typeof d.info.playerState === 'number') ytState = d.info.playerState;
+                        if (ytState === 1 && lastYoutubeViewState !== 1) recordShortView();
+                        if (typeof d.info.playerState === 'number') lastYoutubeViewState = ytState;
+                        if (typeof d.info.currentTime === 'number') { ytCur = d.info.currentTime; ytStamp = Date.now(); }
+                        if (typeof d.info.duration === 'number' && d.info.duration > 0) ytDur = d.info.duration;
+                    }
+                    if (ytState === 1) hideLoader();
+                    if ((d && d.event === 'onStateChange' && Number(d.info) === 0)
+                        || (d && d.event === 'infoDelivery' && d.info && Number(d.info.playerState) === 0)) {
+                        if (loopOn) { ytCmd('seekTo', [0, true]); ytCmd('playVideo'); } else advanceToNext();
+                    }
                     if (d && d.event === 'infoDelivery' && d.info && typeof d.info.muted === 'boolean') {
+                        ytMuted = d.info.muted;
                         d.info.muted ? showPill() : hidePill();
                     }
                 });
             }
 
-            pill.addEventListener('click', unmute);
+            // ----- repeat toggle -----
+            const loopBtn = document.getElementById('loopBtn');
+            const applyLoop = () => {
+                if (vid) vid.loop = loopOn;
+                if (!loopBtn) return;
+                loopBtn.classList.toggle('on', loopOn);
+                loopBtn.setAttribute('aria-pressed', String(loopOn));
+                const lbl = document.getElementById('loopLabel');
+                if (lbl) lbl.textContent = loopOn ? 'Repeat' : 'Auto-next';
+            };
+            applyLoop();
+            if (loopBtn) loopBtn.addEventListener('click', () => {
+                loopOn = !loopOn;
+                try { localStorage.setItem('vs-shorts-loop', loopOn ? '1' : '0'); } catch (e) {}
+                applyLoop();
+            });
+
+            // ----- tap = pause / play, double-tap = like -----
+            const tap = document.getElementById('tapLayer');
+            const burst = document.getElementById('tapBurst');
+            const flash = document.getElementById('tapFlash');
+            const likeEl = document.getElementById('likeBtn');
+            const playerBox = document.getElementById('playerWrap');
+            const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
+            const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
+            const replay = (el) => { el.classList.remove('go'); void el.offsetWidth; el.classList.add('go'); };
+            let tapTimer = null, lastTap = 0, tapIgnore = false;
+            // a tap that only turns the sound on (autoplay was blocked) should not also pause the short
+            document.addEventListener('pointerdown', () => { tapIgnore = !pill.hidden; }, true);
+            const togglePlay = () => {
+                let willPause;
+                if (vid) { willPause = !vid.paused; if (willPause) vid.pause(); else vid.play().catch(() => {}); }
+                else { willPause = ytState === 1; ytCmd(willPause ? 'pauseVideo' : 'playVideo'); }
+                if (flash) { flash.innerHTML = willPause ? ICON_PAUSE : ICON_PLAY; replay(flash); }
+            };
+            if (tap) tap.addEventListener('click', (e) => {
+                if (tapIgnore) { tapIgnore = false; return; }
+                const now = Date.now();
+                if (tapTimer && now - lastTap < 320) {            // second tap: like (never un-like)
+                    clearTimeout(tapTimer); tapTimer = null;
+                    if (burst && playerBox) {
+                        const r = playerBox.getBoundingClientRect();
+                        burst.style.left = (e.clientX - r.left) + 'px';
+                        burst.style.top = (e.clientY - r.top) + 'px';
+                        replay(burst);
+                    }
+                    if (likeEl && !likeEl.disabled && likeEl.getAttribute('aria-pressed') !== 'true') likeEl.click();
+                    return;
+                }
+                lastTap = now;
+                tapTimer = setTimeout(() => { tapTimer = null; togglePlay(); }, 320);
+            });
+
+            // ----- thin progress bar -----
+            const fill = document.getElementById('progressFill');
+            if (fill) {
+                const tick = () => {
+                    let p = 0;
+                    if (vid && vid.duration) p = vid.currentTime / vid.duration;
+                    else if (ytDur) p = (ytCur + (ytState === 1 ? (Date.now() - ytStamp) / 1000 : 0)) / ytDur;
+                    fill.style.width = (Math.max(0, Math.min(1, p)) * 100).toFixed(2) + '%';
+                    requestAnimationFrame(tick);
+                };
+                requestAnimationFrame(tick);
+            }
+
+            // ----- keyboard shortcuts: Space pause/play, M mute, L like -----
+            const toggleMute = () => {
+                const muted = vid ? vid.muted : ytMuted;
+                if (muted) { unmute(true); return; }
+                savePref(true);
+                if (vid) { markAuto(); vid.muted = true; }
+                if (yt) { ytCmd('mute'); ytMuted = true; }
+                hidePill();
+            };
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                const t = e.target;
+                if (t && t.closest && t.closest('input, textarea, select, button, a, [contenteditable=""], [contenteditable="true"]')) return;
+                const modal = document.getElementById('commentsModal');
+                if (modal && modal.classList.contains('open')) return;
+                const k = e.key.toLowerCase();
+                if (k === ' ' || k === 'spacebar') { e.preventDefault(); togglePlay(); }
+                else if (k === 'm') toggleMute();
+                else if (k === 'l' && likeEl && !likeEl.disabled) likeEl.click();
+            });
+
+            pill.addEventListener('click', () => unmute(true));
             ['pointerdown', 'keydown', 'touchend'].forEach((ev) => {
                 document.addEventListener(ev, function once() {
                     document.removeEventListener(ev, once, true);

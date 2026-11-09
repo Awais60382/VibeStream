@@ -70,11 +70,16 @@ if (!hash_equals((string)($_SESSION['premium_csrf'] ?? ''), (string)($in['csrf']
 try {
     vs_premium_ensure($pdo);
     $action = (string)($in['action'] ?? '');
-    if (vs_premium_is_admin($username)) {
+    if (vs_premium_is_admin($username) && $action !== 'checkin') {
         // Admins always have Premium: nothing to buy or cancel.
         vs_json(200, vs_premium_state($pdo, $username));
     }
-    if ($action === 'request') {
+    if ($action === 'checkin') {
+        $awarded = vs_rewards_claim_daily_checkin($pdo, $username);
+        $state = vs_premium_state($pdo, $username);
+        $state['checkinAwarded'] = $awarded;
+        vs_json(200, $state);
+    } elseif ($action === 'request') {
         $cur = vs_premium_get($pdo, $username);
         if (vs_premium_is_active($cur)) {
             // The only purchase allowed while Premium is active is the upgrade from Premium to Plus.
@@ -90,6 +95,11 @@ try {
         }
     } elseif ($action === 'cancel') {
         vs_premium_cancel($pdo, $username);
+    } elseif ($action === 'redeem') {
+        $err = vs_rewards_redeem_monthly($pdo, $username);
+        if ($err !== null) {
+            vs_json(400, ['error' => $err]);
+        }
     } else {
         vs_json(400, ['error' => 'Unknown action.']);
     }

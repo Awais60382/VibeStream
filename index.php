@@ -1,15 +1,44 @@
 <?php
 session_start();
 include "connection.php";
+// Banned accounts are signed out and shown the ban card (skipped safely if ban-guard.php is missing).
+if (is_file(__DIR__ . '/ban-guard.php')) {
+    try {
+        require_once __DIR__ . '/ban-guard.php';
+        if (function_exists('vs_bg_guard')) { vs_bg_guard(); }
+    } catch (Throwable $banGuardError) {
+        error_log('ban-guard: ' . $banGuardError->getMessage());
+    }
+}
+require_once __DIR__ . '/dashboard-events.php';
 require_once __DIR__ . '/icons.php';
 require_once __DIR__ . '/avatar.php';
 require_once __DIR__ . '/site-branding.php';
 require_once __DIR__ . '/notifications-store.php';
 require_once __DIR__ . '/user-menu.php';
 require_once __DIR__ . '/sidebar-navigation.php';
+require_once __DIR__ . '/vip-badge.php';
+require_once __DIR__ . '/live-store.php';
 $siteName = vs_branding_app_name();
 $defaultTheme = vs_branding_default_theme();
 vs_maintenance_gate();
+
+$liveStreams = [];
+try {
+    if (isset($pdo) && $pdo instanceof PDO) {
+        vs_live_ensure($pdo);
+        $liveStreams = $pdo->query(
+            "SELECT id, username, title, description, stream_url, thumbnail_url, status, scheduled_at, viewer_count
+             FROM live_streams
+             WHERE status IN ('live', 'scheduled')
+             ORDER BY status = 'live' DESC, started_at DESC, scheduled_at ASC
+             LIMIT 12"
+        )->fetchAll(PDO::FETCH_ASSOC);
+    }
+} catch (Throwable $error) {
+    error_log('index.php live streams: ' . $error->getMessage());
+    $liveStreams = [];
+}
 
 if (!function_exists('column_exists')) {
     function column_exists($conn, $table, $col) {
@@ -135,6 +164,9 @@ if (!function_exists('render_navbar')) {
             </div>
 
             <div class="nav-right">
+                <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
+                </button>
                 <button type="button" class="theme-toggle" id="themeToggle" data-vs-theme-toggle aria-label="Switch to light mode" title="Toggle light / dark theme">
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
                     <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
@@ -148,6 +180,7 @@ if (!function_exists('render_navbar')) {
                 <?php endif; ?>
             </div>
         </header>
+        <?php echo vs_site_announcement_html($GLOBALS['pdo'] ?? null); ?>
         <?php
     }
 }
@@ -160,12 +193,28 @@ if (!function_exists('render_sidebar')) {
 
 $hasTypeColumn = column_exists($conn, 'videos', 'type');
 $hasCategoryColumn = column_exists($conn, 'videos', 'category');
-$selectedCategory = strtolower(trim((string)($_GET['category'] ?? '')));
+$categoryInput = $_GET['category'] ?? '';
+$selectedCategory = strtolower(trim(is_scalar($categoryInput) ? (string)$categoryInput : ''));
 if (!preg_match('/^[a-z0-9 _-]{1,40}$/', $selectedCategory)) {
     $selectedCategory = '';
 }
-$search = trim($_GET['q'] ?? '');
-$feedMode = strtolower(trim((string)($_GET['feed'] ?? 'for_you')));
+$searchInput = $_GET['q'] ?? '';
+$search = trim(is_scalar($searchInput) ? (string)$searchInput : '');
+$search = mb_substr($search, 0, 100);
+$typeInput = $_GET['type'] ?? 'all';
+$selectedType = strtolower(trim(is_scalar($typeInput) ? (string)$typeInput : 'all'));
+if (!in_array($selectedType, ['all', 'video', 'short'], true) || (!$hasTypeColumn && $selectedType === 'short')) {
+    $selectedType = 'all';
+}
+$creatorInput = $_GET['creator'] ?? '';
+$creatorFilter = trim(mb_substr(is_scalar($creatorInput) ? (string)$creatorInput : '', 0, 80));
+$sortInput = $_GET['sort'] ?? 'relevance';
+$searchSort = strtolower(trim(is_scalar($sortInput) ? (string)$sortInput : 'relevance'));
+if (!in_array($searchSort, ['relevance', 'latest', 'popular'], true)) {
+    $searchSort = 'relevance';
+}
+$feedInput = $_GET['feed'] ?? 'for_you';
+$feedMode = strtolower(trim(is_scalar($feedInput) ? (string)$feedInput : 'for_you'));
 if (!in_array($feedMode, ['for_you', 'latest', 'popular'], true)) {
     $feedMode = 'for_you';
 }
@@ -175,19 +224,28 @@ if (!$hasCategoryColumn) {
     }
     $selectedCategory = '';
 }
+$hasSearchFilters = $search !== '' || $creatorFilter !== '';
 
-$perPage = 24;
+$perPage = $selectedType === 'short' ? 48 : 24;
 $page = max(1, (int)($_GET['page'] ?? 1));
 $offset = ($page - 1) * $perPage;
 
-$where = $hasTypeColumn ? "(type IS NULL OR type <> 'short')" : "1=1";
+$where = $selectedType === 'short' && $hasTypeColumn
+    ? "type = 'short'"
+    : ($hasTypeColumn ? "(type IS NULL OR type <> 'short')" : "1=1");
 $params = [];
 $types = '';
+$shortWhere = $hasTypeColumn ? "type = 'short'" : "1=0";
+$shortParams = [];
+$shortTypes = '';
 
 if ($selectedCategory !== '' && $hasCategoryColumn) {
     $where .= " AND LOWER(TRIM(category)) = ?";
     $params[] = $selectedCategory;
     $types .= 's';
+    $shortWhere .= " AND LOWER(TRIM(category)) = ?";
+    $shortParams[] = $selectedCategory;
+    $shortTypes .= 's';
 }
 
 if ($search !== '') {
@@ -195,6 +253,19 @@ if ($search !== '') {
     $like = '%' . $search . '%';
     array_push($params, $like, $like, $like);
     $types .= 'sss';
+    $shortWhere .= " AND (title LIKE ? OR username LIKE ? OR channel_name LIKE ?)";
+    array_push($shortParams, $like, $like, $like);
+    $shortTypes .= 'sss';
+}
+
+if ($creatorFilter !== '') {
+    $where .= " AND (username LIKE ? OR channel_name LIKE ?)";
+    $creatorLike = '%' . $creatorFilter . '%';
+    array_push($params, $creatorLike, $creatorLike);
+    $types .= 'ss';
+    $shortWhere .= " AND (username LIKE ? OR channel_name LIKE ?)";
+    array_push($shortParams, $creatorLike, $creatorLike);
+    $shortTypes .= 'ss';
 }
 
 $countStmt = $conn->prepare("SELECT COUNT(*) AS n FROM videos WHERE $where");
@@ -202,105 +273,156 @@ if ($types) $countStmt->bind_param($types, ...$params);
 $countStmt->execute();
 $totalVideos = (int)$countStmt->get_result()->fetch_assoc()['n'];
 $countStmt->close();
+$totalShorts = 0;
+if ($hasTypeColumn) {
+    $shortCountStmt = $conn->prepare("SELECT COUNT(*) AS n FROM videos WHERE $shortWhere");
+    if ($shortTypes !== '') $shortCountStmt->bind_param($shortTypes, ...$shortParams);
+    $shortCountStmt->execute();
+    $totalShorts = (int)$shortCountStmt->get_result()->fetch_assoc()['n'];
+    $shortCountStmt->close();
+}
+if ($selectedType === 'short') {
+    $totalVideos = $totalShorts;
+}
 $totalPages = max(1, (int)ceil($totalVideos / $perPage));
 if ($page > $totalPages) {
     $page = $totalPages;
     $offset = ($page - 1) * $perPage;
 }
 
-$followedCreators = [];
-$userId = filter_var($_SESSION['user_id'] ?? null, FILTER_VALIDATE_INT);
-if ($search === '' && $feedMode === 'for_you' && $userId !== false && $userId > 0) {
-    try {
-        $followedStmt = $conn->prepare('SELECT `channel_name`, `channel_username` FROM `user_subscriptions` WHERE `subscriber_id` = ?');
-        $followedStmt->bind_param('i', $userId);
-        $followedStmt->execute();
-        foreach ($followedStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $followed) {
-            foreach (['channel_username', 'channel_name'] as $column) {
-                $name = trim((string)($followed[$column] ?? ''));
-                if ($name !== '') {
-                    $followedCreators[mb_strtolower($name)] = $name;
-                }
-            }
-        }
-        $followedStmt->close();
-    } catch (Throwable $followedError) {
-        error_log('Home feed could not load followed creators: ' . $followedError->getMessage());
-    }
-}
-
-$orderParams = [];
-$orderTypes = '';
-if ($search !== '' || $feedMode === 'latest') {
-    $videoOrder = 'created_at DESC';
-} elseif ($feedMode === 'for_you' && $followedCreators) {
-    $placeholders = implode(',', array_fill(0, count($followedCreators), '?'));
-    $videoOrder = "CASE WHEN LOWER(COALESCE(NULLIF(username, ''), channel_name, '')) IN ($placeholders) THEN 0 ELSE 1 END, COALESCE(views, 0) DESC, created_at DESC";
-    $orderParams = array_values($followedCreators);
-    $orderTypes = str_repeat('s', count($orderParams));
-} else {
-    $videoOrder = 'COALESCE(views, 0) DESC, created_at DESC';
-}
-$sql = "SELECT * FROM videos WHERE $where ORDER BY $videoOrder LIMIT ? OFFSET ?";
-$stmt = $conn->prepare($sql);
-$bindTypes = $types . $orderTypes . 'ii';
-$bindParams = array_merge($params, $orderParams, [$perPage, $offset]);
-$stmt->bind_param($bindTypes, ...$bindParams);
-$stmt->execute();
-$videos = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
-
 if ($page <= 1 || empty($_SESSION['feed_seed'])) {
     $_SESSION['feed_seed'] = random_int(1, 2147483646);
 }
 $feedSeed = (int)$_SESSION['feed_seed'];
+
+$orderParams = [];
+$orderTypes = '';
+if ($hasSearchFilters) {
+    if ($searchSort === 'latest') {
+        $videoOrder = 'created_at DESC';
+    } elseif ($searchSort === 'popular') {
+        $videoOrder = 'COALESCE(views, 0) DESC, created_at DESC';
+    } else {
+        $videoOrder = '(title LIKE ?) DESC, (username LIKE ?) DESC, COALESCE(views, 0) DESC, created_at DESC';
+        $orderParams = [$search !== '' ? $search . '%' : '%', $creatorFilter !== '' ? $creatorFilter . '%' : '%'];
+        $orderTypes = 'ss';
+    }
+} elseif ($feedMode === 'latest') {
+    $videoOrder = 'created_at DESC';
+} elseif ($feedMode === 'for_you') {
+    $videoOrder = "RAND($feedSeed)";
+} else {
+    $videoOrder = 'COALESCE(views, 0) DESC, created_at DESC';
+}
+$sql = "SELECT * FROM videos WHERE $where ORDER BY $videoOrder LIMIT ? OFFSET ?";
+$videos = [];
+if ($selectedType !== 'short') {
+    $stmt = $conn->prepare($sql);
+    $bindTypes = $types . $orderTypes . 'ii';
+    $bindParams = array_merge($params, $orderParams, [$perPage, $offset]);
+    $stmt->bind_param($bindTypes, ...$bindParams);
+    $stmt->execute();
+    $videos = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+}
+
+if ($search !== '' && $page === 1 && isset($pdo) && $pdo instanceof PDO) {
+    try {
+        $searchTable = $pdo->query("SHOW TABLES LIKE 'search_logs'");
+        if ($searchTable && $searchTable->fetchColumn()) {
+            $searchResultCount = $selectedType === 'short'
+                ? $totalShorts
+                : ($totalVideos + ($selectedType === 'all' ? $totalShorts : 0));
+            $logSearch = $pdo->prepare(
+                'INSERT INTO `search_logs` (`query`, `results`, `user_id`, `created_at`)
+                 VALUES (:query, :results, :user_id, NOW())'
+            );
+            $userIdForSearch = filter_var($_SESSION['user_id'] ?? null, FILTER_VALIDATE_INT);
+            $logSearch->execute([
+                ':query' => mb_substr($search, 0, 100),
+                ':results' => $searchResultCount,
+                ':user_id' => ($userIdForSearch !== false && $userIdForSearch > 0) ? $userIdForSearch : null,
+            ]);
+        }
+    } catch (Throwable $searchLogError) {
+        error_log('Search query could not be recorded: ' . $searchLogError->getMessage());
+    }
+}
+
 $shortsPerPage = 48;   // shorts loaded per page (2 shorts after every video, so 2 x the videos per page)
 $shorts = [];
-if ($hasTypeColumn) {
-    $shortOrder = $search === '' ? "RAND($feedSeed)" : 'created_at DESC';
-    $sSql = "SELECT * FROM videos WHERE type = 'short'";
-    $sParams = [];
-    $sTypes = '';
-    if ($selectedCategory !== '' && $hasCategoryColumn) {
-        $sSql .= " AND LOWER(TRIM(category)) = ?";
-        $sParams[] = $selectedCategory;
-        $sTypes .= 's';
+if ($hasTypeColumn && $selectedType !== 'video') {
+    if ($hasSearchFilters) {
+        if ($searchSort === 'latest') {
+            $shortOrder = 'created_at DESC';
+            $shortOrderParams = [];
+            $shortOrderTypes = '';
+        } elseif ($searchSort === 'popular') {
+            $shortOrder = 'COALESCE(views, 0) DESC, created_at DESC';
+            $shortOrderParams = [];
+            $shortOrderTypes = '';
+        } else {
+            $shortOrder = '(title LIKE ?) DESC, (username LIKE ?) DESC, COALESCE(views, 0) DESC, created_at DESC';
+            $shortOrderParams = [$search !== '' ? $search . '%' : '%', $creatorFilter !== '' ? $creatorFilter . '%' : '%'];
+            $shortOrderTypes = 'ss';
+        }
+    } else {
+        $shortOrder = "RAND($feedSeed)";
+        $shortOrderParams = [];
+        $shortOrderTypes = '';
     }
-    if ($search !== '') {
-        $sSql .= " AND (title LIKE ? OR username LIKE ? OR channel_name LIKE ?)";
-        $like = '%' . $search . '%';
-        array_push($sParams, $like, $like, $like);
-        $sTypes .= 'sss';
-    }
-    $sSql .= " ORDER BY $shortOrder LIMIT " . (int)$shortsPerPage . " OFFSET " . (int)(($page - 1) * $shortsPerPage);
+    $sSql = "SELECT * FROM videos WHERE $shortWhere ORDER BY $shortOrder LIMIT ? OFFSET ?";
     $sStmt = $conn->prepare($sSql);
-    if ($sTypes !== '') {
-        $sStmt->bind_param($sTypes, ...$sParams);
-    }
+    $sParams = array_merge($shortParams, $shortOrderParams, [$shortsPerPage, ($page - 1) * $shortsPerPage]);
+    $sTypes = $shortTypes . $shortOrderTypes . 'ii';
+    $sStmt->bind_param($sTypes, ...$sParams);
     $sStmt->execute();
     $shorts = $sStmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $sStmt->close();
 }
 
 $categories = ['all'];
-if ($hasCategoryColumn) {
-    $catRes = $conn->query("SELECT DISTINCT LOWER(TRIM(category)) AS c FROM videos WHERE category IS NOT NULL AND category <> ''");
-    while ($catRes && ($row = $catRes->fetch_assoc())) {
-        if ($row['c'] !== '') $categories[] = $row['c'];
-    }
-}
+$categoryLabels = [];
+$categoryColors = [];
+$categoryCounts = [];
 $configuredCategories = [];
 try {
-    $configuredCategories = (array)vs_default_categories();
+    foreach (vs_categories_with_colors() as $configuredCategory) {
+        $categoryName = trim((string)($configuredCategory['name'] ?? ''));
+        $categorySlug = mb_strtolower($categoryName);
+        if ($categorySlug === '' || !preg_match('/^[a-z0-9 _-]{1,40}$/', $categorySlug)) {
+            continue;
+        }
+        $categories[] = $categorySlug;
+        $categoryLabels[$categorySlug] = $categoryName;
+        $categoryColors[$categorySlug] = (string)($configuredCategory['color'] ?? '');
+        $categoryCounts[$categorySlug] = 0;
+    }
 } catch (Throwable $categoryError) {
-    $configuredCategories = [];
+    error_log('Home page could not load configured categories: ' . $categoryError->getMessage());
 }
-if (!$configuredCategories) {
-    // same built-in list the sidebar falls back to
-    $configuredCategories = ['Music', 'Gaming', 'Movies', 'Live', 'Sports', 'News', 'Fashion', 'Education', 'Anime'];
+if (count($categories) === 1) {
+    foreach (['Music', 'Gaming', 'Movies', 'Live', 'Sports', 'News', 'Fashion', 'Education', 'Anime'] as $defaultCategory) {
+        $categorySlug = mb_strtolower($defaultCategory);
+        $categories[] = $categorySlug;
+        $categoryLabels[$categorySlug] = $defaultCategory;
+        $categoryCounts[$categorySlug] = 0;
+    }
 }
-foreach ($configuredCategories as $defaultCategory) {
-    $categories[] = strtolower(trim((string)$defaultCategory));
+if ($hasCategoryColumn) {
+    try {
+        $catRes = $conn->query("SELECT LOWER(TRIM(category)) AS c, COUNT(*) AS n FROM videos WHERE category IS NOT NULL AND category <> '' GROUP BY LOWER(TRIM(category))");
+        while ($catRes && ($row = $catRes->fetch_assoc())) {
+            $categorySlug = trim((string)($row['c'] ?? ''));
+            if ($categorySlug !== '' && preg_match('/^[a-z0-9 _-]{1,40}$/', $categorySlug)) {
+                $categories[] = $categorySlug;
+                $categoryLabels[$categorySlug] = $categoryLabels[$categorySlug] ?? ucfirst($categorySlug);
+                $categoryCounts[$categorySlug] = (int)$row['n'];
+            }
+        }
+    } catch (Throwable $categoryError) {
+        error_log('Home page could not load video categories: ' . $categoryError->getMessage());
+    }
 }
 $categories = array_values(array_unique($categories));
 
@@ -330,7 +452,11 @@ $categories = array_values(array_unique($categories));
     ?>
     <script>window.VS_SIDEBAR_ICONS = <?php echo json_encode($vsSiteIcons, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
     <script src="sidebar.js" defer></script>
+    <script src="sidebar-rail.js"></script>
     <script src="theme.js?v=3"></script>
+    <script src="brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/brain.js'); ?>" defer></script>
+    <link rel="stylesheet" href="neon-off.css?v=7">
+    <script src="neon-switch.js?v=7"></script>
     <link rel="stylesheet" href="style.css?v=5">
     <style>
         :root {
@@ -630,6 +756,7 @@ $categories = array_values(array_unique($categories));
         .chip {
             display: inline-flex;
             align-items: center;
+            gap: 7px;
             border: 1px solid #353535;
             background: var(--surface-2);
             color: var(--text);
@@ -648,6 +775,9 @@ $categories = array_values(array_unique($categories));
             border-color: rgba(176, 42, 42, 0.55);
             color: #ffffff;
         }
+        .category-chip-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; width: 18px; height: 18px; }
+        .category-chip-icon svg, .category-chip-icon img { display: block; width: 18px; height: 18px; object-fit: contain; }
+        .category-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; padding: 2px 6px; border-radius: 999px; background: rgba(128,128,128,.15); font-size: 11px; line-height: 1.2; font-variant-numeric: tabular-nums; }
 
         .section-head {
             display: flex;
@@ -667,6 +797,25 @@ $categories = array_values(array_unique($categories));
             color: var(--muted);
             font-size: 13px;
         }
+
+        .home-live-section { margin: 0 0 24px; }
+        .home-live-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+        .home-live-card {
+            min-width: 0; border-radius: 16px; overflow: hidden; background: var(--surface);
+            border: 1px solid var(--border); text-decoration: none; color: inherit;
+            transition: transform .18s ease, box-shadow .18s ease;
+        }
+        .home-live-card:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(0,0,0,.18); }
+        .home-live-thumb { position: relative; aspect-ratio: 16 / 9; background: linear-gradient(135deg,#23205c,#7c3aed); }
+        .home-live-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+        .home-live-status { position:absolute; left:10px; bottom:10px; border-radius:999px; padding:5px 8px; color:#fff; background:#e11d48; font-size:11px; font-weight:900; letter-spacing:.04em; }
+        .home-live-status.scheduled { background:#7c3aed; }
+        .home-live-copy { padding: 12px; }
+        .home-live-copy strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:5px; }
+        .home-live-meta { color:var(--muted); font-size:13px; }
+        @media(max-width:1050px){ .home-live-grid{grid-template-columns:repeat(3,minmax(0,1fr));} }
+        @media(max-width:760px){ .home-live-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;} }
+        @media(max-width:480px){ .home-live-grid{grid-template-columns:1fr;} }
 
         .video-grid {
             display: grid;
@@ -1034,7 +1183,26 @@ $categories = array_values(array_unique($categories));
         /* ---------- YouTube-style home page ---------- */
         .content-wrap { max-width: none; padding: 0 24px 40px; }
         .search-title { margin: 18px 0 0; font-size: 18px; font-weight: 500; }
-
+        .search-filter-form {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+            align-items: end; gap: 10px; margin: 14px 0 18px; padding: 14px;
+            border: 1px solid var(--border, rgba(128,128,128,.25)); border-radius: 14px;
+            background: var(--surface, rgba(128,128,128,.06));
+        }
+        .search-filter-form label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 12px; }
+        .search-filter-form input, .search-filter-form select {
+            width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px;
+            border: 1px solid var(--border, rgba(128,128,128,.35)); border-radius: 9px;
+            background: var(--surface-2, #fff); color: var(--text, #111);
+        }
+        .search-filter-form button, .search-filter-clear {
+            display: inline-flex; align-items: center; justify-content: center; min-height: 40px;
+            padding: 8px 14px; border: 0; border-radius: 9px; background: var(--accent, #8a5cff);
+            color: #fff; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+        }
+        .search-filter-clear { background: transparent; color: var(--text); border: 1px solid var(--border, rgba(128,128,128,.35)); }
+        .search-filter-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        @media(max-width:520px) { .search-filter-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         .chips-bar {
             position: sticky; top: var(--navbar-height); z-index: 40;
             gap: 12px; margin: 0 -24px 20px; padding: 12px 24px;
@@ -1120,9 +1288,311 @@ $categories = array_values(array_unique($categories));
     </style>
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
-    <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="theme.css?v=5">
     <link rel="stylesheet" href="search-suggest.css?v=2">
     <script src="search-suggest.js?v=2" defer></script>
+    <!-- NEON DARK THEME: only applies when the site is NOT in light mode. Stays after theme.css so it wins. -->
+    <style id="neon-dark">
+        html:not([data-theme="light"]) {
+            --bg: #05060f;
+            --surface: #0a0d1f;
+            --surface-2: #121634;
+            --surface-3: #171c42;
+            --surface-4: #0e1230;
+            --text: #eaf0ff;
+            --muted: #8f9bd0;
+            --border: #1d2557;
+            --accent: #ff2e93;
+            --accent-hover: #171c42;
+            --accent-soft: rgba(255, 46, 147, 0.18);
+            --blue: #00e5ff;
+            --neon-cyan: #00e5ff;
+            --neon-pink: #ff2e93;
+            --neon-violet: #8a5cff;
+        }
+        html:not([data-theme="light"]) body {
+            background:
+                radial-gradient(900px 480px at 8% -8%, rgba(138, 92, 255, 0.16), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0, 229, 255, 0.10), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.08), transparent 70%),
+                #05060f;
+            background-attachment: fixed;
+        }
+
+        /* top bar */
+        html:not([data-theme="light"]) .app-navbar {
+            background: rgba(5, 6, 15, 0.82);
+            border-bottom: 1px solid rgba(0, 229, 255, 0.35);
+            box-shadow: 0 1px 24px -4px rgba(0, 229, 255, 0.35), 0 8px 30px -12px rgba(138, 92, 255, 0.4);
+        }
+        html:not([data-theme="light"]) .brand {
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-violet) 55%, var(--neon-pink));
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent; color: transparent;
+            filter: drop-shadow(0 0 8px rgba(138, 92, 255, 0.65));
+        }
+        html:not([data-theme="light"]) .nav-toggle span { background: var(--neon-cyan); box-shadow: 0 0 6px var(--neon-cyan); }
+        html:not([data-theme="light"]) .nav-toggle:hover,
+        html:not([data-theme="light"]) .theme-toggle:hover { background: rgba(0, 229, 255, 0.12); box-shadow: 0 0 14px rgba(0, 229, 255, 0.35); }
+        html:not([data-theme="light"]) .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(255, 225, 77, 0.8)); }
+
+        /* search */
+        html:not([data-theme="light"]) #search-input {
+            background: rgba(10, 13, 31, 0.9);
+            border: 1px solid rgba(138, 92, 255, 0.55);
+            color: var(--text);
+            box-shadow: 0 0 10px -2px rgba(138, 92, 255, 0.45);
+            transition: box-shadow .2s ease, border-color .2s ease;
+        }
+        html:not([data-theme="light"]) #search-input::placeholder { color: #6f7bb0; }
+        html:not([data-theme="light"]) #search-input:focus {
+            outline: none; border-color: var(--neon-cyan);
+            box-shadow: 0 0 0 1px var(--neon-cyan), 0 0 22px rgba(0, 229, 255, 0.55);
+        }
+        html:not([data-theme="light"]) .search-form button { color: var(--neon-cyan); }
+
+        /* user pill + logout */
+        html:not([data-theme="light"]) .user-badge-pill {
+            background: linear-gradient(180deg, rgba(23, 28, 66, 0.9), rgba(10, 13, 31, 0.95));
+            border: 1px solid rgba(255, 46, 147, 0.55);
+            box-shadow: 0 0 14px -2px rgba(255, 46, 147, 0.45);
+        }
+        html:not([data-theme="light"]) .logout-link:hover { color: var(--neon-pink); text-shadow: 0 0 10px rgba(255, 46, 147, 0.8); }
+
+        /* sidebar */
+        html:not([data-theme="light"]) .app-sidebar {
+            background: linear-gradient(180deg, rgba(10, 13, 31, 0.97), rgba(5, 6, 15, 0.98));
+            border-right: 1px solid rgba(138, 92, 255, 0.4);
+            box-shadow: 4px 0 28px -10px rgba(138, 92, 255, 0.45);
+        }
+        html:not([data-theme="light"]) .app-sidebar a { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html:not([data-theme="light"]) .app-sidebar a:hover {
+            background: rgba(0, 229, 255, 0.10); color: #fff; box-shadow: inset 3px 0 0 var(--neon-cyan), 0 0 16px -4px rgba(0, 229, 255, 0.5);
+        }
+        html:not([data-theme="light"]) .app-sidebar a.active,
+        html:not([data-theme="light"]) .app-sidebar .active {
+            background: linear-gradient(90deg, rgba(255, 46, 147, 0.22), rgba(138, 92, 255, 0.12));
+            color: #fff; box-shadow: inset 3px 0 0 var(--neon-pink), 0 0 18px -4px rgba(255, 46, 147, 0.55);
+        }
+        html:not([data-theme="light"]) .sidebar-heading { color: var(--neon-cyan); text-shadow: 0 0 8px rgba(0, 229, 255, 0.55); }
+
+        /* category chips */
+        html:not([data-theme="light"]) .chips-bar { background: rgba(5, 6, 15, 0.85); backdrop-filter: blur(8px); }
+        html:not([data-theme="light"]) .chip {
+            background: rgba(23, 28, 66, 0.7); color: var(--text);
+            border: 1px solid rgba(138, 92, 255, 0.35);
+            transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+        }
+        html:not([data-theme="light"]) .chip:hover {
+            background: rgba(0, 229, 255, 0.12); border-color: var(--neon-cyan);
+            box-shadow: 0 0 14px rgba(0, 229, 255, 0.5); transform: translateY(-1px);
+        }
+        html:not([data-theme="light"]) .chip.active {
+            background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); color: #fff; border-color: transparent;
+            box-shadow: 0 0 18px rgba(255, 46, 147, 0.6);
+        }
+        html:not([data-theme="light"]) .chips-next { background: #05060f; box-shadow: -14px 0 12px #05060f; color: var(--neon-cyan); }
+
+        /* hero strip + badge */
+        html:not([data-theme="light"]) .hero-strip {
+            background: linear-gradient(135deg, rgba(20, 24, 70, 0.85), rgba(10, 13, 31, 0.9) 60%, rgba(60, 14, 60, 0.6));
+            border: 1px solid rgba(138, 92, 255, 0.5);
+            box-shadow: 0 0 30px -8px rgba(138, 92, 255, 0.6), inset 0 0 40px -20px rgba(0, 229, 255, 0.4);
+        }
+        html:not([data-theme="light"]) .hero-badge {
+            background: rgba(255, 46, 147, 0.14); color: #ff7ac0;
+            border: 1px solid rgba(255, 46, 147, 0.6); text-shadow: 0 0 8px rgba(255, 46, 147, 0.8);
+            box-shadow: 0 0 12px -2px rgba(255, 46, 147, 0.5);
+        }
+
+        /* thumbnails + cards */
+        html:not([data-theme="light"]) .thumbnail,
+        html:not([data-theme="light"]) .short-card-thumb {
+            border: 1px solid rgba(138, 92, 255, 0.25);
+            box-shadow: 0 0 0 0 rgba(0, 229, 255, 0);
+            transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease;
+        }
+        html:not([data-theme="light"]) .video-card-link:hover .thumbnail,
+        html:not([data-theme="light"]) .short-card-link:hover .short-card-thumb {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 22px rgba(0, 229, 255, 0.55), 0 0 44px -6px rgba(138, 92, 255, 0.55);
+            transform: translateY(-3px);
+        }
+        html:not([data-theme="light"]) .video-card-link:hover .video-info h3,
+        html:not([data-theme="light"]) .short-card-link:hover .short-card-title { color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0, 229, 255, 0.6); }
+        html:not([data-theme="light"]) .duration-badge { background: rgba(5, 6, 15, 0.85); color: var(--neon-cyan); border: 1px solid rgba(0, 229, 255, 0.45); }
+        html:not([data-theme="light"]) .channel-avatar { box-shadow: 0 0 0 2px rgba(255, 46, 147, 0.7), 0 0 10px rgba(255, 46, 147, 0.5); }
+        html:not([data-theme="light"]) .channel-name,
+        html:not([data-theme="light"]) .video-meta,
+        html:not([data-theme="light"]) .short-card-views { color: var(--muted); }
+        html:not([data-theme="light"]) .feed-shorts-title svg,
+        html:not([data-theme="light"]) .feed-shorts-title .shorts-title-icon { color: var(--neon-pink); filter: drop-shadow(0 0 6px rgba(255, 46, 147, 0.8)); }
+        html:not([data-theme="light"]) .feed-shorts-title { text-shadow: 0 0 12px rgba(138, 92, 255, 0.7); }
+
+        /* pagination + empty state */
+        html:not([data-theme="light"]) .pagination a,
+        html:not([data-theme="light"]) .pagination span { border: 1px solid rgba(138, 92, 255, 0.4); background: rgba(10, 13, 31, 0.8); }
+        html:not([data-theme="light"]) .pagination a:hover { border-color: var(--neon-cyan); box-shadow: 0 0 14px rgba(0, 229, 255, 0.5); color: #fff; }
+        html:not([data-theme="light"]) .pagination .current {
+            background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); border-color: transparent; color: #fff; box-shadow: 0 0 16px rgba(255, 46, 147, 0.6);
+        }
+        html:not([data-theme="light"]) .empty-state { background: rgba(10, 13, 31, 0.7); border: 1px dashed rgba(0, 229, 255, 0.45); box-shadow: 0 0 24px -8px rgba(0, 229, 255, 0.4); }
+
+        /* scrollbar */
+        html:not([data-theme="light"]) ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html:not([data-theme="light"]) ::-webkit-scrollbar-track { background: #05060f; }
+        html:not([data-theme="light"]) ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--neon-violet), var(--neon-pink)); border-radius: 8px; }
+        html:not([data-theme="light"]) ::selection { background: rgba(255, 46, 147, 0.45); color: #fff; }
+
+        @media (prefers-reduced-motion: reduce) {
+            html:not([data-theme="light"]) * { transition: none !important; }
+        }
+    </style>
+    <!-- NEON LIGHT THEME: same neon style, on a bright background (only when the site is in light mode) -->
+    <style id="neon-light">
+        html[data-theme="light"] {
+            --bg: #f4f6ff;
+            --surface: #ffffff;
+            --surface-2: #eceffd;
+            --surface-3: #e3e8fc;
+            --surface-4: #f0f2ff;
+            --text: #0b1030;
+            --muted: #55608f;
+            --border: #cfd6f7;
+            --accent: #ff2e93;
+            --accent-hover: #e3e8fc;
+            --accent-soft: rgba(255, 46, 147, 0.12);
+            --blue: #0090e0;
+            --neon-cyan: #00b8e6;
+            --neon-pink: #ff2e93;
+            --neon-violet: #7c4dff;
+        }
+        html[data-theme="light"] body {
+            background:
+                radial-gradient(900px 480px at 8% -8%, rgba(124, 77, 255, 0.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0, 184, 230, 0.14), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
+                #f4f6ff;
+            background-attachment: fixed;
+        }
+
+        html[data-theme="light"] .app-navbar {
+            background: rgba(255, 255, 255, 0.85);
+            border-bottom: 1px solid rgba(0, 184, 230, 0.55);
+            box-shadow: 0 1px 22px -4px rgba(0, 184, 230, 0.45), 0 8px 30px -12px rgba(124, 77, 255, 0.35);
+        }
+        html[data-theme="light"] .brand {
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-violet) 55%, var(--neon-pink));
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent; color: transparent;
+            filter: drop-shadow(0 0 6px rgba(124, 77, 255, 0.45));
+        }
+        html[data-theme="light"] .nav-toggle span { background: var(--neon-violet); box-shadow: 0 0 6px rgba(124, 77, 255, 0.6); }
+        html[data-theme="light"] .nav-toggle:hover,
+        html[data-theme="light"] .theme-toggle:hover { background: rgba(0, 184, 230, 0.14); box-shadow: 0 0 14px rgba(0, 184, 230, 0.4); }
+        html[data-theme="light"] .theme-toggle svg { color: var(--neon-violet); filter: drop-shadow(0 0 5px rgba(124, 77, 255, 0.6)); }
+
+        html[data-theme="light"] #search-input {
+            background: #ffffff;
+            border: 1px solid rgba(124, 77, 255, 0.55);
+            color: var(--text);
+            box-shadow: 0 0 10px -2px rgba(124, 77, 255, 0.4);
+            transition: box-shadow .2s ease, border-color .2s ease;
+        }
+        html[data-theme="light"] #search-input::placeholder { color: #8a94c4; }
+        html[data-theme="light"] #search-input:focus {
+            outline: none; border-color: var(--neon-cyan);
+            box-shadow: 0 0 0 1px var(--neon-cyan), 0 0 20px rgba(0, 184, 230, 0.5);
+        }
+        html[data-theme="light"] .search-form button { color: var(--neon-violet); }
+
+        html[data-theme="light"] .user-badge-pill {
+            background: linear-gradient(180deg, #ffffff, #f1f3ff);
+            border: 1px solid rgba(255, 46, 147, 0.55);
+            box-shadow: 0 0 14px -3px rgba(255, 46, 147, 0.45);
+        }
+        html[data-theme="light"] .logout-link:hover { color: var(--neon-pink); text-shadow: 0 0 8px rgba(255, 46, 147, 0.5); }
+
+        html[data-theme="light"] .app-sidebar {
+            background: linear-gradient(180deg, #ffffff, #f4f6ff);
+            border-right: 1px solid rgba(124, 77, 255, 0.35);
+            box-shadow: 4px 0 26px -12px rgba(124, 77, 255, 0.45);
+        }
+        html[data-theme="light"] .app-sidebar a { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html[data-theme="light"] .app-sidebar a:hover {
+            background: rgba(0, 184, 230, 0.12); box-shadow: inset 3px 0 0 var(--neon-cyan), 0 0 14px -4px rgba(0, 184, 230, 0.5);
+        }
+        html[data-theme="light"] .app-sidebar a.active,
+        html[data-theme="light"] .app-sidebar .active {
+            background: linear-gradient(90deg, rgba(255, 46, 147, 0.16), rgba(124, 77, 255, 0.10));
+            box-shadow: inset 3px 0 0 var(--neon-pink), 0 0 16px -4px rgba(255, 46, 147, 0.45);
+        }
+        html[data-theme="light"] .sidebar-heading { color: var(--neon-violet); text-shadow: 0 0 8px rgba(124, 77, 255, 0.35); }
+
+        html[data-theme="light"] .chips-bar { background: rgba(244, 246, 255, 0.88); backdrop-filter: blur(8px); }
+        html[data-theme="light"] .chip {
+            background: #ffffff; color: var(--text);
+            border: 1px solid rgba(124, 77, 255, 0.35);
+            transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+        }
+        html[data-theme="light"] .chip:hover {
+            background: rgba(0, 184, 230, 0.10); border-color: var(--neon-cyan);
+            box-shadow: 0 0 14px rgba(0, 184, 230, 0.5); transform: translateY(-1px);
+        }
+        html[data-theme="light"] .chip.active {
+            background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); color: #fff; border-color: transparent;
+            box-shadow: 0 0 18px rgba(255, 46, 147, 0.5);
+        }
+        html[data-theme="light"] .chips-next { background: #f4f6ff; box-shadow: -14px 0 12px #f4f6ff; color: var(--neon-violet); }
+
+        html[data-theme="light"] .hero-strip {
+            background: linear-gradient(135deg, #ffffff 0%, #eef1ff 55%, #fff0f8 100%);
+            border: 1px solid rgba(124, 77, 255, 0.45);
+            box-shadow: 0 0 28px -8px rgba(124, 77, 255, 0.5), inset 0 0 40px -22px rgba(0, 184, 230, 0.5);
+        }
+        html[data-theme="light"] .hero-badge {
+            background: rgba(255, 46, 147, 0.10); color: #d4147a;
+            border: 1px solid rgba(255, 46, 147, 0.55);
+            box-shadow: 0 0 12px -2px rgba(255, 46, 147, 0.4);
+        }
+
+        html[data-theme="light"] .thumbnail,
+        html[data-theme="light"] .short-card-thumb {
+            border: 1px solid rgba(124, 77, 255, 0.28);
+            transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease;
+        }
+        html[data-theme="light"] .video-card-link:hover .thumbnail,
+        html[data-theme="light"] .short-card-link:hover .short-card-thumb {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 184, 230, 0.5), 0 0 40px -6px rgba(124, 77, 255, 0.45);
+            transform: translateY(-3px);
+        }
+        html[data-theme="light"] .video-card-link:hover .video-info h3,
+        html[data-theme="light"] .short-card-link:hover .short-card-title { color: #0086b3; text-shadow: 0 0 8px rgba(0, 184, 230, 0.35); }
+        html[data-theme="light"] .duration-badge { background: rgba(11, 16, 48, 0.88); color: #7defff; border: 1px solid rgba(0, 184, 230, 0.55); }
+        html[data-theme="light"] .channel-avatar { box-shadow: 0 0 0 2px rgba(255, 46, 147, 0.7), 0 0 10px rgba(255, 46, 147, 0.4); }
+        html[data-theme="light"] .feed-shorts-title svg,
+        html[data-theme="light"] .feed-shorts-title .shorts-title-icon { color: var(--neon-pink); filter: drop-shadow(0 0 5px rgba(255, 46, 147, 0.55)); }
+        html[data-theme="light"] .feed-shorts-title { text-shadow: 0 0 10px rgba(124, 77, 255, 0.35); }
+
+        html[data-theme="light"] .pagination a,
+        html[data-theme="light"] .pagination span { border: 1px solid rgba(124, 77, 255, 0.4); background: #ffffff; }
+        html[data-theme="light"] .pagination a:hover { border-color: var(--neon-cyan); box-shadow: 0 0 14px rgba(0, 184, 230, 0.5); }
+        html[data-theme="light"] .pagination .current {
+            background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); border-color: transparent; color: #fff; box-shadow: 0 0 16px rgba(255, 46, 147, 0.5);
+        }
+        html[data-theme="light"] .empty-state { background: rgba(255, 255, 255, 0.8); border: 1px dashed rgba(0, 184, 230, 0.55); box-shadow: 0 0 24px -8px rgba(0, 184, 230, 0.4); }
+
+        html[data-theme="light"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html[data-theme="light"] ::-webkit-scrollbar-track { background: #eceffd; }
+        html[data-theme="light"] ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--neon-violet), var(--neon-pink)); border-radius: 8px; }
+        html[data-theme="light"] ::selection { background: rgba(255, 46, 147, 0.3); }
+
+        @media (prefers-reduced-motion: reduce) {
+            html[data-theme="light"] * { transition: none !important; }
+        }
+    </style>
+    <link rel="stylesheet" href="sidebar-rail.css?v=1">
 </head>
 <body>
     <?php render_navbar('home'); ?>
@@ -1135,8 +1605,46 @@ $categories = array_values(array_unique($categories));
 
             <main class="app-main">
                 <div class="content-wrap">
-                    <?php if ($search !== ''): ?>
-                        <h1 class="search-title">Search results for &ldquo;<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>&rdquo;</h1>
+                    <?php if ($hasSearchFilters): ?>
+                        <h1 class="search-title"><?php echo $search !== '' ? 'Search results for &ldquo;' . htmlspecialchars($search, ENT_QUOTES, 'UTF-8') . '&rdquo;' : 'Creator results'; ?></h1>
+                        <form class="search-filter-form" action="index.php" method="get" aria-label="Filter search results">
+                            <input type="hidden" name="q" value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>">
+                            <label>
+                                Creator
+                                <input type="text" name="creator" value="<?php echo htmlspecialchars($creatorFilter, ENT_QUOTES, 'UTF-8'); ?>" placeholder="Any creator" maxlength="80">
+                            </label>
+                            <label>
+                                Content type
+                                <select name="type">
+                                    <option value="all"<?php echo $selectedType === 'all' ? ' selected' : ''; ?>>Videos and Shorts</option>
+                                    <option value="video"<?php echo $selectedType === 'video' ? ' selected' : ''; ?>>Videos only</option>
+                                    <?php if ($hasTypeColumn): ?><option value="short"<?php echo $selectedType === 'short' ? ' selected' : ''; ?>>Shorts only</option><?php endif; ?>
+                                </select>
+                            </label>
+                            <?php if ($hasCategoryColumn): ?>
+                                <label>
+                                    Category
+                                    <select name="category">
+                                        <option value="">All categories</option>
+                                        <?php foreach (array_slice($categories, 1) as $filterCategory): ?>
+                                            <option value="<?php echo htmlspecialchars($filterCategory, ENT_QUOTES, 'UTF-8'); ?>"<?php echo $selectedCategory === $filterCategory ? ' selected' : ''; ?>><?php echo htmlspecialchars($categoryLabels[$filterCategory] ?? ucfirst($filterCategory), ENT_QUOTES, 'UTF-8'); ?><?php if ($hasCategoryColumn): ?> (<?php echo number_format((int)($categoryCounts[$filterCategory] ?? 0)); ?>)<?php endif; ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                            <?php endif; ?>
+                            <label>
+                                Sort by
+                                <select name="sort">
+                                    <option value="relevance"<?php echo $searchSort === 'relevance' ? ' selected' : ''; ?>>Most relevant</option>
+                                    <option value="latest"<?php echo $searchSort === 'latest' ? ' selected' : ''; ?>>Newest</option>
+                                    <option value="popular"<?php echo $searchSort === 'popular' ? ' selected' : ''; ?>>Most viewed</option>
+                                </select>
+                            </label>
+                            <div class="search-filter-actions">
+                                <button type="submit">Apply filters</button>
+                                <a class="search-filter-clear" href="index.php">Clear</a>
+                            </div>
+                        </form>
                     <?php endif; ?>
 
                     <nav class="chips-bar" aria-label="Video categories">
@@ -1154,7 +1662,11 @@ $categories = array_values(array_unique($categories));
                                 $categoryHref = 'index.php' . ($categoryQuery ? '?' . http_build_query($categoryQuery) : '');
                             ?>
                             <a class="chip<?php echo $isCategoryActive ? ' active' : ''; ?>" href="<?php echo htmlspecialchars($categoryHref); ?>"<?php echo $isCategoryActive ? ' aria-current="page"' : ''; ?>>
-                                <?php echo htmlspecialchars(ucfirst($cat)); ?>
+                                <?php if ($cat !== 'all'): ?>
+                                    <span class="category-chip-icon" style="color:<?php echo htmlspecialchars($categoryColors[$cat] ?? 'currentColor', ENT_QUOTES, 'UTF-8'); ?>"><?php echo vs_category_icon_html($categoryLabels[$cat] ?? ucfirst($cat), 18); ?></span>
+                                <?php endif; ?>
+                                <?php echo htmlspecialchars($cat === 'all' ? 'All' : ($categoryLabels[$cat] ?? ucfirst($cat)), ENT_QUOTES, 'UTF-8'); ?>
+                                <?php if ($cat !== 'all' && $hasCategoryColumn): ?><span class="category-count" aria-label="<?php echo number_format((int)($categoryCounts[$cat] ?? 0)); ?> videos"><?php echo number_format((int)($categoryCounts[$cat] ?? 0)); ?></span><?php endif; ?>
                             </a>
                         <?php endforeach; ?>
                         <button type="button" class="chips-next" id="chipsNext" aria-label="Scroll categories">&#8250;</button>
@@ -1184,6 +1696,83 @@ $categories = array_values(array_unique($categories));
                     </nav>
                     <?php endif; ?>
 
+                    <?php if ($search === ''): ?>
+                    <section class="home-live-section" id="homeLiveSection" aria-label="Live streams"<?= empty($liveStreams) ? ' style="display:none"' : '' ?>>
+                        <div class="section-head">
+                            <div>
+                                <h2>Live &amp; upcoming</h2>
+                                <p>Streams happening now and scheduled next</p>
+                            </div>
+                            <a class="channel-name" href="live.php">View all</a>
+                        </div>
+                        <div class="home-live-grid" id="homeLiveGrid">
+                            <?php foreach ($liveStreams as $liveStream):
+                                $liveId = (int)$liveStream['id'];
+                                $liveTitle = htmlspecialchars((string)$liveStream['title'], ENT_QUOTES, 'UTF-8');
+                                $liveUser = htmlspecialchars((string)$liveStream['username'], ENT_QUOTES, 'UTF-8');
+                                $liveStatus = (string)$liveStream['status'];
+                                $liveThumb = trim((string)$liveStream['thumbnail_url']);
+                                $liveYoutubeId = $liveThumb !== '' ? extract_youtube_id($liveThumb, true) : null;
+                                if ($liveYoutubeId !== null) {
+                                    $liveThumb = 'https://i.ytimg.com/vi/' . rawurlencode($liveYoutubeId) . '/hqdefault.jpg';
+                                }
+                            ?>
+                            <a class="home-live-card" href="live.php?stream=<?= $liveId ?>">
+                                <div class="home-live-thumb">
+                                    <?php if ($liveThumb !== ''): ?>
+                                    <img src="<?= htmlspecialchars($liveThumb, ENT_QUOTES, 'UTF-8') ?>" alt="<?= $liveTitle ?>" loading="lazy" onerror="this.style.display='none'">
+                                    <?php endif; ?>
+                                    <span class="home-live-status<?= $liveStatus === 'scheduled' ? ' scheduled' : '' ?>"><?= $liveStatus === 'live' ? 'LIVE' : 'UPCOMING' ?></span>
+                                </div>
+                                <div class="home-live-copy">
+                                    <strong><?= $liveTitle ?></strong>
+                                    <span class="home-live-meta"><?= $liveUser ?> · <?= $liveStatus === 'live' ? number_format((int)$liveStream['viewer_count']) . ' watching' : 'Scheduled' ?></span>
+                                </div>
+                            </a>
+                            <?php endforeach; ?>
+                        </div>
+                    </section>
+                    <script>
+                    (() => {
+                        const section = document.getElementById('homeLiveSection');
+                        const grid = document.getElementById('homeLiveGrid');
+                        if (!section || !grid) return;
+                        const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+                        const youtubeId = (url) => {
+                            const match = String(url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?.*?v=|embed\/|shorts\/|live\/|v\/))([A-Za-z0-9_-]{11})/i)
+                                || String(url || '').match(/[?&]v=([A-Za-z0-9_-]{11})/i);
+                            return match ? match[1] : '';
+                        };
+                        async function refreshLive() {
+                            try {
+                                const response = await fetch('live-api.php?action=list', {cache:'no-store', credentials:'same-origin'});
+                                const data = await response.json();
+                                if (!response.ok || !data.ok) return;
+                                if (!data.streams.length) { section.style.display = 'none'; return; }
+                                section.style.display = '';
+                                grid.innerHTML = data.streams.slice(0, 12).map(stream => {
+                                    const status = stream.status === 'live' ? 'LIVE' : 'UPCOMING';
+                                    const scheduledClass = stream.status === 'scheduled' ? ' scheduled' : '';
+                                    const ytId = youtubeId(stream.thumbnail_url || '');
+                                    const thumb = ytId ? 'https://i.ytimg.com/vi/' + encodeURIComponent(ytId) + '/hqdefault.jpg' : (stream.thumbnail_url || '');
+                                    const meta = stream.status === 'live' ? Number(stream.viewer_count || 0).toLocaleString() + ' watching' : 'Scheduled';
+                                    return '<a class="home-live-card" href="live.php?stream=' + Number(stream.id) + '">' +
+                                        '<div class="home-live-thumb">' +
+                                        (thumb ? '<img src="' + escapeHtml(thumb) + '" alt="' + escapeHtml(stream.title) + '" loading="lazy" onerror="this.style.display=\'none\'">' : '') +
+                                        '<span class="home-live-status' + scheduledClass + '">' + status + '</span></div>' +
+                                        '<div class="home-live-copy"><strong>' + escapeHtml(stream.title) + '</strong>' +
+                                        '<span class="home-live-meta">' + escapeHtml(stream.username) + ' · ' + escapeHtml(meta) + '</span></div></a>';
+                                }).join('');
+                            } catch (error) {}
+                        }
+                        refreshLive();
+                        setInterval(refreshLive, 15000);
+                    })();
+                    </script>
+                    <?php endif; ?>
+
+                    <?php echo vs_ads_html(); ?>
+
                     <?php
                     // ----- Feed layout: videos, shorts, videos, shorts ... ending with videos -----
                     // Desktop: a row of 4 videos, then a row of 6 shorts, repeat.
@@ -1211,7 +1800,7 @@ $categories = array_values(array_unique($categories));
                              data-vm-channel="<?php echo $username; ?>"
                              data-vm-kind="video"
                              data-vm-url="<?php echo htmlspecialchars($watchHref); ?>"<?php if ($realYt === null && $src !== '') { ?>
-                             data-vm-download="<?php echo htmlspecialchars((string)$src); ?>"<?php } ?>>
+                             <?php echo vs_download_attr((string)$row['id'], $conn ?? null); ?><?php } ?>>
                             <a href="<?php echo htmlspecialchars($watchHref); ?>" class="video-card-link">
                                 <div class="thumbnail">
                                     <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
@@ -1338,6 +1927,6 @@ $categories = array_values(array_unique($categories));
     </div>
 
     <?php /* The Report popup loads on demand from video-menu.js (report-widget.php), so the cards' three dots never depend on it. */ ?>
-    <script src="video-menu.js?v=3"></script>
+    <script src="video-menu.js?v=4"></script>
 </body>
 </html>

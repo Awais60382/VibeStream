@@ -4,6 +4,10 @@ require_once __DIR__ . '/site-branding.php';
 require_once __DIR__ . '/notifications-store.php';
 require_once __DIR__ . '/user-menu.php';
 require_once __DIR__ . '/sidebar-navigation.php';
+require_once __DIR__ . '/dashboard-events.php';
+if (!isset($GLOBALS['pdo']) || !($GLOBALS['pdo'] instanceof PDO)) {
+    require_once __DIR__ . '/connection.php';
+}
 $siteName = vs_branding_app_name();
 $defaultTheme = vs_branding_default_theme();
 
@@ -81,6 +85,9 @@ if (!function_exists('render_navbar')) {
             </div>
 
             <div class="nav-right">
+                <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
+                </button>
                 <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                 </button>
@@ -260,13 +267,29 @@ if (!function_exists('vs_page_start')) {
     <link rel="apple-touch-icon" href="branding-icon.php">
     <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?></title>
     <script src="theme.js?v=3"></script>
+    <link rel="stylesheet" href="neon-off.css?v=7">
+    <script src="neon-switch.js?v=7"></script>
+    <?php
+    // The page CSS is split where its "NEON THEME" section starts, so the neon on/off button can switch that part off.
+    $vsCssAll = (string)$extraCss;
+    $vsNeonAt = strpos($vsCssAll, '/* ===== NEON THEME (dark + light)');
+    $vsCssBase = $vsNeonAt === false ? $vsCssAll : substr($vsCssAll, 0, $vsNeonAt);
+    $vsCssNeon = $vsNeonAt === false ? '' : substr($vsCssAll, $vsNeonAt);
+    ?>
     <style><?= vs_base_css() ?>
-<?= $extraCss ?></style>
+<?= $vsCssBase ?></style>
+    <?php if ($vsCssNeon !== ''): ?><style data-vs-neon><?= $vsCssNeon ?></style><?php endif; ?>
     <link rel="stylesheet" href="sidebar.css">
-    <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="theme.css?v=5">
+    <link rel="stylesheet" href="sidebar-rail.css?v=1">
+    <link rel="stylesheet" href="searchable-select.css?v=<?= (int)@filemtime(__DIR__ . '/searchable-select.css') ?>">
+    <script src="searchable-select.js?v=<?= (int)@filemtime(__DIR__ . '/searchable-select.js') ?>" defer></script>
+    <script src="sidebar-rail.js?v=1"></script>
+    <script src="brain.js?v=<?= (int)@filemtime(__DIR__ . '/brain.js') ?>" defer></script>
 </head>
 <body>
     <?php render_navbar($active); ?>
+    <?php echo vs_site_announcement_html($GLOBALS['pdo'] ?? null); ?>
     <div class="admin-shell">
     <div class="sidebar-backdrop" data-sidebar-close></div>
     <div class="app-layout">

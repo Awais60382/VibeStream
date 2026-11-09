@@ -3,6 +3,7 @@
 require_once __DIR__ . '/sidebar-subscriptions.php';
 require_once __DIR__ . '/category-presets.php';
 require_once __DIR__ . '/sidebar-icons-store.php';
+require_once __DIR__ . '/vip-badge.php';
 
 /**
  * Prefix a relative sidebar link with $GLOBALS['vs_sidebar_base'].
@@ -43,6 +44,7 @@ function vs_render_sidebar(string $active = 'home'): void
         'subscriptions' => $svg('<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M6 3h12M9 11l5 3-5 3z"/>'),
         'upload' => $svg('<path d="M12 16V4m-5 5 5-5 5 5"/><path d="M4 16v4h16v-4"/>'),
         'trend' => $svg('<path d="M4 18 10 12l4 4 6-8"/><path d="M14 8h6v6"/>'),
+        'analytics' => $svg('<path d="M4 19V5M4 19h17"/><path d="m7 15 4-4 3 2 5-7"/>'),
         'admin' => $svg('<path d="M12 2 4 5v6c0 5 3.4 8.8 8 11 4.6-2.2 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>'),
         'premium' => $svg('<path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M10 3 8 9l4 12 4-12-2-6"/>'),
         // Explore categories
@@ -50,6 +52,7 @@ function vs_render_sidebar(string $active = 'home'): void
         'gaming' => $svg('<path d="M6 11h4M8 9v4"/><path d="M15 12h.01M18 10h.01"/><path d="M17.3 5H6.7a4 4 0 0 0-3.9 3.2l-1.3 6.4A3 3 0 0 0 4.4 18c1 0 1.9-.5 2.4-1.3L8 15h8l1.2 1.7c.5.8 1.4 1.3 2.4 1.3a3 3 0 0 0 2.9-3.4l-1.3-6.4A4 4 0 0 0 17.3 5z"/>'),
         'movies' => $svg('<rect x="3" y="9" width="18" height="12" rx="2"/><path d="m3 9 2.5-5 3.5 1.5L6.5 9M9 5.5 12.5 4 15 9M12.5 4l4 1.5L14 9M16.5 5.5 20 7l-1.5 2"/>'),
         'live' => $svg('<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19.1 4.9a10 10 0 0 1 0 14.2M4.9 19.1a10 10 0 0 1 0-14.2"/>'),
+        'membership' => $svg('<path d="M12 2 4 5v6c0 5 3.4 8.8 8 11 4.6-2.2 8-6 8-11V5z"/><path d="m8 11 2.5 2.5L16 8"/>'),
         'sports' => $svg('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'),
         'news' => $svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h6v5H7zM16 8h1M16 11h1M7 16h10"/>'),
         'fashion' => $svg('<path d="M8 3 3 6l2 4 3-1v12h8V9l3 1 2-4-5-3a4 4 0 0 1-8 0z"/>'),
@@ -147,14 +150,65 @@ function vs_render_sidebar(string $active = 'home'): void
                 ['key' => 'history', 'label' => 'History', 'href' => 'history.php', 'icon' => 'history'],
                 ['key' => 'watch-later', 'label' => 'Watch later', 'href' => 'watch-later.php', 'icon' => 'later'],
                 ['key' => 'playlists', 'label' => 'Playlists', 'href' => 'playlists.php', 'icon' => 'playlist'],
-                ['key' => 'liked', 'label' => 'Liked videos', 'href' => 'playlists.php?list=liked', 'icon' => 'liked'],
+                ['key' => 'liked', 'label' => 'Liked videos', 'href' => 'liked.php', 'icon' => 'liked'],
                 ['key' => 'subscriptions', 'label' => 'All subscriptions', 'href' => 'subscriptions.php', 'icon' => 'subscriptions'],
                 ['key' => 'upload', 'label' => 'Upload Video', 'href' => 'upload.php', 'icon' => 'upload'],
+                ['key' => 'live', 'label' => 'Live streams', 'href' => 'live.php', 'icon' => 'live'],
+                ['key' => 'membership', 'label' => 'Channel memberships', 'href' => 'memberships.php', 'icon' => 'membership'],
+                ['key' => 'creator-analytics', 'label' => 'Creator Analytics', 'href' => 'creator-analytics.php', 'icon' => 'analytics'],
                 ['key' => 'premium', 'label' => 'Premium', 'href' => 'premium.php', 'icon' => 'premium', 'color' => '#f5b942'],
             ],
         ],
         ['id' => 'explore', 'title' => 'Explore', 'items' => $exploreItems, 'collapse' => 3],
     ];
+    // Sections and menu items the owner added in Admin > Site icons > Sidebar menu.
+    $customFile = __DIR__ . '/sidebar-custom-store.php';
+    if (is_file($customFile)) {
+        try {
+            require_once $customFile;
+            $custom = vs_csb_load();
+            $customItem = static function (array $it) use ($icons): array {
+                $iconHtml = $it['icon'] !== ''
+                    ? '<img src="' . htmlspecialchars(vs_sidebar_url(vs_csb_icon_url($it['icon']))) . '" alt="" width="24" height="24" style="width:24px;height:24px;object-fit:contain;border-radius:6px">'
+                    : $icons['tag'];
+                return ['key' => 'custom_' . $it['id'], 'label' => $it['label'], 'href' => $it['href'], 'icon' => 'tag', 'icon_html' => $iconHtml, 'custom' => true];
+            };
+            // Items for the built-in sections (Main, You, Explore)
+            foreach ($sections as &$builtIn) {
+                foreach ($custom['items'] as $it) {
+                    if (($builtIn['id'] ?? '') === $it['section'] && isset($builtIn['items'])) {
+                        $builtIn['items'][] = $customItem($it);
+                    }
+                }
+            }
+            unset($builtIn);
+            // The owner's own sections
+            foreach ($custom['sections'] as $cs) {
+                $csItems = [];
+                foreach ($custom['items'] as $it) {
+                    if ($it['section'] === $cs['id']) {
+                        $csItems[] = $customItem($it);
+                    }
+                }
+                if (!$csItems) {
+                    continue;   // an empty section is not shown
+                }
+                $newSection = ['id' => 'custom_' . $cs['id'], 'title' => $cs['title'], 'items' => $csItems];
+                $at = count($sections);
+                if ($cs['place'] === 'before_explore') {
+                    foreach ($sections as $pos => $existing) {
+                        if (($existing['id'] ?? '') === 'explore') {
+                            $at = $pos;
+                            break;
+                        }
+                    }
+                }
+                array_splice($sections, $at, 0, [$newSection]);
+            }
+        } catch (Throwable $customError) {
+            error_log('Custom sidebar items failed: ' . $customError->getMessage());
+        }
+    }
     if (isset($_SESSION['AdminSession']) || (isset($_SESSION['role']) && strcasecmp((string)$_SESSION['role'], 'Admin') === 0)) {
         $sections[] = [
             'id' => 'admin',
@@ -162,7 +216,6 @@ function vs_render_sidebar(string $active = 'home'): void
                 ['key' => 'adminpanel', 'label' => 'Admin Panel', 'href' => 'adminpanel/index.php', 'icon' => 'admin'],
                 ['key' => 'adminpremium', 'label' => 'Premium members', 'href' => 'adminpanel/premium.php', 'icon' => 'premium'],
                 ['key' => 'adminreports', 'label' => 'Reported content', 'href' => 'adminpanel/reported.php', 'icon' => 'flag'],
-                ['key' => 'adminvidcats', 'label' => 'Video categories', 'href' => 'adminpanel/video-categories.php', 'icon' => 'tag'],
             ],
         ];
     }
@@ -223,6 +276,14 @@ function vs_render_sidebar(string $active = 'home'): void
                     $siteIconKey = $item['key'] === 'category' ? (string)($item['category'] ?? '') : $item['key'];
                     $siteIcon = vs_si_html('site', $siteIconKey, '', 24);
                     $iconHtml = $siteIcon !== '' ? $siteIcon : $icons[$item['icon']];
+                    if (!empty($item['custom'])) {
+                        $iconHtml = $item['icon_html'];
+                        $itemPath = parse_url((string)$item['href'], PHP_URL_PATH);
+                        if (!$isActive && parse_url((string)$item['href'], PHP_URL_HOST) === null && $itemPath
+                            && basename($itemPath) === basename((string)($_SERVER['SCRIPT_NAME'] ?? ''))) {
+                            $isActive = true;   // the owner's link points at the page being viewed
+                        }
+                    }
                 ?>
                     <a class="sidebar-link<?php echo $isActive ? ' active' : ''; ?><?php echo ($collapsible && $itemIndex >= $collapse) ? ' vs-extra' : ''; ?>" href="<?php echo htmlspecialchars(vs_sidebar_url($item['href'])); ?>"<?php echo $isActive ? ' aria-current="page"' : ''; ?>>
                         <span class="sidebar-icon"<?php echo $iconStyle; ?>><?php echo $iconHtml; ?></span>
@@ -239,9 +300,10 @@ function vs_render_sidebar(string $active = 'home'): void
         <?php endforeach; ?>
         <a class="sidebar-account" href="<?php echo htmlspecialchars(vs_sidebar_url($isLoggedIn ? 'profile.php' : 'login.php')); ?>">
             <?php if ($isLoggedIn): ?>
-                <?php echo avatar_html($username, 34, 'sidebar-account-avatar'); ?>
+                <?php $vipDb = $GLOBALS['conn'] ?? ($GLOBALS['pdo'] ?? null); ?>
+                <?php echo vs_vip_ring_auto_open($username, $vipDb); ?><?php echo avatar_html($username, 34, 'sidebar-account-avatar'); ?><?php echo vs_vip_ring_auto_close($username, $vipDb); ?>
                 <span class="sidebar-account-copy">
-                    <strong><?php echo htmlspecialchars($username); ?></strong>
+                    <strong><?php echo htmlspecialchars($username); ?><?php echo vs_vip_badge($username, $vipDb, 16); ?></strong>
                     <small>Your channel</small>
                 </span>
             <?php else: ?>

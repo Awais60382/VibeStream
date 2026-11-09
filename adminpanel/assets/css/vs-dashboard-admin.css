@@ -1,0 +1,146 @@
+html body .admin-sidebar {
+  background: var(--nx-side) !important;
+  border-right: 1px solid rgba(22, 119, 255, .3) !important;
+  box-shadow: 4px 0 24px -12px rgba(22, 119, 255, .45) !important;
+}
+
+html body .admin-sidebar .sidebar-header,
+html body .admin-sidebar .sidebar-user,
+html body .admin-sidebar .sidebar-footer {
+  border-color: rgba(22, 119, 255, .24) !important;
+}
+
+html body .admin-sidebar .brand-icon {
+  box-shadow: 0 0 16px -2px rgba(22, 119, 255, .65);
+}
+
+html body .admin-sidebar .brand-title {
+  background: linear-gradient(90deg, #72b5ff, #1677ff 60%, #8a9bff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  filter: none;
+}
+
+html body .admin-sidebar .brand-subtitle,
+html body .admin-sidebar .sidebar-section-title {
+  color: var(--nx-cyan-ink) !important;
+  text-shadow: none;
+}
+
+html body .admin-sidebar .nav-link {
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+html body .admin-sidebar .nav-link:hover {
+  box-shadow: inset 3px 0 0 #1677ff !important;
+}
+
+html body .admin-sidebar .nav-link.active {
+  box-shadow: none !important;
+}
+
+html body .admin-sidebar .nav-link.active .nav-icon {
+  filter: none;
+}
+
+html body .admin-sidebar .sidebar-owner-card {
+  box-shadow: none;
+}
+
+html body .admin-navbar {
+  background: var(--nx-nav) !important;
+  border-bottom: 1px solid rgba(22, 119, 255, .25) !important;
+  box-shadow: 0 8px 26px -18px rgba(22, 119, 255, .55) !important;
+}
+
+html body .admin-navbar .admin-global-search-trigger {
+  background: var(--nx-field);
+  color: var(--nx-muted);
+  border-color: rgba(22, 119, 255, .25);
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+html body .admin-navbar .admin-global-search-trigger:hover,
+html body .admin-navbar .admin-global-search-trigger:focus-visible {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, .12);
+}
+
+html body main.dashboard-content {
+  background: var(--nx-page);
+}
+
+#vsdPage .vsd-card {
+  border-color: rgba(53, 105, 177, .34) !important;
+  border-radius: 13px;
+  box-shadow: 0 10px 26px rgba(0, 9, 25, .16) !important;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+#vsdPage .vsd-card:hover {
+  border-color: rgba(22, 119, 255, .72) !important;
+  box-shadow: 0 12px 28px rgba(0, 9, 25, .24) !important;
+}
+
+#vsdPage .vsd-hello {
+  position: relative;
+  overflow: hidden;
+  min-height: 116px;
+  border-color: rgba(22, 119, 255, .5) !important;
+  background:
+    radial-gradient(520px 190px at 90% 50%, rgba(22, 119, 255, .2), transparent 72%),
+    var(--nx-card) !important;
+}
+
+#vsdPage .vsd-hello h1,
+#vsdPage .vsd-head h2,
+#vsdPage .vsd-head h3 {
+  text-shadow: none !important;
+}
+
+#vsdPage .vsd-ico {
+  color: #dceaff;
+  background: linear-gradient(145deg, #176bdb, #123f8a) !important;
+  box-shadow: none !important;
+}
+
+#vsdPage .vsd-hico:not(.plain) {
+  color: #9dc8ff !important;
+  background: rgba(22, 119, 255, .13) !important;
+  border: 1px solid rgba(22, 119, 255, .28) !important;
+  box-shadow: none !important;
+}
+
+#vsdPage .vsd-stat-val {
+  text-shadow: none !important;
+}
+
+#vsdPage .vsd-viewall,
+#vsdPage .vsd-share {
+  text-shadow: none !important;
+}
+
+#vsdPage .vsd-overview-list h3 i,
+#vsdPage .vsd-overview-row-icon {
+  color: #69aaff;
+}
+
+#vsdPage .vsd-overview-stat,
+#vsdPage .vsd-overview-list {
+  border-color: rgba(53, 105, 177, .3);
+  border-radius: 10px;
+}
+
+#vsdPage .vsd-overview-stat:hover {
+  border-color: #1677ff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #vsdPage .vsd-card {
+    transition: none;
+  }
+}

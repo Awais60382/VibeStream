@@ -1,4 +1,7 @@
 <?php
+if (is_file(__DIR__ . '/premium-perks.php')) {
+    require_once __DIR__ . '/premium-perks.php';
+}
 /**
  * VibeStream comments (used by watch.php and shorts.php).
  *
@@ -259,7 +262,7 @@ if (!function_exists('vs_comments_item_html')) {
         $h .= vs_comments_avatar_html($user);
         $h .= '<div class="vs-cm-main">';
 
-        $h .= '<div class="vs-cm-meta"><span class="vs-cm-user">' . vs_comments_esc($user !== '' ? $user : 'Guest') . '</span>';
+        $h .= '<div class="vs-cm-meta"><span class="vs-cm-user">' . vs_comments_esc($user !== '' ? $user : 'Guest') . '</span>' . (function_exists('vs_vip_badge_html') ? vs_vip_badge_html($user) : '');
         $h .= '<span class="vs-cm-time">' . vs_comments_esc(vs_comments_time_ago($ts)) . '</span>';
         $h .= '<span class="vs-cm-hearted" title="Hearted by ' . vs_comments_esc($owner !== '' ? $owner : 'the creator') . '"' . ($hearted ? '' : ' hidden') . '>';
         $ownerAvatar = vs_comments_avatar($owner);
@@ -449,7 +452,7 @@ if (!function_exists('vs_comments_handle_action')) {
 
 /**
  * The whole comments panel (header, list, composer).
- * Options: endpoint, video_id, comments, viewer, is_admin, viewer_avatar, modal, disabled, list_id
+ * Options: endpoint, video_id, comments, viewer, is_admin, viewer_avatar, csrf_token, modal, disabled, list_id
  */
 if (!function_exists('vs_comments_panel_html')) {
     function vs_comments_panel_html(array $o): string
@@ -461,10 +464,12 @@ if (!function_exists('vs_comments_panel_html')) {
         $modal = !empty($o['modal']);
         $disabled = !empty($o['disabled']);
         $listId = (string)($o['list_id'] ?? 'comment-list');
+        $csrfToken = (string)($o['csrf_token'] ?? '');
         $count = count($comments);
 
         $h = '<section class="vs-cm' . ($modal ? ' vs-cm-modal' : '') . '" data-endpoint="' . vs_comments_esc($endpoint)
-            . '" data-video-id="' . vs_comments_esc($videoId) . '" data-logged-in="' . ($viewer !== '' ? '1' : '0') . '">';
+            . '" data-video-id="' . vs_comments_esc($videoId) . '" data-csrf="' . vs_comments_esc($csrfToken)
+            . '" data-logged-in="' . ($viewer !== '' ? '1' : '0') . '">';
 
         $h .= '<div class="vs-cm-head">';
         $h .= '<h3>Comments</h3><span class="vs-cm-count" data-cm-count>' . $count . '</span><span class="vs-cm-spacer"></span>';

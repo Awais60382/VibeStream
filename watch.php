@@ -1,5 +1,8 @@
 <?php
 session_start();
+if (is_file(__DIR__ . '/premium-perks.php')) {
+    require_once __DIR__ . '/premium-perks.php';
+}
 require_once __DIR__ . '/avatar.php';   
 require_once __DIR__ . '/icons.php';    
 require_once __DIR__ . '/site-branding.php';
@@ -8,12 +11,17 @@ require_once __DIR__ . '/user-menu.php';
 require_once __DIR__ . '/sidebar-navigation.php';
 require_once __DIR__ . '/subscription-store.php';
 require_once __DIR__ . '/history-store.php';
+require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/comment-store.php';
+require_once __DIR__ . '/context-notes-store.php';
+require_once __DIR__ . '/liked-store.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/vip-badge.php';
 $siteName = vs_branding_app_name();
 $defaultTheme = vs_branding_default_theme();
 vs_maintenance_gate();
 include "connection.php";
+require_once __DIR__ . '/dashboard-events.php';
 
 if (!function_exists('column_exists')) {
     function column_exists($conn, $table, $col) {
@@ -42,7 +50,7 @@ if (!function_exists('extract_youtube_id')) {
 
 if (!function_exists('find_source')) {
     function find_source(array $row, $baseDir = __DIR__) {
-        $priority = ['video_url','video_path','video_file','video','url','file_path','filepath','file','filename','source','src','link','media_url','youtube_url','youtube_id','yt_id','video_link','embed_url','embed'];
+        $priority = ['video_url','video_path','video_file','video','url','file_path','filepath','file','filename','source','src','link','media_url','youtube_url','youtube_id','yt_id','video_link','embed_url','embed','id'];
         foreach ($priority as $col) {
             $v = trim((string)($row[$col] ?? ''));
             if ($v === '') continue;
@@ -117,6 +125,9 @@ if (!function_exists('render_navbar')) {
             </div>
 
             <div class="nav-right">
+                <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
+                </button>
                 <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                 </button>
@@ -153,6 +164,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($vid === '') json_out(['success' => false, 'error' => 'Missing video ID']);
 
+        if (!vs_csrf_valid($_POST['csrf_token'] ?? null)) {
+            http_response_code(403);
+            json_out(['success' => false, 'error' => 'That request expired. Refresh the page and try again.']);
+        }
+
         $stmt = $conn->prepare("SELECT * FROM videos WHERE id = ?");
         $stmt->bind_param("s", $vid);
         $stmt->execute();
@@ -160,8 +176,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->close();
         if (!$v) json_out(['success' => false, 'error' => 'Video not found']);
 
+        if ($action === 'progress') {
+            if (empty($_SESSION['username'])) {
+                http_response_code(401);
+                json_out(['success' => false, 'error' => 'Sign in to save playback progress.']);
+            }
+            if (!vs_csrf_valid($_POST['csrf_token'] ?? null)) {
+                http_response_code(403);
+                json_out(['success' => false, 'error' => 'That request expired. Refresh the page and try again.']);
+            }
+            $position = filter_var($_POST['position'] ?? null, FILTER_VALIDATE_INT);
+            $duration = filter_var($_POST['duration'] ?? null, FILTER_VALIDATE_INT);
+            if ($position === false || $duration === false || $position < 0 || $duration <= 0 || $duration > 604800) {
+                http_response_code(400);
+                json_out(['success' => false, 'error' => 'Invalid playback progress.']);
+            }
+            vs_history_save_progress($conn, $vid, $position, $duration);
+            json_out(['success' => true]);
+        }
+
         foreach (['liked_videos', 'disliked_videos', 'subscribed_channels'] as $k) {
             if (!isset($_SESSION[$k]) || !is_array($_SESSION[$k])) $_SESSION[$k] = [];
+        }
+        if ($action === 'like' || $action === 'dislike') {
+            vs_likes_session_sync($conn);
         }
         if ($action === 'subscribe') {
             vs_subscription_session_sync($conn);
@@ -208,8 +246,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $myCol = $isLike ? 'likes' : 'dislikes';
             $otherCol = $isLike ? 'dislikes' : 'likes';
 
-            $mineActive = in_array($vid, $_SESSION[$mine], true);
-            $otherActive = in_array($vid, $_SESSION[$other], true);
+            $mineActive = $isLike
+                ? vs_likes_has($conn, $vid)
+                : in_array($vid, $_SESSION[$mine], true);
+            $otherActive = $isLike
+                ? in_array($vid, $_SESSION[$other], true)
+                : vs_likes_has($conn, $vid);
             if ($mineActive) {
                 $sql = "UPDATE videos SET $myCol = GREATEST(COALESCE($myCol,0) - 1, 0) WHERE id = ?";
             } elseif ($otherActive) {
@@ -218,27 +260,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sql = "UPDATE videos SET $myCol = COALESCE($myCol,0) + 1 WHERE id = ?";
             }
 
-            $upd = $conn->prepare($sql);
-            if (!$upd) {
-                throw new RuntimeException('Could not save your video vote. Please try again.');
-            }
-            $upd->bind_param("s", $vid);
-            if (!$upd->execute() || $upd->affected_rows !== 1) {
+            $likedBefore = $_SESSION['liked_videos'];
+            $dislikedBefore = $_SESSION['disliked_videos'];
+            try {
+                $conn->begin_transaction();
+                $upd = $conn->prepare($sql);
+                if (!$upd) {
+                    throw new RuntimeException('Could not save your video vote. Please try again.');
+                }
+                $upd->bind_param("s", $vid);
+                if (!$upd->execute() || $upd->affected_rows !== 1) {
+                    $upd->close();
+                    throw new RuntimeException('Could not save your video vote. Please try again.');
+                }
                 $upd->close();
-                throw new RuntimeException('Could not save your video vote. Please try again.');
-            }
-            $upd->close();
 
-            $_SESSION[$mine] = $mineActive
-                ? array_values(array_diff($_SESSION[$mine], [$vid]))
-                : array_merge($_SESSION[$mine], [$vid]);
-            if (!$mineActive && $otherActive) {
-                $_SESSION[$other] = array_values(array_diff($_SESSION[$other], [$vid]));
+                if ($isLike) {
+                    vs_likes_set($conn, $vid, !$mineActive);
+                    if (!$mineActive && $otherActive) {
+                        $_SESSION[$other] = array_values(array_diff($_SESSION[$other], [$vid]));
+                    }
+                } else {
+                    $_SESSION[$mine] = $mineActive
+                        ? array_values(array_diff($_SESSION[$mine], [$vid]))
+                        : array_merge($_SESSION[$mine], [$vid]);
+                    if (!$mineActive && $otherActive) {
+                        vs_likes_set($conn, $vid, false);
+                    }
+                }
+                $conn->commit();
+            } catch (Throwable $voteError) {
+                $conn->rollback();
+                $_SESSION['liked_videos'] = $likedBefore;
+                $_SESSION['disliked_videos'] = $dislikedBefore;
+                throw $voteError;
             }
 
             // Tell the uploader someone liked their video (only when a like was added).
-            if ($isLike && !$mineActive && !empty($_SESSION['username'])) {
-                vs_notify_video_event($conn, $v, 'like', (string)$_SESSION['username']);
+            if ($isLike && !$mineActive && !empty($_SESSION['username'] ?? $_SESSION['AdminSession'] ?? '')) {
+                $actor = (string)($_SESSION['username'] ?? $_SESSION['AdminSession']);
+                vs_notify_video_event($conn, $v, 'like', $actor);
             }
 
             $c = $counts();
@@ -389,6 +450,7 @@ if ($hasTypeColumn && ($video['type'] ?? '') === 'short') {
 
 $id = $video['id'];
 
+
 // Save to the signed-in user's watch history (History page)
 if ($id !== 0 && !empty($_SESSION['username'])) {
     try {
@@ -397,26 +459,12 @@ if ($id !== 0 && !empty($_SESSION['username'])) {
         error_log('Watch history failed: ' . $historyError->getMessage());
     }
 }
-
-// Count a view every time the video is opened (same as shorts.php).
-// Raise this number (seconds) if you want repeat opens by the same person to count less often.
-$WATCH_VIEW_COOLDOWN_SECONDS = 0;
-if (!isset($_SESSION['view_times']) || !is_array($_SESSION['view_times'])) {
-    $_SESSION['view_times'] = [];
-}
-if ($id !== 0 && $id !== '0' && $id !== '') {
-    $nowTs = time();
-    $lastViewTs = isset($_SESSION['view_times'][$id]) ? (int)$_SESSION['view_times'][$id] : 0;
-    if ($lastViewTs === 0 || ($nowTs - $lastViewTs) >= $WATCH_VIEW_COOLDOWN_SECONDS) {
-        $upd = $conn->prepare("UPDATE videos SET views = COALESCE(views,0) + 1 WHERE id = ?");
-        if ($upd) {
-            $upd->bind_param("s", $id);
-            if ($upd->execute()) {
-                $_SESSION['view_times'][$id] = $nowTs;
-                $video['views'] = (int)($video['views'] ?? 0) + 1;
-            }
-            $upd->close();
-        }
+$savedProgress = 0;
+if ($id !== 0 && !empty($_SESSION['username'])) {
+    try {
+        $savedProgress = vs_history_get_progress($conn, (string)$id);
+    } catch (Throwable $progressError) {
+        error_log('Playback progress load failed: ' . $progressError->getMessage());
     }
 }
 
@@ -425,7 +473,11 @@ $views = (int)($video['views'] ?? 0);
 $channel = trim((string)($video['channel_name'] ?? ''));
 if ($channel === '') $channel = trim((string)($video['username'] ?? 'Unknown channel'));
 $subs = (int)($video['subscribers'] ?? 0);
-$upload_date = $video['upload_date'] ?? 'Recently';
+$upload_date = $video['upload_date'] ?? '';
+if (trim((string)$upload_date) === '' && !empty($video['created_at'])) {
+    $upload_date = time_ago($video['created_at']);
+}
+if (trim((string)$upload_date) === '') $upload_date = 'Recently';
 $description = $video['description'] ?? '';
 $likes = (int)($video['likes'] ?? 0);
 $dislikes = (int)($video['dislikes'] ?? 0);
@@ -436,9 +488,18 @@ if (!$hasDislikesColumn) {
 $src = find_source($video, __DIR__);
 $yt_id = $src !== '' ? extract_youtube_id($src, true) : null;
 $is_direct = $src !== '' && !$yt_id;
+$playerPoster = $yt_id ? thumb_for($video, $src, $yt_id) : thumb_for($video, $src, null);
+$requestScheme = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') ? 'https' : 'http';
+$playerOrigin = $requestScheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+$requestedStart = array_key_exists('t', $_GET) ? (int)$_GET['t'] : $savedProgress;
+$startAt = max(0, min(86400, $requestedStart)); // ?t=SECONDS opens the video at that time
 
 $channelOwner = trim((string)($video['username'] ?? ''));
 if ($channelOwner === '') $channelOwner = $channel;
+$trySubsFallback = $subs;
+$subs = vs_subscription_channel_count($conn, $channel, $channelOwner, $trySubsFallback);
+$viewerName = trim((string)($_SESSION['username'] ?? ''));
+$isOwnChannel = $viewerName !== '' && strcasecmp($viewerName, $channelOwner) === 0;
 $avatar_url = avatar_for_record($channelOwner, $video);
 if ($avatar_url === '' && $channelOwner !== $channel) $avatar_url = avatar_url($channel);
 $user_avatar = avatar_or_cartoon($_SESSION['username'] ?? '');
@@ -448,6 +509,13 @@ foreach (['liked_videos', 'disliked_videos', 'subscribed_channels'] as $k) {
     if (!isset($_SESSION[$k]) || !is_array($_SESSION[$k])) $_SESSION[$k] = [];
 }
 try {
+    vs_likes_session_sync($conn);
+    $userHasLiked = vs_likes_has($conn, (string)$id);
+} catch (Throwable $likesError) {
+    error_log('Could not synchronize saved video likes: ' . $likesError->getMessage());
+    $userHasLiked = in_array((string)$id, array_map('strval', $_SESSION['liked_videos']), true);
+}
+try {
     vs_subscription_session_sync($conn);
 } catch (Throwable $subscriptionError) {
     error_log('Could not synchronize VibeStream subscriptions: ' . $subscriptionError->getMessage());
@@ -455,12 +523,10 @@ try {
 if (!$hasDislikesColumn) {
     $_SESSION['disliked_videos'] = [];
 }
-$userHasLiked = in_array($id, $_SESSION['liked_videos'], true);
 $userHasDisliked = in_array($id, $_SESSION['disliked_videos'], true);
 $channelKey = vs_subscription_key($channel);
 $userHasSubscribed = in_array($channelKey, $_SESSION['subscribed_channels'], true);
 
-$viewerName = trim((string)($_SESSION['username'] ?? ''));
 try {
     $comments = vs_comments_fetch($conn, (string)$id, $viewerName);
 } catch (Throwable $commentsError) {
@@ -468,6 +534,14 @@ try {
     $comments = [];
 }
 $commentCount = count($comments);
+$contextNotes = [];
+$contextNotesAvailable = true;
+try {
+    $contextNotes = vs_context_notes_fetch($conn, (string)$id, 'video');
+} catch (Throwable $contextNotesError) {
+    error_log('Community context notes failed: ' . $contextNotesError->getMessage());
+    $contextNotesAvailable = false;
+}
 
 $related = [];
 $relatedParams = [$id];
@@ -506,7 +580,11 @@ if ($stmt = $conn->prepare($relSql)) {
     <link rel="apple-touch-icon" href="branding-icon.php">
     <title><?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?> - <?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
     <script src="theme.js?v=3"></script>
+    <script src="brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/brain.js'); ?>" defer></script>
+    <link rel="stylesheet" href="neon-off.css?v=7">
+    <script src="neon-switch.js?v=7"></script>
     <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="context-notes.css?v=1">
 
     <style>
         :root {
@@ -734,6 +812,22 @@ if ($stmt = $conn->prepare($relSql)) {
             max-width: 1480px;
         }
 
+        .watch-container.theater-mode {
+            display: block;
+            max-width: none;
+        }
+        .watch-container.theater-mode .main-player-section,
+        .watch-container.theater-mode .recommendations-section {
+            width: 100%;
+            max-width: 1600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .watch-container.theater-mode .recommendations-section { margin-top: 28px; }
+        .watch-container.theater-mode .video-wrapper {
+            padding-bottom: min(56.25%, 72vh);
+        }
+
         .main-player-section { flex: 1; min-width: 0; }
 
         .video-wrapper {
@@ -748,6 +842,123 @@ if ($stmt = $conn->prepare($relSql)) {
         .video-wrapper iframe, .video-wrapper video {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%; border: 0;
+        }
+        .youtube-click-player {
+            position: absolute;
+            inset: 0;
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border: 0;
+            padding: 0;
+            background: #000;
+            cursor: pointer;
+        }
+        .youtube-click-player.is-hidden { display: none; }
+        .youtube-click-player img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .youtube-play-button {
+            position: relative;
+            z-index: 1;
+            width: 72px;
+            height: 50px;
+            border: 0;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            background:
+                radial-gradient(circle at 35% 28%, rgba(255,255,255,.28), transparent 18%),
+                linear-gradient(145deg, #ff2e93 0%, #9d4edd 48%, #00d9ff 100%);
+            border: 2px solid rgba(255,255,255,.92);
+            opacity: .88;
+            box-shadow:
+                0 0 20px rgba(255,46,147,.82),
+                0 0 36px rgba(138,92,255,.62),
+                0 12px 32px rgba(0,0,0,.48);
+            transition: transform .18s ease, box-shadow .18s ease;
+        }
+        .youtube-click-player:hover .youtube-play-button {
+            transform: scale(1.08);
+            box-shadow:
+                0 0 32px rgba(255,46,147,1),
+                0 0 54px rgba(138,92,255,.82),
+                0 14px 36px rgba(0,0,0,.52);
+        }
+        .youtube-play-button::before {
+            content: "V";
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            font-family: Arial Black, Impact, sans-serif;
+            font-size: 32px;
+            line-height: 1;
+            font-style: italic;
+            font-weight: 900;
+            letter-spacing: -2px;
+            transform: translate(-1px, 0);
+            color: #fff;
+            text-shadow:
+                -2px 0 0 rgba(0,229,255,.88),
+                2px 2px 0 rgba(138,92,255,.88),
+                0 5px 12px rgba(0,0,0,.48);
+        }
+        .youtube-error-player {
+            position: absolute;
+            inset: 0;
+            z-index: 5;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 20px;
+            text-align: center;
+            color: #fff;
+            background: rgba(0,0,0,.88);
+        }
+        .youtube-error-player.is-visible { display: flex; }
+        .youtube-error-player strong { font-size: 16px; }
+        .youtube-error-player a {
+            display: inline-flex;
+            align-items: center;
+            min-height: 42px;
+            padding: 9px 16px;
+            border-radius: 999px;
+            background: #ff2e93;
+            color: #fff;
+            font-weight: 700;
+        }
+
+        .mini-player-placeholder { width: 100%; height: 0; flex: 0 0 auto; }
+        .mini-player-placeholder.is-active { height: auto; aspect-ratio: 16 / 9; }
+        .video-wrapper.mini-player-active {
+            position: fixed; right: 20px; bottom: 20px; z-index: 2200;
+            width: min(360px, calc(100vw - 24px)); height: auto; aspect-ratio: 16 / 9;
+            padding: 0; border: 1px solid rgba(255,255,255,.25);
+            border-radius: 12px; box-shadow: 0 12px 38px rgba(0,0,0,.55);
+        }
+        .mini-player-actions {
+            position: absolute; top: 8px; right: 8px; z-index: 3;
+            display: none; gap: 6px;
+        }
+        .video-wrapper.mini-player-active .mini-player-actions { display: flex; }
+        .mini-player-actions button {
+            min-width: 34px; min-height: 34px; padding: 6px 10px;
+            border: 1px solid rgba(255,255,255,.28); border-radius: 8px;
+            background: rgba(0,0,0,.76); color: #fff; font: inherit;
+            font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .mini-player-actions button:hover { background: rgba(45,45,45,.95); }
+        @media (max-width: 640px) {
+            .video-wrapper.mini-player-active { right: 12px; bottom: 12px; width: min(320px, calc(100vw - 24px)); }
         }
 
         .video-wrapper .unavailable-msg {
@@ -806,10 +1017,13 @@ if ($stmt = $conn->prepare($relSql)) {
         .like-dislike-group .divider { width: 1px; background-color: #3f3f3f; margin: 6px 0; }
 
         .description-box {
-            background-color: var(--surface-2); border-radius: var(--radius-md); padding: 12px; margin-top: 12px;
-            font-size: 14px; line-height: 1.5; white-space: pre-line;
+            display: block; width: fit-content; min-width: 160px; max-width: min(100%, 420px); box-sizing: border-box;
+            background-color: var(--surface-2); border-radius: var(--radius-md); padding: 8px 12px; margin-top: 10px;
+            font-size: 13px; line-height: 1.4; white-space: normal;
         }
-        .description-meta { font-weight: 600; margin-bottom: 8px; }
+        .description-meta { font-weight: 600; white-space: nowrap; }
+        .description-meta + #main-description { margin-top: 6px; }
+        #main-description { white-space: pre-line; overflow-wrap: anywhere; max-height: 5.6em; overflow-y: auto; }
 
         .comments-section { margin-top: 24px; }
         .comments-header { display: flex; align-items: center; gap: 24px; margin-bottom: 16px; }
@@ -888,6 +1102,7 @@ if ($stmt = $conn->prepare($relSql)) {
         @media (max-width: 1000px) {
             .watch-container { flex-direction: column; padding: 16px; }
             .recommendations-section { width: 100%; min-width: 0; }
+            .watch-container.theater-mode .video-wrapper { padding-bottom: 56.25%; }
         }
 
         @media (max-width: 760px) {
@@ -914,12 +1129,151 @@ if ($stmt = $conn->prepare($relSql)) {
     </style>
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
-    <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="theme.css?v=5">
     <link rel="stylesheet" href="navbar-fix.css?v=4">
     <link rel="stylesheet" href="comments.css?v=1">
+    <!-- NEON THEME (dark + light). Stays after theme.css so it wins. -->
+    <style id="neon-dark">
+html:not([data-theme="light"]) {
+            --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
+            --text: #eaf0ff; --muted: #8f9bd0; --border: #1d2557;
+            --accent: #ff2e93; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #00e5ff;
+            --neon-cyan: #00e5ff; --neon-pink: #ff2e93; --neon-violet: #8a5cff;
+        }
+        html:not([data-theme="light"]) body { background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.16), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.08), transparent 70%), #05060f; background-attachment: fixed; }
+        html:not([data-theme="light"]) .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(0,229,255,.35); box-shadow: 0 1px 24px -4px rgba(0,229,255,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
+        html:not([data-theme="light"]) .brand { background: linear-gradient(90deg, #00e5ff, #8a5cff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
+        html:not([data-theme="light"]) .nav-toggle span { background: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.7); }
+        html:not([data-theme="light"]) .nav-toggle:hover, html:not([data-theme="light"]) .theme-toggle:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(138,92,255,.6)); }
+        html:not([data-theme="light"]) .nav-link.active { background: rgba(255,46,147,.16); color: #ff7ac0; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) .create-btn, html:not([data-theme="light"]) .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) #search-input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.55); color: #eaf0ff; box-shadow: 0 0 10px -2px rgba(138,92,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html:not([data-theme="light"]) #search-input:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 20px rgba(0,229,255,.55); }
+        html:not([data-theme="light"]) .user-badge-pill { background: linear-gradient(180deg, rgba(23,28,66,.9), rgba(10,13,31,.95)); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html:not([data-theme="light"]) .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html:not([data-theme="light"]) .app-sidebar { background: linear-gradient(180deg, rgba(10,13,31,.97), rgba(5,6,15,.98)); border-right: 1px solid rgba(138,92,255,.4); box-shadow: 4px 0 28px -10px rgba(138,92,255,.45); }
+        html:not([data-theme="light"]) .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html:not([data-theme="light"]) .sidebar-link:hover { background: rgba(0,229,255,.10); box-shadow: inset 3px 0 0 #00e5ff, 0 0 16px -4px rgba(0,229,255,.5); }
+        html:not([data-theme="light"]) .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) .sidebar-heading { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html:not([data-theme="light"]) ::-webkit-scrollbar-track { background: #05060f; }
+        html:not([data-theme="light"]) ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
+        html:not([data-theme="light"]) ::selection { background: rgba(255,46,147,.4); color: #fff; }
+
+        /* ---- watch page ---- */
+        html:not([data-theme="light"]) .video-wrapper { border: 1px solid rgba(138,92,255,.5); box-shadow: 0 0 28px -4px rgba(0,229,255,.45), 0 0 60px -16px rgba(138,92,255,.55); }
+        html:not([data-theme="light"]) .video-title { text-shadow: 0 0 14px rgba(138,92,255,.55); }
+        html:not([data-theme="light"]) .channel-avatar { box-shadow: 0 0 0 2px rgba(255,46,147,.75), 0 0 12px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) .subscribe-btn { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); transition: box-shadow .18s ease, transform .18s ease; }
+        html:not([data-theme="light"]) .subscribe-btn:hover { background: linear-gradient(90deg, #8a5cff, #ff2e93); box-shadow: 0 0 26px rgba(255,46,147,.8); transform: translateY(-1px); }
+        html:not([data-theme="light"]) .subscribe-btn.subscribed { background: rgba(23,28,66,.7); color: #eaf0ff; border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 14px rgba(0,229,255,.35); }
+        html:not([data-theme="light"]) .btn-pill, html:not([data-theme="light"]) .like-dislike-group { background: rgba(23,28,66,.7); border: 1px solid rgba(138,92,255,.4); color: #eaf0ff; transition: box-shadow .18s ease, border-color .18s ease; }
+        html:not([data-theme="light"]) .btn-pill:hover { background: rgba(0,229,255,.14); border-color: #00e5ff; box-shadow: 0 0 14px rgba(0,229,255,.5); }
+        html:not([data-theme="light"]) .like-dislike-group button:hover:not(:disabled) { background: rgba(0,229,255,.14); }
+        html:not([data-theme="light"]) .like-dislike-group .divider { background: rgba(138,92,255,.5); }
+        html:not([data-theme="light"]) .like-dislike-group #like-btn.active { background: rgba(0,229,255,.18); color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.8); }
+        html:not([data-theme="light"]) .like-dislike-group #dislike-btn.active { background: rgba(255,46,147,.18); color: #ff7ac0; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html:not([data-theme="light"]) .description-box { background: rgba(10,13,31,.88); border: 1px solid rgba(138,92,255,.35); box-shadow: 0 0 22px -10px rgba(138,92,255,.6); }
+        html:not([data-theme="light"]) .comment-input-line { background: transparent; color: #eaf0ff; }
+        html:not([data-theme="light"]) .comment-input-line:focus { border-bottom-color: #00e5ff; box-shadow: 0 6px 14px -8px rgba(0,229,255,.8); outline: none; }
+        html:not([data-theme="light"]) .comment-submit-btn { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.45); }
+        html:not([data-theme="light"]) .comment-submit-btn:disabled { background: rgba(23,28,66,.7); color: #8f9bd0; box-shadow: none; }
+        html:not([data-theme="light"]) .comment-author { color: #00e5ff; }
+        html:not([data-theme="light"]) .autoplay-toggle input:checked + .autoplay-track { background: linear-gradient(90deg, #8a5cff, #00e5ff); box-shadow: 0 0 10px rgba(0,229,255,.7); }
+        html:not([data-theme="light"]) .upnext { background: rgba(10,13,31,.88); border: 1px solid rgba(0,229,255,.45); box-shadow: 0 0 20px -6px rgba(0,229,255,.5); }
+        html:not([data-theme="light"]) .upnext button.primary { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; box-shadow: 0 0 12px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) .video-card.compact .thumbnail { border: 1px solid rgba(138,92,255,.28); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
+        html:not([data-theme="light"]) .video-card.compact:hover .thumbnail { border-color: #00e5ff; box-shadow: 0 0 20px rgba(0,229,255,.55), 0 0 40px -8px rgba(138,92,255,.5); transform: translateY(-2px); }
+        html:not([data-theme="light"]) .video-card.compact:hover .video-title { color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.5); }
+        html:not([data-theme="light"]) .toast { border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 22px rgba(0,229,255,.45); }
+    </style>
+    <style id="neon-light">
+html[data-theme="light"] {
+            --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
+            --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
+            --accent: #ff2e93; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #00b8e6;
+            --neon-cyan: #00b8e6; --neon-pink: #ff2e93; --neon-violet: #7c4dff;
+        }
+        html[data-theme="light"] body { background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.14), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.10), transparent 70%), #f4f6ff; background-attachment: fixed; }
+        html[data-theme="light"] .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(0,184,230,.55); box-shadow: 0 1px 22px -4px rgba(0,184,230,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
+        html[data-theme="light"] .brand { background: linear-gradient(90deg, #00b8e6, #7c4dff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
+        html[data-theme="light"] .nav-toggle span { background: #7c4dff; box-shadow: 0 0 6px rgba(124,77,255,.7); }
+        html[data-theme="light"] .nav-toggle:hover, html[data-theme="light"] .theme-toggle:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 14px rgba(0,184,230,.4); }
+        html[data-theme="light"] .theme-toggle svg { color: #7c4dff; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
+        html[data-theme="light"] .nav-link.active { background: rgba(255,46,147,.16); color: #d4147a; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html[data-theme="light"] .create-btn, html[data-theme="light"] .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html[data-theme="light"] #search-input { background: #ffffff; border: 1px solid rgba(124,77,255,.55); color: #0b1030; box-shadow: 0 0 10px -2px rgba(124,77,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html[data-theme="light"] #search-input:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 20px rgba(0,184,230,.55); }
+        html[data-theme="light"] .user-badge-pill { background: linear-gradient(180deg, #ffffff, #f1f3ff); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html[data-theme="light"] .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html[data-theme="light"] .app-sidebar { background: linear-gradient(180deg, #ffffff, #f4f6ff); border-right: 1px solid rgba(124,77,255,.35); box-shadow: 4px 0 28px -10px rgba(124,77,255,.45); }
+        html[data-theme="light"] .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html[data-theme="light"] .sidebar-link:hover { background: rgba(0,184,230,.12); box-shadow: inset 3px 0 0 #00b8e6, 0 0 16px -4px rgba(0,184,230,.5); }
+        html[data-theme="light"] .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html[data-theme="light"] .sidebar-heading { color: #7c4dff; text-shadow: 0 0 8px rgba(124,77,255,.45); }
+        html[data-theme="light"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html[data-theme="light"] ::-webkit-scrollbar-track { background: #eceffd; }
+        html[data-theme="light"] ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
+        html[data-theme="light"] ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
+
+        /* ---- watch page ---- */
+        html[data-theme="light"] .video-wrapper { border: 1px solid rgba(124,77,255,.5); box-shadow: 0 0 28px -4px rgba(0,184,230,.45), 0 0 60px -16px rgba(124,77,255,.55); }
+        html[data-theme="light"] .video-title { text-shadow: 0 0 14px rgba(124,77,255,.25); }
+        html[data-theme="light"] .channel-avatar { box-shadow: 0 0 0 2px rgba(255,46,147,.75), 0 0 12px rgba(255,46,147,.5); }
+        html[data-theme="light"] .subscribe-btn { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); transition: box-shadow .18s ease, transform .18s ease; }
+        html[data-theme="light"] .subscribe-btn:hover { background: linear-gradient(90deg, #7c4dff, #ff2e93); box-shadow: 0 0 26px rgba(255,46,147,.8); transform: translateY(-1px); }
+        html[data-theme="light"] .subscribe-btn.subscribed { background: #ffffff; color: #0b1030; border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 14px rgba(0,184,230,.35); }
+        html[data-theme="light"] .btn-pill, html[data-theme="light"] .like-dislike-group { background: #ffffff; border: 1px solid rgba(124,77,255,.4); color: #0b1030; transition: box-shadow .18s ease, border-color .18s ease; }
+        html[data-theme="light"] .btn-pill:hover { background: rgba(0,184,230,.14); border-color: #00b8e6; box-shadow: 0 0 14px rgba(0,184,230,.5); }
+        html[data-theme="light"] .like-dislike-group button:hover:not(:disabled) { background: rgba(0,184,230,.14); }
+        html[data-theme="light"] .like-dislike-group .divider { background: rgba(124,77,255,.5); }
+        html[data-theme="light"] .like-dislike-group #like-btn.active { background: rgba(0,184,230,.18); color: #0086b3; text-shadow: 0 0 10px rgba(0,184,230,.8); }
+        html[data-theme="light"] .like-dislike-group #dislike-btn.active { background: rgba(255,46,147,.18); color: #d4147a; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html[data-theme="light"] .description-box { background: #ffffff; border: 1px solid rgba(124,77,255,.35); box-shadow: 0 0 22px -10px rgba(124,77,255,.6); }
+        html[data-theme="light"] .comment-input-line { background: transparent; color: #0b1030; }
+        html[data-theme="light"] .comment-input-line:focus { border-bottom-color: #00b8e6; box-shadow: 0 6px 14px -8px rgba(0,184,230,.8); outline: none; }
+        html[data-theme="light"] .comment-submit-btn { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.45); }
+        html[data-theme="light"] .comment-submit-btn:disabled { background: #ffffff; color: #55608f; box-shadow: none; }
+        html[data-theme="light"] .comment-author { color: #0086b3; }
+        html[data-theme="light"] .autoplay-toggle input:checked + .autoplay-track { background: linear-gradient(90deg, #7c4dff, #00b8e6); box-shadow: 0 0 10px rgba(0,184,230,.7); }
+        html[data-theme="light"] .upnext { background: #ffffff; border: 1px solid rgba(0,184,230,.45); box-shadow: 0 0 20px -6px rgba(0,184,230,.5); }
+        html[data-theme="light"] .upnext button.primary { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; box-shadow: 0 0 12px rgba(255,46,147,.5); }
+
+        /* speed menu, share menu and keyboard help */
+        .vs-pop { position: fixed; z-index: 2100; min-width: 210px; max-width: calc(100vw - 16px); padding: 8px; border-radius: 14px; display: flex; flex-direction: column; gap: 2px; background: #212121; color: #fff; border: 1px solid #3a3a3a; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+        .vs-pop-title { padding: 4px 12px 6px; font-size: 12px; font-weight: 600; opacity: 0.7; }
+        .vs-pop button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+        .vs-pop button:hover { background: rgba(127, 127, 127, 0.22); }
+        .vs-pop button.on { font-weight: 700; }
+        .vs-pop button.on::after { content: " \2713"; }
+        .vs-pop label { display: flex; align-items: center; gap: 8px; padding: 8px 12px 6px; font-size: 13px; opacity: 0.85; cursor: pointer; }
+        .vs-help { position: fixed; inset: 0; z-index: 2200; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.6); }
+        .vs-help-box { width: min(420px, 100%); max-height: 90vh; overflow-y: auto; padding: 20px 22px; border-radius: 16px; background: #212121; color: #fff; border: 1px solid #3a3a3a; }
+        .vs-help-box h3 { margin: 0 0 12px; font-size: 17px; }
+        .vs-help-row { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; font-size: 14px; border-bottom: 1px solid rgba(127, 127, 127, 0.2); }
+        .vs-help-row kbd { font: inherit; font-size: 12px; padding: 1px 8px; border-radius: 6px; background: rgba(127, 127, 127, 0.28); white-space: nowrap; }
+        html:not([data-theme="light"]) .vs-pop, html:not([data-theme="light"]) .vs-help-box { background: rgba(10,13,31,.94); border: 1px solid rgba(0,229,255,.45); box-shadow: 0 0 20px -6px rgba(0,229,255,.5); }
+        html[data-theme="light"] .vs-pop, html[data-theme="light"] .vs-help-box { background: #ffffff; color: #0b1030; border: 1px solid rgba(0,184,230,.45); box-shadow: 0 0 20px -6px rgba(0,184,230,.5); }
+        html[data-theme="light"] .video-card.compact .thumbnail { border: 1px solid rgba(124,77,255,.28); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
+        html[data-theme="light"] .video-card.compact:hover .thumbnail { border-color: #00b8e6; box-shadow: 0 0 20px rgba(0,184,230,.55), 0 0 40px -8px rgba(124,77,255,.5); transform: translateY(-2px); }
+        html[data-theme="light"] .video-card.compact:hover .video-title { color: #0086b3; text-shadow: 0 0 10px rgba(0,184,230,.5); }
+        html[data-theme="light"] .toast { border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 22px rgba(0,184,230,.45); }
+    </style>
+    <link rel="preconnect" href="https://www.youtube.com">
+    <link rel="preconnect" href="https://i.ytimg.com">
+    <link rel="dns-prefetch" href="https://www.google.com">
+    <link rel="stylesheet" href="sidebar-rail.css?v=1">
+    <script src="sidebar-rail.js?v=1"></script>
 </head>
 <body>
     <?php render_navbar('watch'); ?>
+    <?php echo vs_site_announcement_html($GLOBALS['pdo'] ?? null); ?>
 
     <div class="admin-shell">
         <div class="sidebar-backdrop" data-sidebar-close></div>
@@ -934,14 +1288,23 @@ if ($stmt = $conn->prepare($relSql)) {
                             <?php if ($yt_id): ?>
                                 <iframe
                                     id="main-iframe"
-                                    src="https://www.youtube.com/embed/<?php echo htmlspecialchars($yt_id); ?>?autoplay=1&amp;rel=0&amp;enablejsapi=1"
+                                    src="about:blank"
                                     title="Video player"
                                     frameborder="0"
                                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                                     referrerpolicy="strict-origin-when-cross-origin"
                                     allowfullscreen></iframe>
+                                <button class="youtube-click-player" id="youtube-click-player" type="button" aria-label="Play video">
+                                    <img src="<?php echo htmlspecialchars($playerPoster); ?>" alt="">
+                                    <span class="youtube-play-button" aria-hidden="true">
+                                    </span>
+                                </button>
+                                <div class="youtube-error-player" id="youtube-error-player">
+                                    <strong>This browser cannot play the embedded video.</strong>
+                                    <a href="https://www.youtube.com/watch?v=<?php echo htmlspecialchars($yt_id); ?>" target="_blank" rel="noopener noreferrer">Watch on YouTube</a>
+                                </div>
                             <?php elseif ($is_direct): ?>
-                                <video id="main-video" src="<?php echo htmlspecialchars($src); ?>" controls autoplay playsinline>
+                                <video id="main-video" src="<?php echo htmlspecialchars($src); ?>" controls autoplay playsinline preload="auto">
                                     Your browser does not support the video tag.
                                 </video>
                             <?php else: ?>
@@ -951,6 +1314,12 @@ if ($stmt = $conn->prepare($relSql)) {
                                         No video link or file was saved for this video (id <?php echo htmlspecialchars((string)$id); ?>).
                                     </span>
                                 </p>
+                            <?php endif; ?>
+                            <?php if ($yt_id || $is_direct): ?>
+                                <div class="mini-player-actions" aria-label="Mini-player controls">
+                                    <button type="button" id="mini-player-return" title="Return to video">Return</button>
+                                    <button type="button" id="mini-player-close" title="Close mini-player" aria-label="Close mini-player">&times;</button>
+                                </div>
                             <?php endif; ?>
                         </div>
 
@@ -967,12 +1336,14 @@ if ($stmt = $conn->prepare($relSql)) {
                                         <?php endif; ?>
                                     </div>
                                     <div class="channel-text">
-                                        <h3 id="main-channel"><a href="profile.php?u=<?php echo rawurlencode($channelOwner); ?>"><?php echo htmlspecialchars($channel); ?></a></h3>
+                                        <h3 id="main-channel"><a href="profile.php?u=<?php echo rawurlencode($channelOwner); ?>"><?php echo htmlspecialchars($channel); ?></a><?php echo function_exists('vs_vip_badge_html') ? vs_vip_badge_html($channelOwner) : ''; ?></h3>
                                         <p id="main-subs"><?php echo $subs; ?> subscriber<?php echo $subs == 1 ? '' : 's'; ?></p>
                                     </div>
-                                    <button id="subscribe-btn" type="button" class="subscribe-btn<?php echo $userHasSubscribed ? ' subscribed' : ''; ?>">
-                                        <?php echo $userHasSubscribed ? 'Subscribed' : 'Subscribe'; ?>
-                                    </button>
+                                    <?php if (!$isOwnChannel): ?>
+                                        <button id="subscribe-btn" type="button" class="subscribe-btn<?php echo $userHasSubscribed ? ' subscribed' : ''; ?>">
+                                            <?php echo $userHasSubscribed ? 'Subscribed' : 'Subscribe'; ?>
+                                        </button>
+                                    <?php endif; ?>
                                 </div>
 
                                 <div class="action-buttons">
@@ -988,7 +1359,16 @@ if ($stmt = $conn->prepare($relSql)) {
                                         </button>
                                     </div>
                                     <button class="btn-pill" type="button" id="share-btn">Share</button>
-                                    <button class="btn-pill" type="button">Download</button>
+                                    <button class="btn-pill" type="button" id="speed-btn" title="Playback speed (&lt; and &gt; keys)">Speed 1&times;</button>
+                                    <button class="btn-pill" type="button" id="theater-btn" aria-pressed="false" title="Toggle theater mode">Theater mode</button>
+                                    <?php if ($is_direct): ?>
+                                        <button class="btn-pill" type="button" id="pip-btn" aria-pressed="false" title="Picture-in-picture">Picture-in-picture</button>
+                                    <?php endif; ?>
+                                    <?php if ($is_direct): ?>
+                                        <a class="btn-pill" id="download-btn" href="<?php echo htmlspecialchars($src); ?>" download>Download</a>
+                                    <?php else: ?>
+                                        <button class="btn-pill" type="button" id="download-btn" disabled title="Downloads are available for uploaded videos">Download</button>
+                                    <?php endif; ?>
                                     <a class="btn-pill" href="playlists.php?add=<?php echo rawurlencode((string)$id); ?>">Add to playlist</a>
                                     <?php if (!empty($id)) { $reportContentId = (string)$id; $reportKind = 'video'; if (is_file(__DIR__ . '/report-widget.php')) { include __DIR__ . '/report-widget.php'; } } ?>
                                 </div>
@@ -996,12 +1376,15 @@ if ($stmt = $conn->prepare($relSql)) {
                         </div>
 
                         <div class="description-box">
-                            <div class="description-meta">
-                                <span id="main-views"><?php echo number_format($views); ?> views</span> &bull;
-                                <span id="main-date"><?php echo htmlspecialchars($upload_date); ?></span>
-                            </div>
-                            <div id="main-description"><?php echo htmlspecialchars($description); ?></div>
+                            <div class="description-meta"><span id="main-views"><?php echo number_format($views); ?> views</span> &bull; <span id="main-date"><?php echo htmlspecialchars($upload_date); ?></span></div>
+                            <?php if (trim((string)$description) !== ''): ?>
+                            <div id="main-description"><?php echo htmlspecialchars(trim((string)$description)); ?></div>
+                            <?php else: ?>
+                            <div id="main-description" hidden></div>
+                            <?php endif; ?>
                         </div>
+
+                        <?php echo vs_ads_html(); ?>
 
                         <?php echo vs_comments_panel_html([
                             'endpoint' => 'watch.php',
@@ -1011,7 +1394,9 @@ if ($stmt = $conn->prepare($relSql)) {
                             'is_admin' => vs_comments_is_admin(),
                             'viewer_avatar' => $viewerName !== '' ? avatar_url($viewerName) : '',
                             'list_id' => 'comment-list',
+                            'csrf_token' => vs_csrf_token(),
                         ]); ?>
+                        <?php echo vs_context_notes_panel_html($contextNotes, (string)$id, 'video', vs_csrf_token(), $viewerName !== '', $contextNotesAvailable); ?>
                     </div>
 
                     <aside class="recommendations-section">
@@ -1035,7 +1420,7 @@ if ($stmt = $conn->prepare($relSql)) {
                                    data-vm-channel="<?php echo htmlspecialchars((string)($rec['channel_name'] ?? $rec['username'] ?? '')); ?>"
                                    data-vm-kind="video"
                                    data-vm-url="watch.php?id=<?php echo urlencode($rec['id']); ?>"<?php if ($rec_ytid === null && $rec_src !== '') { ?>
-                                   data-vm-download="<?php echo htmlspecialchars((string)$rec_src); ?>"<?php } ?>>
+                                   <?php echo vs_download_attr((string)$rec['id'], $conn ?? null); ?><?php } ?>>
                                     <div class="thumbnail">
                                         <img src="<?php echo htmlspecialchars($rec_thumb); ?>" alt="Thumbnail" loading="lazy">
                                     </div>
@@ -1058,9 +1443,10 @@ if ($stmt = $conn->prepare($relSql)) {
     <div class="toast" id="toast"></div>
 
     <script src="sidebar.js"></script>
-    <script src="video-menu.js?v=3"></script>
+    <script src="video-menu.js?v=4"></script>
 
     <script src="comments.js?v=1"></script>
+    <script src="context-notes.js?v=1"></script>
     <script>
         const VIDEO_ID = <?php echo json_encode((string)$id); ?>;
 
@@ -1078,7 +1464,12 @@ if ($stmt = $conn->prepare($relSql)) {
                 const res = await fetch('watch.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ action, video_id: VIDEO_ID, ...extra })
+                    body: new URLSearchParams({
+                        action,
+                        video_id: VIDEO_ID,
+                        csrf_token: <?php echo json_encode(vs_csrf_token()); ?>,
+                        ...extra
+                    })
                 });
                 return await res.json();
             } catch (e) {
@@ -1088,6 +1479,87 @@ if ($stmt = $conn->prepare($relSql)) {
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            const youtubePoster = document.getElementById('youtube-click-player');
+            const youtubeFrame = document.getElementById('main-iframe');
+            const directVideo = document.getElementById('main-video');
+
+            const recordView = async () => {
+                try {
+                    const response = await fetch('view-api.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({
+                            video_id: VIDEO_ID,
+                            content_type: 'video'
+                        })
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        const label = document.getElementById('main-views');
+                        if (label) label.textContent = Number(result.views).toLocaleString() + ' views';
+                    }
+                } catch (error) {
+                    console.error('Could not record view:', error);
+                }
+            };
+
+            if (directVideo) {
+                directVideo.addEventListener('playing', recordView);
+            }
+
+            if (youtubeFrame) {
+                let lastYoutubeState = -1;
+                window.addEventListener('message', (event) => {
+                    if (event.source !== youtubeFrame.contentWindow) return;
+                    let data = event.data;
+                    if (typeof data === 'string') {
+                        try { data = JSON.parse(data); } catch (error) { return; }
+                    }
+                    const state = data && data.event === 'onStateChange'
+                        ? data.info
+                        : (data && data.event === 'infoDelivery' && data.info ? data.info.playerState : null);
+                    if (state === 1 && lastYoutubeState !== 1) recordView();
+                    if (typeof state === 'number') lastYoutubeState = state;
+                });
+            }
+            if (youtubePoster && youtubeFrame) {
+                const youtubeId = <?php echo json_encode((string)$yt_id); ?>;
+                const youtubeStart = <?php echo (int)$startAt; ?>;
+                const youtubeError = document.getElementById('youtube-error-player');
+                youtubePoster.addEventListener('click', () => {
+                    const params = new URLSearchParams({
+                        autoplay: '1',
+                        rel: '0',
+                        playsinline: '1',
+                        enablejsapi: '1',
+                        origin: window.location.origin
+                    });
+                    if (youtubeStart > 0) params.set('start', String(youtubeStart));
+                    youtubeFrame.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(youtubeId) + '?' + params.toString();
+                    youtubePoster.classList.add('is-hidden');
+
+                    window.addEventListener('message', (event) => {
+                        if (event.source !== youtubeFrame.contentWindow) return;
+                        let data = event.data;
+                        if (typeof data === 'string') {
+                            try { data = JSON.parse(data); } catch (error) { return; }
+                        }
+                        const state = data && data.event === 'onStateChange'
+                            ? data.info
+                            : (data && data.event === 'infoDelivery' && data.info ? data.info.playerState : null);
+                        if ([1, 2, 5].includes(state)) {
+                            youtubeFrame.dataset.started = '1';
+                            if (youtubeError) youtubeError.classList.remove('is-visible');
+                        }
+                    });
+                    window.setTimeout(() => {
+                        if (youtubeFrame.dataset.started !== '1' && youtubeError) {
+                            youtubeError.classList.add('is-visible');
+                        }
+                    }, 7000);
+                }, { once: true });
+            }
+
             const likeBtn = document.getElementById('like-btn');
             const dislikeBtn = document.getElementById('dislike-btn');
             const dislikesAvailable = !dislikeBtn.disabled;
@@ -1119,16 +1591,18 @@ if ($stmt = $conn->prepare($relSql)) {
             likeBtn.addEventListener('click', () => updateVote('like'));
             dislikeBtn.addEventListener('click', () => updateVote('dislike'));
 
-            subBtn.addEventListener('click', async () => {
-                subBtn.disabled = true;
-                const data = await postAction('subscribe');
-                subBtn.disabled = false;
-                if (!data.success) return toast(data.error || 'Subscribe failed');
+            if (subBtn) {
+                subBtn.addEventListener('click', async () => {
+                    subBtn.disabled = true;
+                    const data = await postAction('subscribe');
+                    subBtn.disabled = false;
+                    if (!data.success) return toast(data.error || 'Subscribe failed');
 
-                subBtn.textContent = data.subscribed ? 'Subscribed' : 'Subscribe';
-                subBtn.classList.toggle('subscribed', data.subscribed);
-                subsText.textContent = data.subscribers + (data.subscribers == 1 ? ' subscriber' : ' subscribers');
-            });
+                    subBtn.textContent = data.subscribed ? 'Subscribed' : 'Subscribe';
+                    subBtn.classList.toggle('subscribed', data.subscribed);
+                    subsText.textContent = data.subscribers + (data.subscribers == 1 ? ' subscriber' : ' subscribers');
+                });
+            }
         });
     </script>
     <script>
@@ -1213,22 +1687,415 @@ if ($stmt = $conn->prepare($relSql)) {
                 });
             }
 
+        })();
+    </script>
+    <script>
+        /* Playback speed, keyboard shortcuts and Share menu */
+        (function () {
+            const video = document.getElementById('main-video');
+            const frame = document.getElementById('main-iframe');
+            const wrap = document.querySelector('.video-wrapper');
+            const speedBtn = document.getElementById('speed-btn');
             const shareBtn = document.getElementById('share-btn');
-            if (shareBtn) {
-                const url = new URL('watch.php?id=' + encodeURIComponent(<?php echo json_encode((string)$id); ?>), window.location.href).href;
-                shareBtn.addEventListener('click', async () => {
-                    if (navigator.share) {
-                        try { await navigator.share({ title: document.title, url: url }); return; }
-                        catch (e) { if (e && e.name === 'AbortError') return; }
+            const theaterBtn = document.getElementById('theater-btn');
+            const pipBtn = document.getElementById('pip-btn');
+            const watchContainer = document.querySelector('.watch-container');
+            const miniPlayerReturn = document.getElementById('mini-player-return');
+            const miniPlayerClose = document.getElementById('mini-player-close');
+            const VIDEO_ID = <?php echo json_encode((string)$id); ?>;
+            const START = <?php echo (int)$startAt; ?>;
+            const PROGRESS_CSRF = <?php echo json_encode(vs_csrf_token()); ?>;
+            const CAN_SAVE_PROGRESS = <?php echo !empty($_SESSION['username']) ? 'true' : 'false'; ?>;
+            const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+            const THEATER_KEY = 'vs_watch_theater_mode';
+            const store = {
+                get: (k) => { try { return window.localStorage.getItem(k); } catch (e) { return null; } },
+                set: (k, v) => { try { window.localStorage.setItem(k, v); } catch (e) {} }
+            };
+            let rate = parseFloat(store.get('vs_speed')) || 1;
+            if (RATES.indexOf(rate) === -1) rate = 1;
+            const yt = { time: 0, duration: 0, state: -1, muted: false, volume: 100 };
+
+            function say(msg) { if (typeof toast === 'function') toast(msg); }
+            function setTheaterMode(enabled, announce) {
+                if (!theaterBtn || !watchContainer) return;
+                watchContainer.classList.toggle('theater-mode', enabled);
+                theaterBtn.setAttribute('aria-pressed', String(enabled));
+                theaterBtn.textContent = enabled ? 'Exit theater' : 'Theater mode';
+                theaterBtn.title = enabled ? 'Exit theater mode' : 'Toggle theater mode';
+                store.set(THEATER_KEY, enabled ? '1' : '0');
+                if (announce) say(enabled ? 'Theater mode on' : 'Theater mode off');
+            }
+            function fmt(sec) {
+                sec = Math.max(0, Math.floor(sec));
+                const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+                return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+            }
+            function rateLabel(r) { return r + '\u00d7'; }
+
+            /* ---- talking to the player ---- */
+            function ytCmd(func, args) {
+                if (!frame) return;
+                try { frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: args || [] }), '*'); } catch (e) {}
+            }
+            function getTime() { return video ? (video.currentTime || 0) : yt.time; }
+            function getDuration() { return video ? (video.duration || 0) : yt.duration; }
+            function togglePlay() {
+                if (video) { if (video.paused) { const p = video.play(); if (p && p.catch) p.catch(function () {}); } else { video.pause(); } }
+                else if (frame) { ytCmd(yt.state === 1 ? 'pauseVideo' : 'playVideo'); }
+            }
+            function seekTo(sec) {
+                sec = Math.max(0, sec);
+                if (video) { const d = video.duration; video.currentTime = isFinite(d) ? Math.min(sec, d) : sec; }
+                else if (frame) { yt.time = sec; ytCmd('seekTo', [sec, true]); }
+            }
+            function seekBy(delta) { seekTo(getTime() + delta); }
+            function toggleMute() {
+                if (video) { video.muted = !video.muted; say(video.muted ? 'Muted' : 'Sound on'); }
+                else if (frame) { yt.muted = !yt.muted; ytCmd(yt.muted ? 'mute' : 'unMute'); say(yt.muted ? 'Muted' : 'Sound on'); }
+            }
+            function changeVolume(delta) {
+                if (video) {
+                    video.muted = false;
+                    video.volume = Math.max(0, Math.min(1, video.volume + delta / 100));
+                    say('Volume ' + Math.round(video.volume * 100) + '%');
+                } else if (frame) {
+                    yt.volume = Math.max(0, Math.min(100, yt.volume + delta));
+                    ytCmd('setVolume', [yt.volume]);
+                    if (yt.volume > 0) { yt.muted = false; ytCmd('unMute'); }
+                    say('Volume ' + yt.volume + '%');
+                }
+            }
+            function toggleFullscreen() {
+                const el = wrap || video || frame;
+                if (!el) return;
+                if (document.fullscreenElement) { document.exitFullscreen(); }
+                else if (el.requestFullscreen) { el.requestFullscreen(); }
+            }
+            function togglePictureInPicture() {
+                if (!video || !('pictureInPictureEnabled' in document)) return;
+                if (document.pictureInPictureElement) {
+                    document.exitPictureInPicture().catch(function () {});
+                } else if (video.requestPictureInPicture) {
+                    video.requestPictureInPicture().catch(function () { say('Picture-in-picture is not available'); });
+                }
+            }
+            function setRate(r, announce) {
+                rate = r;
+                store.set('vs_speed', String(r));
+                if (video) video.playbackRate = r; else if (frame) ytCmd('setPlaybackRate', [r]);
+                if (speedBtn) speedBtn.innerHTML = 'Speed ' + rateLabel(r).replace('\u00d7', '&times;');
+                if (announce) say('Speed ' + rateLabel(r));
+            }
+            function stepRate(dir) {
+                const i = RATES.indexOf(rate);
+                const n = Math.max(0, Math.min(RATES.length - 1, (i === -1 ? RATES.indexOf(1) : i) + dir));
+                setRate(RATES[n], true);
+            }
+
+            if (video) {
+                const ready = () => {
+                    video.playbackRate = rate;
+                    if (START > 0 && isFinite(video.duration) && START < video.duration) video.currentTime = START;
+                };
+                if (video.readyState >= 1) ready(); else video.addEventListener('loadedmetadata', ready, { once: true });
+                video.addEventListener('play', () => { video.playbackRate = rate; });
+            }
+            if (frame) {
+                window.addEventListener('message', (e) => {
+                    if (e.source !== frame.contentWindow) return;
+                    let d = e.data;
+                    if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { return; } }
+                    if (!d) return;
+                    if (d.event === 'onStateChange') {
+                        yt.state = d.info;
+                        if (d.info === 1 && rate !== 1) ytCmd('setPlaybackRate', [rate]);
+                        return;
                     }
-                    try {
-                        await navigator.clipboard.writeText(url);
-                        toast('Link copied');
-                    } catch (e) {
-                        window.prompt('Copy this link', url);
+                    const i = d.info;
+                    if (!i || typeof i !== 'object') return;
+                    if (typeof i.currentTime === 'number') yt.time = i.currentTime;
+                    if (typeof i.duration === 'number') yt.duration = i.duration;
+                    if (typeof i.muted === 'boolean') yt.muted = i.muted;
+                    if (typeof i.volume === 'number') yt.volume = i.volume;
+                    if (typeof i.playerState === 'number') {
+                        const was = yt.state;
+                        yt.state = i.playerState;
+                        if (i.playerState === 1 && was !== 1 && rate !== 1) ytCmd('setPlaybackRate', [rate]);
                     }
                 });
             }
+            if (CAN_SAVE_PROGRESS && (video || frame)) {
+                function saveProgress(complete) {
+                    const duration = Math.floor(getDuration());
+                    const position = complete ? duration : Math.floor(getTime());
+                    if (duration <= 0 || duration > 604800 || position <= 0) return;
+                    const payload = new URLSearchParams({
+                        action: 'progress',
+                        video_id: VIDEO_ID,
+                        position: String(position),
+                        duration: String(duration),
+                        csrf_token: PROGRESS_CSRF
+                    });
+                    if (document.visibilityState === 'hidden' && navigator.sendBeacon) {
+                        navigator.sendBeacon('watch.php', new Blob([payload.toString()], {
+                            type: 'application/x-www-form-urlencoded'
+                        }));
+                        return;
+                    }
+                    fetch('watch.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: payload,
+                        keepalive: true
+                    }).catch(function (error) { console.error('Playback progress save failed:', error); });
+                }
+
+                const progressTimer = window.setInterval(() => saveProgress(false), 15000);
+                if (video) video.addEventListener('ended', () => saveProgress(true));
+                if (frame) {
+                    window.addEventListener('message', (e) => {
+                        if (e.source !== frame.contentWindow) return;
+                        let data = e.data;
+                        if (typeof data === 'string') {
+                            try { data = JSON.parse(data); } catch (error) { return; }
+                        }
+                        const state = data && data.event === 'onStateChange'
+                            ? data.info
+                            : (data && data.event === 'infoDelivery' && data.info ? data.info.playerState : null);
+                        if (state === 0) {
+                            saveProgress(true);
+                        }
+                    });
+                }
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'hidden') saveProgress(false);
+                });
+                window.addEventListener('pagehide', () => {
+                    window.clearInterval(progressTimer);
+                    saveProgress(false);
+                });
+            }
+            if (!video && !frame && speedBtn) speedBtn.hidden = true;
+            if (speedBtn) setRate(rate, false);
+
+            /* ---- small pop-up menus ---- */
+            let pop = null;
+            function closePop() { if (pop) { pop.remove(); pop = null; } }
+            function openPop(anchor, fill) {
+                if (pop && pop._anchor === anchor) { closePop(); return; }
+                closePop();
+                pop = document.createElement('div');
+                pop.className = 'vs-pop';
+                pop._anchor = anchor;
+                fill(pop);
+                document.body.appendChild(pop);
+                const r = anchor.getBoundingClientRect();
+                const w = pop.offsetWidth, h = pop.offsetHeight;
+                const left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+                let top = r.bottom + 6;
+                if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+                pop.style.left = left + 'px';
+                pop.style.top = top + 'px';
+            }
+            document.addEventListener('click', (e) => {
+                if (pop && !pop.contains(e.target) && !(pop._anchor && pop._anchor.contains(e.target))) closePop();
+            });
+            window.addEventListener('scroll', () => closePop(), { passive: true });
+            function popTitle(parent, text) {
+                const t = document.createElement('div');
+                t.className = 'vs-pop-title';
+                t.textContent = text;
+                parent.appendChild(t);
+            }
+
+            if (speedBtn) {
+                speedBtn.addEventListener('click', () => {
+                    openPop(speedBtn, (p) => {
+                        popTitle(p, 'Playback speed');
+                        RATES.forEach((r) => {
+                            const b = document.createElement('button');
+                            b.type = 'button';
+                            b.textContent = r === 1 ? 'Normal' : rateLabel(r);
+                            if (r === rate) b.className = 'on';
+                            b.addEventListener('click', () => { setRate(r, false); closePop(); });
+                            p.appendChild(b);
+                        });
+                    });
+                });
+            }
+
+            if (shareBtn) {
+                shareBtn.addEventListener('click', () => {
+                    openPop(shareBtn, (p) => {
+                        const cur = Math.floor(getTime());
+                        const base = new URL('watch.php?id=' + encodeURIComponent(VIDEO_ID), window.location.href).href;
+                        const check = document.createElement('input');
+                        check.type = 'checkbox';
+                        check.disabled = cur < 3;
+                        const urlNow = () => (check.checked && cur >= 3) ? base + '&t=' + cur : base;
+
+                        popTitle(p, 'Share');
+                        const copy = document.createElement('button');
+                        copy.type = 'button';
+                        copy.textContent = 'Copy link';
+                        copy.addEventListener('click', async () => {
+                            try { await navigator.clipboard.writeText(urlNow()); say('Link copied'); }
+                            catch (e) { window.prompt('Copy this link', urlNow()); }
+                            closePop();
+                        });
+                        p.appendChild(copy);
+
+                        const wa = document.createElement('button');
+                        wa.type = 'button';
+                        wa.textContent = 'WhatsApp';
+                        wa.addEventListener('click', () => {
+                            window.open('https://wa.me/?text=' + encodeURIComponent(document.title + ' ' + urlNow()), '_blank', 'noopener');
+                            closePop();
+                        });
+                        p.appendChild(wa);
+
+                        if (navigator.share) {
+                            const more = document.createElement('button');
+                            more.type = 'button';
+                            more.textContent = 'More apps\u2026';
+                            more.addEventListener('click', async () => {
+                                try { await navigator.share({ title: document.title, url: urlNow() }); } catch (e) {}
+                                closePop();
+                            });
+                            p.appendChild(more);
+                        }
+
+                        const lab = document.createElement('label');
+                        lab.appendChild(check);
+                        lab.appendChild(document.createTextNode('Start at ' + fmt(cur)));
+                        p.appendChild(lab);
+                    });
+                });
+            }
+
+            if (theaterBtn && watchContainer) {
+                setTheaterMode(store.get(THEATER_KEY) === '1', false);
+                theaterBtn.addEventListener('click', () => {
+                    setTheaterMode(!watchContainer.classList.contains('theater-mode'), false);
+                });
+            }
+
+            if (pipBtn && video) {
+                if (!document.pictureInPictureEnabled || !video.requestPictureInPicture) {
+                    pipBtn.hidden = true;
+                } else {
+                    pipBtn.addEventListener('click', togglePictureInPicture);
+                    video.addEventListener('enterpictureinpicture', () => {
+                        pipBtn.setAttribute('aria-pressed', 'true');
+                        pipBtn.textContent = 'Exit picture-in-picture';
+                    });
+                    video.addEventListener('leavepictureinpicture', () => {
+                        pipBtn.setAttribute('aria-pressed', 'false');
+                        pipBtn.textContent = 'Picture-in-picture';
+                    });
+                }
+            }
+
+            if (wrap && (video || frame) && 'IntersectionObserver' in window) {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'mini-player-placeholder';
+                placeholder.setAttribute('aria-hidden', 'true');
+                wrap.parentNode.insertBefore(placeholder, wrap);
+
+                let dismissed = false;
+                let miniPlayerActive = false;
+                const setMiniPlayer = (enabled) => {
+                    if (miniPlayerActive === enabled) return;
+                    miniPlayerActive = enabled;
+                    placeholder.classList.toggle('is-active', enabled);
+                    wrap.classList.toggle('mini-player-active', enabled);
+                };
+                const observer = new IntersectionObserver(([entry]) => {
+                    if (dismissed) return;
+                    const rect = entry.boundingClientRect;
+                    setMiniPlayer(!entry.isIntersecting && rect.bottom < 0 && rect.top < 0);
+                }, { threshold: 0, rootMargin: '0px 0px 0px 0px' });
+                observer.observe(wrap);
+
+                if (miniPlayerReturn) {
+                    miniPlayerReturn.addEventListener('click', () => {
+                        placeholder.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    });
+                }
+                if (miniPlayerClose) {
+                    miniPlayerClose.addEventListener('click', () => {
+                        dismissed = true;
+                        setMiniPlayer(false);
+                        observer.disconnect();
+                        placeholder.remove();
+                    });
+                }
+            }
+
+            /* ---- keyboard shortcuts ---- */
+            let help = null;
+            function closeHelp() { if (help) { help.remove(); help = null; } }
+            function toggleHelp() {
+                if (help) { closeHelp(); return; }
+                const rows = [
+                    ['Space or K', 'Play / pause'], ['J', 'Back 10 seconds'], ['L', 'Forward 10 seconds'],
+                    ['\u2190 / \u2192', 'Back / forward 5 seconds'], ['\u2191 / \u2193', 'Volume up / down'], ['M', 'Mute'],
+                    ['F', 'Fullscreen'], ['P', 'Picture-in-picture'], ['T', 'Theater mode'], ['< / >', 'Slower / faster'], ['0 to 9', 'Jump to 0% to 90%'], ['?', 'Show this help']
+                ];
+                help = document.createElement('div');
+                help.className = 'vs-help';
+                const box = document.createElement('div');
+                box.className = 'vs-help-box';
+                const h = document.createElement('h3');
+                h.textContent = 'Keyboard shortcuts';
+                box.appendChild(h);
+                rows.forEach((r) => {
+                    const row = document.createElement('div');
+                    row.className = 'vs-help-row';
+                    const a = document.createElement('kbd');
+                    a.textContent = r[0];
+                    const b = document.createElement('span');
+                    b.textContent = r[1];
+                    row.appendChild(b);
+                    row.appendChild(a);
+                    box.appendChild(row);
+                });
+                help.appendChild(box);
+                help.addEventListener('click', closeHelp);
+                document.body.appendChild(help);
+            }
+
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                const t = e.target;
+                const tag = t && t.tagName ? t.tagName.toLowerCase() : '';
+                if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+                if (e.key === 'Escape') { closePop(); closeHelp(); return; }
+                if (!video && !frame) return;
+                if ((tag === 'button' || tag === 'a' || tag === 'summary') && (e.key === ' ' || e.key === 'Enter')) return;
+                const k = e.key;
+                let handled = true;
+                if (k === ' ' || k === 'k' || k === 'K') togglePlay();
+                else if (k === 'j' || k === 'J') seekBy(-10);
+                else if (k === 'l' || k === 'L') seekBy(10);
+                else if (k === 'ArrowLeft') seekBy(-5);
+                else if (k === 'ArrowRight') seekBy(5);
+                else if (k === 'ArrowUp') changeVolume(10);
+                else if (k === 'ArrowDown') changeVolume(-10);
+                else if (k === 'm' || k === 'M') toggleMute();
+                else if (k === 'f' || k === 'F') toggleFullscreen();
+                else if (k === 'p' || k === 'P') togglePictureInPicture();
+                else if (k === 't' || k === 'T') {
+                    setTheaterMode(!watchContainer.classList.contains('theater-mode'), true);
+                }
+                else if (k === '>') stepRate(1);
+                else if (k === '<') stepRate(-1);
+                else if (k.length === 1 && k >= '0' && k <= '9' && !e.shiftKey) { const d = getDuration(); if (d) seekTo(d * Number(k) / 10); else handled = false; }
+                else if (k === '?') toggleHelp();
+                else handled = false;
+                if (handled) e.preventDefault();
+            });
         })();
     </script>
 </body>

@@ -7,6 +7,8 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+require_once __DIR__ . '/admin-permissions.php';
+vs_admin_enforce_route();
 if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecmp((string)$_SESSION['role'], 'Admin') !== 0)) {
     echo "<script>alert('Access Denied: Administrator privileges required.'); window.location.href='../login.php';</script>";
     exit;
@@ -216,7 +218,7 @@ function vs_si_upload_form(string $csrf, string $action, string $name, string $l
               <div class="table-responsive">
                 <table class="table align-middle mb-0">
                   <tbody>
-                    <?php foreach ($categories as $cat): $cname = (string)$cat; $has = function_exists('vs_cat_icon_get') ? vs_cat_icon_get($cname) !== null : false; ?>
+                    <?php foreach ($categories as $cat): $cname = (string)$cat; $has = vs_cat_icon_url($cname) !== null; ?>
                       <tr>
                         <td style="width:56px"><?php echo vs_category_icon_html($cname, 28, '../'); ?></td>
                         <td class="fw-semibold"><?php echo vs_e($cname); ?></td>

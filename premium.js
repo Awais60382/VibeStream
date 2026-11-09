@@ -71,6 +71,13 @@
     history: function () { return S.history || []; },
     limits: function () { return S.limits || {}; },
     request: function (plan, ref) { return send('request', plan, ref); },
+    redeem: function () { return send('redeem'); },
+    checkin: function () {
+      return send('checkin').then(function () { return !!S.checkinAwarded; });
+    },
+    points: function () { return Number(S.points) || 0; },
+    pointsAvailable: function () { return !!S.pointsAvailable; },
+    checkinClaimed: function () { return !!S.checkinClaimed; },
     cancel: function () { return send('cancel'); },
     refresh: apply
   };

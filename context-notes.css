@@ -1,0 +1,17 @@
+.context-notes { margin: 18px 0; padding: 18px; border: 1px solid var(--border, rgba(128,128,128,.25)); border-radius: 14px; background: var(--surface, rgba(128,128,128,.05)); color: var(--text-primary, var(--text, inherit)); }
+.context-notes-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.context-notes-heading h3 { margin: 0; font-size: 17px; }
+.context-notes-heading p, .context-notes-form > p { margin: 5px 0 0; color: var(--text-secondary, var(--muted, #777)); font-size: 13px; }
+.context-notes-toggle, .context-notes-form button { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border: 1px solid var(--border, rgba(128,128,128,.3)); border-radius: 9px; background: var(--surface-2, rgba(128,128,128,.1)); color: inherit; font: inherit; text-decoration: none; cursor: pointer; white-space: nowrap; }
+.context-notes-form { display: grid; gap: 12px; margin: 14px 0; padding: 14px; border-radius: 10px; background: var(--surface-2, rgba(128,128,128,.08)); }
+.context-notes-form[hidden] { display: none; }
+.context-notes-form label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+.context-notes-form textarea, .context-notes-form input { width: 100%; padding: 10px; border: 1px solid var(--border, rgba(128,128,128,.3)); border-radius: 8px; background: var(--surface, #fff); color: inherit; font: inherit; }
+.context-notes-form textarea { min-height: 100px; resize: vertical; }
+.context-notes-status { min-height: 1em; margin: 10px 0 0; color: var(--text-secondary, var(--muted, #777)); font-size: 13px; }
+.context-notes-list { display: grid; gap: 10px; margin-top: 12px; }
+.context-note { padding: 12px; border-radius: 10px; background: var(--surface-2, rgba(128,128,128,.08)); }
+.context-note p { margin: 0 0 8px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+.context-note small { display: block; margin-top: 8px; color: var(--text-secondary, var(--muted, #777)); }
+.context-notes-empty { margin: 0; color: var(--text-secondary, var(--muted, #777)); font-size: 13px; }
+@media(max-width:520px) { .context-notes-heading { flex-direction: column; } }

@@ -24,14 +24,15 @@ if ($me === '') {
     exit;
 }
 $planKey = (string)($_POST['plan'] ?? '');
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals((string)($_SESSION['premium_csrf'] ?? ''), (string)($_POST['csrf'] ?? ''))) {
+$csrf = (string)($_SESSION['premium_csrf'] ?? '');
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || $csrf === '' || !hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
     vs_stripe_fail('Session expired. Go back and try again.', $planKey);
 }
 if (!isset(VS_PREMIUM_PLANS[$planKey])) {
     vs_stripe_fail('Unknown plan.');
 }
 if (!vs_stripe_ready()) {
-    vs_stripe_fail('Card payments are not set up yet (no Stripe key in stripe-config.php, or PHP curl is off).', $planKey);
+    vs_stripe_fail('Card payments are not configured. The site owner must set a valid STRIPE_SECRET_KEY in the Apache environment and enable PHP cURL.', $planKey);
 }
 $pdo = vs_premium_pdo();
 if (!$pdo) {
@@ -52,8 +53,8 @@ if (vs_premium_is_active($cur)) {
 
 $plan = VS_PREMIUM_PLANS[$planKey];
 $tier = $plan['tier'] === 'plus' ? 'Premium Plus' : 'Premium';
-$base = vs_stripe_base_url();
 try {
+    $base = vs_stripe_base_url();
     $s = vs_stripe_call('POST', 'checkout/sessions', [
         'mode' => 'payment',
         'success_url' => $base . '/premium-stripe-return.php?session_id={CHECKOUT_SESSION_ID}',
@@ -69,8 +70,14 @@ try {
         ]],
         'metadata' => ['username' => $me, 'plan' => $planKey],
     ]);
+    $checkoutUrl = (string)($s['url'] ?? '');
+    $checkoutHost = strtolower((string)(parse_url($checkoutUrl, PHP_URL_HOST) ?: ''));
+    if (!filter_var($checkoutUrl, FILTER_VALIDATE_URL) || $checkoutHost !== 'checkout.stripe.com') {
+        throw new RuntimeException('Stripe did not return a valid Checkout URL.');
+    }
 } catch (Throwable $e) {
-    vs_stripe_fail('Stripe said: ' . $e->getMessage(), $planKey);
+    error_log('Stripe Checkout session creation failed: ' . $e->getMessage());
+    vs_stripe_fail($e->getMessage(), $planKey);
 }
 header('Location: ' . $s['url'], true, 303);
 exit;

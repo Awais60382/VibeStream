@@ -2,6 +2,8 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+require_once __DIR__ . '/admin-permissions.php';
+vs_admin_enforce_route();
 
 if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecmp($_SESSION['role'], 'Admin') !== 0)) {
     echo "<script>alert('Access Denied: Administrator privileges required.'); window.location.href='../login.php';</script>";
@@ -218,15 +220,33 @@ $filtered = array_values(array_filter($people, function ($p) use ($q, $roleFilte
     return true;
 }));
 
-$colCount = 5
-    + ($show['role'] ? 1 : 0)
-    + ($show['status'] ? 1 : 0)
-    + ($show['date'] ? 1 : 0)
-    + ($show['online'] ? 1 : 0); 
-
 include "header.php";
 vs_print_styles();
 ?>
+<style>
+  .vs-users-grid { margin-top: .25rem; }
+  .vs-user-card { height: 100%; padding: 1rem; border: 1px solid var(--admin-border); border-radius: 14px; background: var(--admin-surface); color: var(--admin-text); box-shadow: var(--admin-shadow-sm); transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+  .vs-user-card:hover { border-color: var(--admin-primary); box-shadow: var(--admin-shadow); transform: translateY(-2px); }
+  .vs-user-card-head { display: flex; align-items: center; gap: .85rem; min-width: 0; }
+  .vs-user-card-copy { min-width: 0; }
+  .vs-user-card-name { overflow-wrap: anywhere; }
+  .vs-user-card-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vs-user-card-badges { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin-top: .85rem; }
+  .vs-user-card-online { display: inline-flex; align-items: center; gap: .4rem; color: var(--admin-muted); font-size: .82rem; }
+  .vs-user-card-online::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #858b99; }
+  .vs-user-card-online.is-online::before { background: #20c997; box-shadow: 0 0 9px rgba(32,201,151,.55); }
+  .vs-user-card-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .5rem; margin-top: 1rem; padding: .8rem 0; border-top: 1px solid var(--admin-border); border-bottom: 1px solid var(--admin-border); }
+  .vs-user-card-stat { min-width: 0; text-align: center; }
+  .vs-user-card-stat strong { display: block; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .vs-user-card-stat span { display: block; color: var(--admin-muted); font-size: .75rem; }
+  .vs-user-card-date { min-height: 1.2em; margin: .8rem 0 0; color: var(--admin-muted); font-size: .82rem; }
+  .vs-user-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .9rem; }
+  html[data-theme="dark"] .vs-user-card { border-color: rgba(139,92,246,.3); background: linear-gradient(155deg,rgba(17,22,61,.96),rgba(9,13,39,.98)); color: #e9ecfb; }
+  html[data-theme="dark"] .vs-user-card-stats { border-color: rgba(139,92,246,.24); }
+  html[data-theme="dark"] .vs-user-card:hover { border-color: rgba(192,132,252,.72); box-shadow: 0 0 22px rgba(124,58,237,.18); }
+  html[data-theme="dark"] .vs-user-card .text-muted,
+  html[data-theme="dark"] .vs-user-card-stat span { color: #a5b4d6 !important; }
+</style>
 
       <main class="dashboard-content">
         <div class="container-fluid px-3 px-lg-4 py-4">
@@ -241,7 +261,7 @@ vs_print_styles();
             </div>
             <div class="heading-actions">
               <a class="btn btn-outline-secondary btn-sm" href="index.php"><i class="bi bi-arrow-left" aria-hidden="true"></i> Back to Dashboard</a>
-              <a class="btn btn-primary btn-sm" href="videos.php"><i class="bi bi-collection-play" aria-hidden="true"></i> Manage Videos</a>
+              <?php if ($vsCanOpenAdminRoute('videos.php')): ?><a class="btn btn-primary btn-sm" href="videos.php"><i class="bi bi-collection-play" aria-hidden="true"></i> Manage Videos</a><?php endif; ?>
             </div>
           </div>
 
@@ -342,81 +362,62 @@ vs_print_styles();
               </div>
             </form>
 
-            <div class="table-responsive">
-              <table class="table align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th scope="col"><?php echo $mode === 'users' ? 'User' : 'Uploader'; ?></th>
-                    <?php if ($show['online']): ?><th scope="col">Online</th><?php endif; ?>
-                    <?php if ($show['role']): ?><th scope="col">Role</th><?php endif; ?>
-                    <?php if ($show['status']): ?><th scope="col">Status</th><?php endif; ?>
-                    <th scope="col" class="text-end">Videos</th>
-                    <th scope="col" class="text-end">Shorts</th>
-                    <th scope="col" class="text-end">Views</th>
-                    <?php if ($show['date']): ?><th scope="col"><?php echo vs_e($dateLabel); ?></th><?php endif; ?>
-                    <th scope="col" class="text-end">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                <?php if ($filtered): foreach ($filtered as $p):
-                    $hasUploads = ($p['videos'] + $p['shorts']) > 0;
-                    [$statusLabel, $statusClass] = vs_status($p['status']);
-                    $isMe = ($myId !== null && $p['id'] !== '' && (string)$myId === $p['id']);
-                ?>
-                  <tr>
-                    <td>
-                      <div class="d-flex align-items-center gap-2">
-                        <?php echo vs_avatar($p['name'], $p['avatar']); ?>
-                        <div>
-                          <p class="fw-semibold mb-0"><?php echo vs_e($p['name']); ?><?php if ($isMe): ?> <span class="badge text-bg-secondary">You</span><?php endif; ?></p>
-                          <?php if ($p['sub'] !== ''): ?><p class="text-muted small mb-0 vs-mail"><?php echo vs_e($p['sub']); ?></p><?php endif; ?>
-                        </div>
+            <div class="row g-3 vs-users-grid">
+              <?php if ($filtered): foreach ($filtered as $p):
+                  $hasUploads = ($p['videos'] + $p['shorts']) > 0;
+                  [$statusLabel, $statusClass] = vs_status($p['status']);
+                  $isMe = ($myId !== null && $p['id'] !== '' && (string)$myId === $p['id']);
+              ?>
+                <div class="col-12 col-md-6 col-xl-4">
+                  <article class="vs-user-card">
+                    <div class="vs-user-card-head">
+                      <?php echo vs_avatar($p['name'], $p['avatar']); ?>
+                      <div class="vs-user-card-copy">
+                        <p class="fw-semibold mb-0 vs-user-card-name"><?php echo vs_e($p['name']); ?><?php if ($isMe): ?> <span class="badge text-bg-secondary">You</span><?php endif; ?></p>
+                        <?php if ($p['sub'] !== ''): ?><p class="text-muted small mb-0 vs-user-card-sub"><?php echo vs_e($p['sub']); ?></p><?php endif; ?>
                       </div>
-                    </td>
-                    <?php if ($show['online']): ?>
-                    <td>
-                      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background-color:<?php echo $p['online'] ? '#2ecc71' : '#888'; ?>;"></span>
-                      <?php echo $p['online'] ? 'Online' : 'Offline'; ?>
-                    </td>
-                    <?php endif; ?>
-                    <?php if ($show['role']): ?>
-                    <td>
-                      <?php if ($p['is_admin']): ?>
-                        <span class="badge text-bg-primary">Admin</span>
-                      <?php elseif ($p['role'] !== ''): ?>
-                        <?php echo vs_e(ucfirst($p['role'])); ?>
-                      <?php else: ?>
-                        <span class="text-muted">—</span>
-                      <?php endif; ?>
-                    </td>
-                    <?php endif; ?>
-                    <?php if ($show['status']): ?><td><span class="badge <?php echo $statusClass; ?>"><?php echo vs_e($statusLabel); ?></span></td><?php endif; ?>
-                    <td class="text-end vs-num"><?php echo (int)$p['videos']; ?></td>
-                    <td class="text-end vs-num"><?php echo (int)$p['shorts']; ?></td>
-                    <td class="text-end"><?php echo number_format($p['views']); ?></td>
-                    <?php if ($show['date']): ?><td class="text-muted"><?php echo $p['date'] !== '' ? vs_e($p['date']) : '—'; ?></td><?php endif; ?>
-                    <td class="text-end">
-                      <div class="d-inline-flex flex-wrap justify-content-end align-items-center gap-1">
-                        <?php if ($hasUploads): ?>
-                          <a class="btn btn-light btn-sm" href="videos.php?uploader=<?php echo urlencode($p['key']); ?>">View uploads</a>
-                        <?php else: ?>
-                          <span class="text-muted small">No uploads</span>
-                        <?php endif; ?>
+                    </div>
 
-                        <?php if ($canUpdate && $p['id'] !== ''): ?>
-                          <a class="btn btn-primary btn-sm" href="user_profile.php?id=<?php echo urlencode($p['id']); ?>">Update <?php echo $p['is_admin'] ? 'admin' : 'user'; ?></a>
+                    <div class="vs-user-card-badges">
+                      <?php if ($show['role']): ?>
+                        <?php if ($p['is_admin']): ?>
+                          <span class="badge text-bg-primary">Admin</span>
+                        <?php elseif ($p['role'] !== ''): ?>
+                          <span class="badge text-bg-secondary"><?php echo vs_e(ucfirst($p['role'])); ?></span>
+                        <?php else: ?>
+                          <span class="badge text-bg-secondary">User</span>
                         <?php endif; ?>
-                      </div>
-                    </td>
-                  </tr>
-                <?php endforeach; else: ?>
-                  <tr><td colspan="<?php echo (int)$colCount; ?>" class="text-center text-muted py-4">No users match these filters. <a href="Users.php">Clear filters</a></td></tr>
-                <?php endif; ?>
-                </tbody>
-              </table>
+                      <?php endif; ?>
+                      <?php if ($show['status']): ?><span class="badge <?php echo $statusClass; ?>"><?php echo vs_e($statusLabel); ?></span><?php endif; ?>
+                      <?php if ($show['online']): ?><span class="vs-user-card-online<?php echo $p['online'] ? ' is-online' : ''; ?>"><?php echo $p['online'] ? 'Online' : 'Offline'; ?></span><?php endif; ?>
+                    </div>
+
+                    <div class="vs-user-card-stats" aria-label="Uploads and views">
+                      <div class="vs-user-card-stat"><strong><?php echo (int)$p['videos']; ?></strong><span>Videos</span></div>
+                      <div class="vs-user-card-stat"><strong><?php echo (int)$p['shorts']; ?></strong><span>Shorts</span></div>
+                      <div class="vs-user-card-stat"><strong><?php echo number_format($p['views']); ?></strong><span>Views</span></div>
+                    </div>
+
+                    <?php if ($show['date']): ?><p class="vs-user-card-date"><?php echo vs_e($dateLabel); ?>: <?php echo $p['date'] !== '' ? vs_e($p['date']) : '—'; ?></p><?php endif; ?>
+
+                    <div class="vs-user-card-actions">
+                      <?php if ($hasUploads && $vsCanOpenAdminRoute('videos.php')): ?>
+                        <a class="btn btn-light btn-sm" href="videos.php?uploader=<?php echo urlencode($p['key']); ?>">View uploads</a>
+                      <?php elseif (!$hasUploads): ?>
+                        <span class="text-muted small">No uploads</span>
+                      <?php endif; ?>
+                      <?php if ($canUpdate && $p['id'] !== '' && $vsCanOpenAdminRoute('user_profile.php')): ?>
+                        <a class="btn btn-primary btn-sm" href="user_profile.php?id=<?php echo urlencode($p['id']); ?>">Update user</a>
+                      <?php endif; ?>
+                    </div>
+                  </article>
+                </div>
+              <?php endforeach; else: ?>
+                <div class="col-12"><p class="text-center text-muted py-4 mb-0">No users match these filters. <a href="Users.php">Clear filters</a></p></div>
+              <?php endif; ?>
             </div>
 
-            <?php if ($mode === 'users' && $unmatched): ?>
+            <?php if ($mode === 'users' && $unmatched && $vsCanOpenAdminRoute('videos.php')): ?>
               <p class="text-muted small mt-3 mb-0">
                 Uploads under names that don't match any account:
                 <?php

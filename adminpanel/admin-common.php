@@ -59,7 +59,8 @@ function vs_admin_deny(string $message = 'Access Denied: Administrator privilege
 function vs_admin_require_session(): void
 {
     vs_admin_session_start();
-    if (!vs_admin_session_is_admin()) {
+    require_once __DIR__ . '/admin-session-core.php';
+    if (!vs_admin_session_is_valid()) {
         vs_admin_deny();
     }
 }

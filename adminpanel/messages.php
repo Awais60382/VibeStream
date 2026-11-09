@@ -55,7 +55,13 @@ function vs_msg_text_html(string $body): string
         }
         return '<a href="' . $url . '" target="_blank" rel="noopener noreferrer">' . $url . '</a>' . $tail;
     }, $safe);
-    return nl2br((string)$safe);
+    $parts = preg_split('~(<a\b[^>]*>.*?</a>)~is', (string)$safe, -1, PREG_SPLIT_DELIM_CAPTURE);
+    foreach ($parts as $i => $part) {
+        if ($i % 2 === 0) {
+            $parts[$i] = preg_replace('~(?<![\w@.])@([\p{L}\p{N}_.-]{2,30})~u', '<span class="msg-mention">@$1</span>', $part);
+        }
+    }
+    return nl2br(implode('', $parts));
 }
 
 function vs_msg_size(int $bytes): string
@@ -403,6 +409,31 @@ function vs_msg_upload_dir(): string
 }
 
 /** Validates and stores an uploaded file. Returns its details, or null when no file was sent. */
+/** True when the first bytes of the file really look like its extension (a renamed file fails). */
+function vs_msg_signature_ok(string $ext, string $tmp): bool
+{
+    $h = @file_get_contents($tmp, false, null, 0, 4096);
+    if ($h === false || $h === '') {
+        return false;
+    }
+    switch ($ext) {
+        case 'pdf':
+            $p = strpos($h, '%PDF');
+            return $p !== false && $p < 1024;
+        case 'zip': case 'docx': case 'xlsx': case 'pptx':
+            return substr($h, 0, 2) === 'PK';
+        case 'doc': case 'xls': case 'ppt':
+            return substr($h, 0, 4) === "\xD0\xCF\x11\xE0";
+        case 'mp4':
+            return in_array(substr($h, 4, 4), ['ftyp', 'moov', 'mdat', 'free', 'wide'], true);
+        case 'mp3':
+            return substr($h, 0, 3) === 'ID3' || (strlen($h) > 1 && ord($h[0]) === 0xFF && (ord($h[1]) & 0xE0) === 0xE0);
+        case 'txt': case 'csv':
+            return strpos($h, "\0") === false;
+    }
+    return true; // images are checked with getimagesize()
+}
+
 function vs_msg_store_upload($file): ?array
 {
     if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
@@ -441,6 +472,9 @@ function vs_msg_store_upload($file): ?array
     }
     if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true) && @getimagesize((string)$file['tmp_name']) === false) {
         throw new RuntimeException('That image file looks damaged.');
+    }
+    if (!vs_msg_signature_ok($ext, (string)$file['tmp_name'])) {
+        throw new RuntimeException('That file does not match its type (.' . $ext . '), so it was not sent.');
     }
 
     $dir = vs_msg_upload_dir();
@@ -1842,6 +1876,23 @@ require_once __DIR__ . '/header.php';
     .msg-img img { max-width: 220px; }
     .msg-emoji { grid-template-columns: repeat(6, 1fr); }
   }
+
+  /* polish: small phones, tap targets, @mentions, reduced motion */
+  .msg-bubble { overflow-wrap: anywhere; }
+  .msg-contacts { overscroll-behavior: contain; }
+  .msg-mention { font-weight: 600; color: var(--admin-primary); }
+  @media (max-width: 600px) {
+    .msg-page h1 { font-size: 1.35rem; }
+    .msg-sub { display: none; }
+    .msg-shell { height: calc(100vh - 150px); height: calc(100dvh - 150px); min-height: 0; }
+    .msg-row { max-width: 94%; }
+    .msg-img img { max-width: min(240px, 68vw); }
+    .msg-form { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+    .msg-form [name="body"], .msg-search input, #msgFind { font-size: 16px; }
+    .msg-hbtn, .msg-back { min-width: 44px; min-height: 44px; }
+    .msg-contact { padding-top: 14px; padding-bottom: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .msg-shell * { animation: none !important; transition: none !important; } }
 </style>
 
 <main class="admin-content p-3 p-lg-4">
@@ -2905,14 +2956,30 @@ require_once __DIR__ . '/header.php';
         });
       });
 
-      setInterval(function () { if (!document.hidden) refreshThread(); }, 2500);
+      vsEvery(2500, 10000, function () { refreshThread(); });
       document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshThread(); });
+    }
+
+    /* Runs fn every `fast` ms while you are active, every `slow` ms after 60 s of no input; never while the tab is hidden. */
+    function vsEvery(fast, slow, fn) {
+      if (!vsEvery.t) {
+        vsEvery.t = Date.now();
+        ['pointerdown', 'keydown', 'touchstart', 'mousemove'].forEach(function (ev) {
+          window.addEventListener(ev, function () { vsEvery.t = Date.now(); }, { passive: true });
+        });
+      }
+      var last = 0;
+      setInterval(function () {
+        if (document.hidden) { return; }
+        var gap = Date.now() - vsEvery.t > 60000 ? slow : fast;
+        if (Date.now() - last >= gap - 100) { last = Date.now(); fn(); }
+      }, 500);
     }
 
     if (thread && form && body) initConversation();
 
     /* ---------- keep the chat list fresh ---------- */
-    setInterval(refreshSidebar, 4000);
+    vsEvery(4000, 15000, refreshSidebar);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshSidebar(); });
     applyDrafts();
     refreshSidebar();

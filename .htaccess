@@ -9,3 +9,14 @@
     Deny from all
   </IfModule>
 </Files>
+
+# VibeStream private files: never send these to a browser
+<Files "migrations.sql">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</Files>

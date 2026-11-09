@@ -1,0 +1,72 @@
+/*
+ * VibeStream admin - "neon navy" look for the sidebar, top bar and page background.
+ * Loaded by header.php only while VS_NEON_SHELL is true, and only in the DARK theme.
+ * Everything is scoped under body.vs-neon, so deleting this file (or setting
+ * VS_NEON_SHELL to false in header.php) puts the old look back.
+ */
+html[data-theme="dark"] body.vs-neon{
+  --vsn-bg:#040920;--vsn-panel:#070f35;--vsn-line:#14246b;--vsn-text:#e9ecfb;--vsn-muted:#8f9bc4;--vsn-brand:#5146ea;--vsn-brand2:#6d5ffd;
+  background:#040920;color:var(--vsn-text);
+}
+html[data-theme="dark"] body.vs-neon .admin-main{
+  background:radial-gradient(900px 420px at 15% -10%,rgba(80,70,229,.16),transparent 70%),radial-gradient(700px 380px at 100% 0,rgba(34,120,255,.08),transparent 70%),#040920;
+}
+
+/* ---------- sidebar ---------- */
+html[data-theme="dark"] body.vs-neon .admin-sidebar{
+  background:linear-gradient(180deg,#07103a 0%,#050b2c 100%);
+  border-right:1px solid var(--vsn-line);
+  box-shadow:inset -1px 0 0 rgba(90,110,255,.06);
+}
+html[data-theme="dark"] body.vs-neon .sidebar-header{border-bottom:1px solid var(--vsn-line)}
+html[data-theme="dark"] body.vs-neon .brand-title{color:#fff;font-weight:800;letter-spacing:.2px}
+html[data-theme="dark"] body.vs-neon .brand-subtitle{color:#2fd6c0;font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:.7rem}
+html[data-theme="dark"] body.vs-neon .sidebar-section-title{color:#7f8cc4;font-weight:600;letter-spacing:.12em;font-size:.68rem}
+html[data-theme="dark"] body.vs-neon .sidebar-nav .nav-link{
+  color:#dfe4ff;border-radius:10px;border:1px solid transparent;transition:background .15s,border-color .15s;
+}
+html[data-theme="dark"] body.vs-neon .sidebar-nav .nav-link .nav-icon{color:#c9d1ff}
+html[data-theme="dark"] body.vs-neon .sidebar-nav .nav-link:hover{background:rgba(80,100,255,.14);border-color:rgba(90,110,255,.25);color:#fff}
+html[data-theme="dark"] body.vs-neon .sidebar-nav .nav-link.active{
+  background:linear-gradient(180deg,#6d5ffd,#4a3fe0);color:#fff;border-color:#7f73ff;
+  box-shadow:0 6px 22px rgba(81,70,234,.45);
+}
+html[data-theme="dark"] body.vs-neon .sidebar-nav .nav-link.active .nav-icon{color:#fff}
+
+html[data-theme="dark"] body.vs-neon .sidebar-user{
+  background:rgba(20,34,100,.35);border:1px solid var(--vsn-line);border-radius:12px;color:var(--vsn-text);
+}
+html[data-theme="dark"] body.vs-neon .sidebar-user small{color:var(--vsn-muted)}
+html[data-theme="dark"] body.vs-neon .sidebar-footer{border-top:1px solid var(--vsn-line);color:var(--vsn-muted)}
+
+/* "Site Owner Only" crown card (shown by header.php to the owner only) */
+.sidebar-owner-card{display:flex;gap:12px;align-items:center;margin:10px 14px;padding:12px 14px;border-radius:12px;
+  border:1px solid #d9a21b;background:linear-gradient(180deg,rgba(245,165,36,.14),rgba(245,165,36,.04))}
+.sidebar-owner-card i{font-size:1.7rem;color:#f5b82e;flex:none}
+.sidebar-owner-card strong{display:block;color:#f5b82e;font-size:.9rem;line-height:1.2}
+.sidebar-owner-card small{display:block;color:#aeb7dc;font-size:.72rem;line-height:1.3;margin-top:2px}
+html[data-theme="light"] .sidebar-owner-card strong{color:#9a6a00}
+html[data-theme="light"] .sidebar-owner-card small{color:#6b7280}
+
+/* ---------- top bar ---------- */
+html[data-theme="dark"] body.vs-neon .admin-navbar.bg-white,
+html[data-theme="dark"] body.vs-neon .admin-navbar{
+  background:rgba(7,14,50,.92)!important;border-bottom:1px solid var(--vsn-line);backdrop-filter:blur(6px);
+}
+html[data-theme="dark"] body.vs-neon .admin-navbar .search-input{
+  background:#081038;border:1px solid #1c2f70;color:var(--vsn-text);border-radius:10px;
+}
+html[data-theme="dark"] body.vs-neon .admin-navbar .search-input::placeholder{color:#6874a3}
+html[data-theme="dark"] body.vs-neon .admin-navbar .search-input:focus{border-color:#5b6bff;box-shadow:0 0 0 .2rem rgba(91,107,255,.22)}
+html[data-theme="dark"] body.vs-neon .admin-navbar .icon-button,
+html[data-theme="dark"] body.vs-neon .admin-navbar .profile-button{
+  color:var(--vsn-text);background:transparent;border-color:transparent;
+}
+html[data-theme="dark"] body.vs-neon .admin-navbar .icon-button:hover,
+html[data-theme="dark"] body.vs-neon .admin-navbar .profile-button:hover{background:rgba(80,100,255,.16)}
+html[data-theme="dark"] body.vs-neon .dropdown-menu{
+  background:#0a1240;border:1px solid var(--vsn-line);color:var(--vsn-text);
+}
+html[data-theme="dark"] body.vs-neon .dropdown-menu .dropdown-item{color:var(--vsn-text)}
+html[data-theme="dark"] body.vs-neon .dropdown-menu .dropdown-item:hover{background:rgba(80,100,255,.18)}
+html[data-theme="dark"] body.vs-neon .admin-footer{background:transparent;color:var(--vsn-muted);border-top:1px solid var(--vsn-line)}

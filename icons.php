@@ -1,23 +1,54 @@
 <?php
+/*
+ * VibeStream - icons hub (MAIN folder, next to index.php).   >>> REBUILT FILE <<<
+ *
+ * index.php, shorts.php, watch.php, subscriptions.php and profile.php do:  require_once __DIR__ . '/icons.php';
+ * This file loads every icon helper that lives in the main folder, so any page that includes it gets:
+ *   ui-icons.php            replaceable menu / explore / button icons   (vs_ui_icon_*)
+ *   category-presets.php    ready-made categories and their icons       (vs_category_presets, vs_category_icon_svg)
+ *   category-icons.php      uploaded category icons                     (vs_category_icon_html, vs_cat_icon_*)
+ *   sidebar-icons-store.php owner-replaced sidebar / menu icons         (vs_si_*)
+ * and it defines vs_icon(), the small button icon used on the profile page.
+ *
+ * It only loads files that exist, never prints anything, and is safe to include many times.
+ * NOTE: the admin "Site icons" page is a DIFFERENT file and belongs in the adminpanel folder:
+ *   adminpanel/icons.php  (the one that starts with "VibeStream admin panel - Site icons (OWNER ONLY)")
+ */
+foreach (['ui-icons.php', 'category-presets.php', 'category-icons.php', 'sidebar-icons-store.php'] as $vsIconFile) {
+    $vsIconPath = __DIR__ . '/' . $vsIconFile;
+    if (is_file($vsIconPath)) {
+        require_once $vsIconPath;
+    }
+}
+unset($vsIconFile, $vsIconPath);
+
 if (!function_exists('vs_icon')) {
-    function vs_icon($name, $size = 18) {
-        static $paths = [
-            'gauge'       => '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
-            'box'         => '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
-            'plus-square' => '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/><path d="M12 8v8"/>',
-            'contact'     => '<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="10" r="2.5"/><path d="M8 17c.7-2 2.3-3 4-3s3.3 1 4 3"/>',
-            'settings'    => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
-        ];
-        if (!isset($paths[$name])) return '';
-        // An icon the owner replaced on the admin "Site icons" page
-        if (is_file(__DIR__ . '/ui-icons.php')) {
-            require_once __DIR__ . '/ui-icons.php';
-            $custom = vs_ui_icon_img($name, (int)$size);
-            if ($custom !== '') return $custom;
+    /**
+     * Small button icon by name, e.g. vs_icon('plus-square', 16).
+     * If the owner uploaded a replacement (Admin > Site icons > Buttons) that one is used,
+     * otherwise the built-in line icon below. Unknown names give an empty string (never an error).
+     */
+    function vs_icon(string $name, int $size = 20): string
+    {
+        $size = max(8, $size);
+        if (function_exists('vs_ui_icon_img')) {
+            try {
+                $custom = vs_ui_icon_img($name, $size);
+                if ($custom !== '') {
+                    return $custom;
+                }
+            } catch (Throwable $e) {
+                // fall back to the built-in icon
+            }
         }
-        $s = (int)$size;
-        return '<svg xmlns="http://www.w3.org/2000/svg" width="' . $s . '" height="' . $s . '" viewBox="0 0 24 24" fill="none" '
-             . 'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-             . $paths[$name] . '</svg>';
+        $paths = [
+            'plus-square' => '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/>',
+            'contact'     => '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+        ];
+        if (!isset($paths[$name])) {
+            return '';
+        }
+        return '<svg viewBox="0 0 24 24" width="' . $size . '" height="' . $size . '" fill="none" stroke="currentColor" '
+            . 'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $paths[$name] . '</svg>';
     }
 }

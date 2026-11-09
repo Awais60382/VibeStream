@@ -1,0 +1,74 @@
+/*
+ * VibeStream ADMIN PANEL - slim icon bar for a closed menu (desktop only).
+ * Press the menu button (the three lines): the sidebar shrinks to a narrow bar that keeps only
+ * Dashboard, Videos, Users, Messages, Premium, Profile and Settings. Press it again to open the full menu.
+ * Phones and small windows keep the normal slide-in menu.
+ * Must be loaded AFTER the other admin styles (header.php does this, right before </head>).
+ */
+@media (min-width: 992px) {
+  html.vs-arail {
+    --sidebar-width: 76px;
+    --admin-sidebar-width: 76px;
+    --sidebar-w: 76px;
+  }
+
+  html.vs-arail body .admin-sidebar {
+    width: 76px !important;
+    min-width: 0 !important;
+    max-width: 76px !important;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  html.vs-arail body .admin-sidebar::-webkit-scrollbar { display: none; }
+  html.vs-arail.vs-arail-fixed body .admin-main { margin-left: 76px !important; }
+  html.vs-arail.vs-arail-nav-fixed body .admin-navbar { left: 76px !important; }
+
+  /* top: only the logo */
+  html.vs-arail body .admin-sidebar .sidebar-header { padding-left: 0 !important; padding-right: 0 !important; justify-content: center; }
+  html.vs-arail body .admin-sidebar .brand-mark { justify-content: center; }
+  html.vs-arail body .admin-sidebar .brand-copy { display: none !important; }
+
+  /* everything that is not one of the main icons goes away */
+  html.vs-arail body .admin-sidebar .sidebar-section-title,
+  html.vs-arail body .admin-sidebar .sidebar-owner-card,
+  html.vs-arail body .admin-sidebar .sidebar-user-copy,
+  html.vs-arail body .admin-sidebar .sidebar-footer-text,
+  html.vs-arail body .admin-sidebar .nav-link.vs-arail-hide {
+    display: none !important;
+  }
+
+  /* bottom: just the avatar and the status dot */
+  html.vs-arail body .admin-sidebar .sidebar-user,
+  html.vs-arail body .admin-sidebar .sidebar-footer { justify-content: center; padding-left: 0 !important; padding-right: 0 !important; }
+
+  html.vs-arail body .admin-sidebar .sidebar-nav { padding-left: 0 !important; padding-right: 0 !important; gap: 4px; }
+
+  html.vs-arail body .admin-sidebar .nav-link.vs-arail-keep {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    min-height: 0 !important;
+    padding: 11px 2px !important;
+    text-align: center;
+  }
+  html.vs-arail body .admin-sidebar .nav-link.vs-arail-keep .nav-icon { margin: 0 !important; }
+  /* the long label is replaced by a short one under the icon */
+  html.vs-arail body .admin-sidebar .nav-link.vs-arail-keep .nav-text,
+  html.vs-arail body .admin-sidebar .nav-link.vs-arail-keep .badge { display: none !important; }
+  html.vs-arail body .admin-sidebar .nav-link.vs-arail-keep::after {
+    content: attr(data-rail-label);
+    font-size: 10px;
+    line-height: 1.1;
+    letter-spacing: -0.1px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

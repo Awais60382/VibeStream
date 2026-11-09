@@ -2,6 +2,8 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+require_once __DIR__ . '/admin-permissions.php';
+vs_admin_enforce_route();
 
 if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecmp($_SESSION['role'], 'Admin') !== 0)) {
     echo "<script>alert('Access Denied: Administrator privileges required.'); window.location.href='../login.php';</script>";
@@ -14,6 +16,7 @@ require_once __DIR__ . '/release-username.php';
 require_once __DIR__ . '/owner-guard.php';
 require_once __DIR__ . '/admin-activity-store.php';
 require_once __DIR__ . '/owner-alert.php';
+require_once __DIR__ . '/../site-branding.php';
 
 $USERS_TABLE  = 'users';
 $VIDEOS_TABLE = 'videos';
@@ -103,6 +106,18 @@ $isAdminUser = strcasecmp($curRole, $ADMIN_ROLE) === 0;
 $targetEmail   = ($user && $map['email']) ? trim((string)($user[$map['email']] ?? '')) : '';
 $targetIsOwner = ($targetEmail !== '' && function_exists('vs_is_site_owner_email') && vs_is_site_owner_email($targetEmail));
 $logWho        = $username !== '' ? '"' . mb_substr($username, 0, 60) . '"' : '#' . mb_substr($id, 0, 20);
+
+/* CEO title: an admin who also carries the title. The owner is always the CEO.
+   The account's role stays "Admin", so its access to the panel never changes. */
+$isCeoUser = $targetIsOwner || ($isAdminUser && in_array($id, vs_ceo_ids(), true));
+$viewerIsOwner = false;
+if (isset($pdo) && $pdo instanceof PDO) {
+    try {
+        $viewerIsOwner = (bool)vs_is_owner($pdo);
+    } catch (Throwable $ownerCheckError) {
+        $viewerIsOwner = false;
+    }
+}
 $freedName     = 'deleted_' . preg_replace('/\W/', '', $id);
 
 $countAdmins = static function () use ($pdo, $USERS_TABLE, $map, $ADMIN_ROLE, $run): int {
@@ -216,9 +231,48 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             } finally {
                 $pdo->exec('SET @vs_owner_ok = 0');
             }
+            try {
+                vs_set_ceo_id($id, false); // a normal user cannot keep the CEO title
+            } catch (Throwable $ceoError) {
+                error_log('Could not clear CEO title: ' . $ceoError->getMessage());
+            }
             vs_admin_log($pdo, 'user', 'Removed admin access from ' . $logWho);
             vs_owner_alert($pdo, 'admin_removed', 'Admin access removed from ' . $logWho);
             $_SESSION['vs_user_flash'] = ($username !== '' ? $username : 'The admin') . ' is now a normal user.';
+            header('Location: user_profile.php?id=' . urlencode($id));
+            exit;
+
+        } elseif ($action === 'make_ceo') {
+            if ($targetIsOwner) {
+                throw new InvalidArgumentException('The owner is always the CEO.');
+            }
+            if (!vs_is_owner($pdo)) {
+                vs_admin_log($pdo, 'user', 'Tried to give the CEO title to ' . $logWho . ' (blocked: owner only)');
+                vs_owner_alert($pdo, 'blocked', 'Blocked: someone tried to give the CEO title to ' . $logWho, 'Only the owner can do this, so it was refused.');
+                throw new InvalidArgumentException('Only the site owner can give the CEO title.');
+            }
+            // A CEO is always an admin, so a normal user is made an admin first.
+            if (!$isAdminUser) {
+                $run($pdo, 'UPDATE ' . vs_q($USERS_TABLE) . ' SET ' . vs_q($map['role']) . ' = :r WHERE ' . vs_q($map['id']) . ' = :id', [':r' => $ADMIN_ROLE, ':id' => $id]);
+            }
+            vs_set_ceo_id($id, true);
+            vs_admin_log($pdo, 'user', 'Gave the CEO title to ' . $logWho . ($isAdminUser ? '' : ' (and made them an admin)'));
+            $_SESSION['vs_user_flash'] = ($username !== '' ? $username : 'The account') . ' is now the CEO' . ($isAdminUser ? '.' : ' and an admin.');
+            header('Location: user_profile.php?id=' . urlencode($id));
+            exit;
+
+        } elseif ($action === 'remove_ceo') {
+            if ($targetIsOwner) {
+                throw new InvalidArgumentException('The owner is always the CEO.');
+            }
+            if (!vs_is_owner($pdo)) {
+                vs_admin_log($pdo, 'user', 'Tried to remove the CEO title from ' . $logWho . ' (blocked: owner only)');
+                vs_owner_alert($pdo, 'blocked', 'Blocked: someone tried to remove the CEO title from ' . $logWho, 'Only the owner can do this, so it was refused.');
+                throw new InvalidArgumentException('Only the site owner can remove the CEO title.');
+            }
+            vs_set_ceo_id($id, false);
+            vs_admin_log($pdo, 'user', 'Removed the CEO title from ' . $logWho);
+            $_SESSION['vs_user_flash'] = ($username !== '' ? $username : 'The account') . ' is no longer the CEO (still an admin).';
             header('Location: user_profile.php?id=' . urlencode($id));
             exit;
 
@@ -283,6 +337,11 @@ if ($fatal === '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (Throwable $releaseError) {
                     error_log('Could not free user name: ' . $releaseError->getMessage());
                 }
+            }
+            try {
+                vs_set_ceo_id($id, false); // a deleted account keeps no CEO title
+            } catch (Throwable $ceoError) {
+                error_log('Could not clear CEO title: ' . $ceoError->getMessage());
             }
             vs_admin_log($pdo, 'user', 'Deleted ' . ($isAdminUser ? 'admin ' : 'user ') . 'account ' . $logWho . ($alsoVideos ? ' and ' . $removedVideos . ' upload(s)' : ' (uploads kept)'));
             vs_owner_alert($pdo, 'account_deleted', ($isAdminUser ? 'Admin' : 'User') . ' account deleted: ' . $logWho, $alsoVideos ? 'Their ' . $removedVideos . ' upload(s) were deleted too.' : 'Their uploads were kept.');
@@ -368,7 +427,8 @@ vs_print_styles();
                   <h2 class="h5 mb-0">
                     <?php echo vs_e($display); ?>
                     <?php if ($isSelf): ?><span class="badge text-bg-secondary">You</span><?php endif; ?>
-                    <?php if ($isOwnerUser): ?><span class="badge text-bg-warning">Owner</span><?php elseif ($isAdminUser): ?><span class="badge text-bg-primary">Admin</span><?php else: ?><span class="badge text-bg-light">User</span><?php endif; ?>
+                    <?php if ($isCeoUser): ?><span class="badge text-bg-warning"><i class="bi bi-award-fill" aria-hidden="true"></i> CEO</span><?php endif; ?>
+                    <?php if ($isOwnerUser): ?><span class="badge text-bg-secondary">Owner</span><?php elseif ($isAdminUser): ?><span class="badge text-bg-primary">Admin</span><?php else: ?><span class="badge text-bg-light">User</span><?php endif; ?>
                   </h2>
                   <p class="text-muted small mb-0">
                     <?php if ($username !== ''): ?>@<?php echo vs_e($username); ?><?php endif; ?>
@@ -418,6 +478,38 @@ vs_print_styles();
                     </form>
                   <?php endif; ?>
                 </div>
+              </div>
+            </section>
+
+            <section class="panel mt-3" aria-label="CEO title" style="<?php echo $isCeoUser ? 'border-color: rgba(245,179,1,.6);' : ''; ?>">
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                <div>
+                  <h2 class="h5 mb-1 section-title"><i class="bi bi-award" aria-hidden="true"></i><span>CEO title</span></h2>
+                  <p class="text-muted mb-0">The CEO is an admin who also carries the CEO title. Only the owner can give or remove it.<?php if (!$isAdminUser): ?> Giving the title to a normal user also makes them an admin.<?php endif; ?></p>
+                </div>
+                <?php if ($isOwnerUser): ?>
+                  <button class="btn btn-outline-warning btn-sm" type="button" disabled>The owner is always the CEO</button>
+                <?php elseif (!$viewerIsOwner): ?>
+                  <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Only the owner can change this</button>
+                <?php elseif ($isCeoUser): ?>
+                  <form method="post" action="user_profile.php?id=<?php echo urlencode($id); ?>"
+                        data-msg="Remove the CEO title from <?php echo vs_e($display); ?>? They stay an admin."
+                        onsubmit="return confirm(this.dataset.msg);">
+                    <input type="hidden" name="csrf_token" value="<?php echo vs_e($csrf); ?>">
+                    <input type="hidden" name="id" value="<?php echo vs_e($id); ?>">
+                    <input type="hidden" name="action" value="remove_ceo">
+                    <button class="btn btn-outline-warning btn-sm" type="submit"><i class="bi bi-award" aria-hidden="true"></i> Remove CEO</button>
+                  </form>
+                <?php else: ?>
+                  <form method="post" action="user_profile.php?id=<?php echo urlencode($id); ?>"
+                        data-msg="Make <?php echo vs_e($display); ?> the CEO?<?php echo $isAdminUser ? '' : ' They will also become an admin with full access to the admin panel.'; ?>"
+                        onsubmit="return confirm(this.dataset.msg);">
+                    <input type="hidden" name="csrf_token" value="<?php echo vs_e($csrf); ?>">
+                    <input type="hidden" name="id" value="<?php echo vs_e($id); ?>">
+                    <input type="hidden" name="action" value="make_ceo">
+                    <button class="btn btn-warning btn-sm" type="submit"><i class="bi bi-award-fill" aria-hidden="true"></i> Make CEO</button>
+                  </form>
+                <?php endif; ?>
               </div>
             </section>
 

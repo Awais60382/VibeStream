@@ -3,6 +3,8 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+require_once __DIR__ . '/admin-permissions.php';
+vs_admin_enforce_route();
 if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecmp($_SESSION['role'], 'Admin') !== 0)) {
     echo "<script>alert('Access Denied: Administrator privileges required.'); window.location.href='../login.php';</script>";
     exit;

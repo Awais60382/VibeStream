@@ -1,7 +1,7 @@
 <?php
 /*
  * VibeStream - marks a subscribed channel as opened, so its blue "new upload" dot goes away.
- * Called by sidebar-subscriptions.php:  POST subscription-seen.php  key=<channel name>
+ * Called by sidebar-subscriptions.php:  POST subscription-seen.php  key=<channel name>&csrf_token=<token>
  */
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -11,6 +11,14 @@ header('Cache-Control: no-store');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     http_response_code(405);
+    echo '{"ok":false}';
+    exit;
+}
+
+require_once __DIR__ . '/csrf.php';
+if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? 'same-origin') === 'cross-site'
+    || !vs_csrf_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(403);
     echo '{"ok":false}';
     exit;
 }

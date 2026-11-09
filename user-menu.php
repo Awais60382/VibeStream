@@ -4,6 +4,7 @@
  * styled like the admin panel's profile menu. Used by index.php, layout.php and header.php.
  */
 require_once __DIR__ . '/sidebar-icons-store.php';
+require_once __DIR__ . '/vip-badge.php';
 
 if (!function_exists('vs_user_menu_html')) {
     function vs_user_menu_html(string $username, string $avatarUrl = ''): string
@@ -43,11 +44,15 @@ if (!function_exists('vs_user_menu_html')) {
             $avatar .= '<img src="' . $e($avatarUrl) . '" alt="" onerror="this.remove()">';
         }
         $avatar .= '</span>';
+        // Premium members and admins: gold ring + VIP pill around the avatar, check mark after the name.
+        $vipDb = $GLOBALS['conn'] ?? ($GLOBALS['pdo'] ?? null);
+        $avatar = vs_vip_ring_auto_open($username, $vipDb) . $avatar . vs_vip_ring_auto_close($username, $vipDb);
+        $nameBadge = vs_vip_badge($username, $vipDb, 16);
 
         return '<div class="vs-user-menu" data-vs-user-menu>'
             . '<button type="button" class="vs-user-toggle" data-vs-user-toggle aria-haspopup="true" aria-expanded="false">'
             . $avatar
-            . '<span class="vs-user-name">' . $e($username) . '</span>'
+            . '<span class="vs-user-name">' . $e($username) . $nameBadge . '</span>'
             . '<span class="vs-user-caret">' . $icons['caret'] . '</span>'
             . '</button>'
             . '<div class="vs-user-dropdown" role="menu" hidden>'

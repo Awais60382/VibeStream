@@ -1,9 +1,28 @@
 <?php
+$appEnvironment = strtolower(trim((string)(getenv('APP_ENV') ?: 'development')));
+$isProduction = in_array($appEnvironment, ['production', 'prod'], true);
+$appDebug = !$isProduction && filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+
+ini_set('display_errors', $appDebug ? '1' : '0');
+ini_set('display_startup_errors', $appDebug ? '1' : '0');
+ini_set('log_errors', '1');
+error_reporting(E_ALL);
+
 $host = getenv('DB_HOST') ?: 'localhost';
-$user = getenv('DB_USER') ?: 'root';
-$password = getenv('DB_PASSWORD') ?: '';
+$configuredUser = getenv('DB_USER');
+$configuredPassword = getenv('DB_PASSWORD');
+$user = $configuredUser !== false && $configuredUser !== ''
+    ? $configuredUser
+    : ($isProduction ? '' : 'root');
+$password = $configuredPassword !== false ? $configuredPassword : '';
 $dbname = getenv('DB_NAME') ?: 'vibestream';
 $port = (int)(getenv('DB_PORT') ?: 3306);
+
+if ($isProduction && (strtolower($user) === 'root' || $user === '' || $password === '')) {
+    error_log('VibeStream production startup blocked: configure a non-root DB_USER and non-empty DB_PASSWORD.');
+    http_response_code(500);
+    exit('The database is unavailable. Configure secure production database credentials.');
+}
 
 try {
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);

@@ -2,8 +2,7 @@
 /**
  * VibeStream - Premium checkout page: premium-checkout.php?plan=monthly
  * Put this file in the VibeStream main folder, next to premium.php and header.php.
- * Bank / wallet transfer works now (the buyer pays, enters the transaction ID, an admin approves).
- * The Credit card tab is a placeholder until a payment provider (Stripe, PayPal...) is connected.
+ * Stripe card payments are processed on Stripe Checkout; bank / wallet transfer remains manual review.
  */
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -28,7 +27,23 @@ $planName = preg_replace('/^Plus /', '', (string)$plan['label']);
 $price = (float)$plan['price'];
 $payLines = vs_premium_pay_info();
 $isAdmin = vs_premium_is_admin($me);
-$cardOn = vs_stripe_ready() && !$isAdmin;
+$cardIssue = '';
+if ($isAdmin) {
+    $cardIssue = 'You are signed in as an admin, and admins always have Premium. Sign in with a normal account to test a purchase.';
+} elseif (!function_exists('curl_init')) {
+    $cardIssue = 'Card payments need PHP cURL enabled in XAMPP. Enable the cURL extension in php.ini and restart Apache.';
+} elseif (preg_match('/^sk_(?:test|live)_[A-Za-z0-9]+$/', VS_STRIPE_SECRET_KEY) !== 1) {
+    $cardIssue = 'Card payments are not configured: the server has no valid Stripe secret key.';
+} elseif (preg_match('/^[a-z]{3}$/', VS_STRIPE_CURRENCY) !== 1) {
+    $cardIssue = 'Card payments are unavailable because the Stripe currency configuration is invalid.';
+} else {
+    try {
+        vs_stripe_base_url();
+    } catch (RuntimeException $e) {
+        $cardIssue = $e->getMessage();
+    }
+}
+$cardOn = $cardIssue === '';
 if (empty($_SESSION['premium_csrf'])) {
     $_SESSION['premium_csrf'] = bin2hex(random_bytes(32));
 }
@@ -121,14 +136,15 @@ require_once __DIR__ . '/sidebar-navigation.php';
             <button class="co-btn" type="submit">Pay now <?php echo $h($money($price)); ?></button>
           </form>
         <?php else: ?>
-          <div class="co-msg"><?php echo $isAdmin ? 'You are signed in as an admin, and admins always have Premium. Sign in with a normal account to test a purchase.' : 'Card payments are not turned on yet. The site owner needs to add a Stripe key in stripe-config.php. Use the transfer tab for now.'; ?></div>
-          <label class="co-label">Cardholder's name</label><input class="co-input" disabled placeholder="Name on card">
-          <label class="co-label">Card number</label><div class="co-cardnum"><span class="co-mc"><i></i><i></i></span><input class="co-input" disabled placeholder="0000 0000 0000 0000"></div>
-          <div class="co-row">
-            <div><label class="co-label">Expiry</label><input class="co-input" disabled placeholder="MM / YY"></div>
-            <div><label class="co-label">CVC</label><input class="co-input" disabled placeholder="CVC"></div>
-          </div>
-          <button class="co-btn" type="button" disabled>Pay now</button>
+          <div class="co-msg"><?php echo $h($cardIssue); ?></div>
+          <?php if (!$isAdmin): ?>
+            <p class="co-note">To enable card checkout, configure these variables in Apache's active VirtualHost, then restart Apache:</p>
+            <ul class="co-pay">
+              <li><code>SetEnv STRIPE_SECRET_KEY "84545648664"</code></li>
+              <li><code>SetEnv VIBESTREAM_BASE_URL "http://localhost/VibeStream"</code></li>
+            </ul>
+            <p class="co-note">Use your own Stripe test key from the Stripe Dashboard. Never put the key in browser code or share it in chat. Card details are entered only on Stripe's secure checkout page.</p>
+          <?php endif; ?>
         <?php endif; ?>
       </div>
 

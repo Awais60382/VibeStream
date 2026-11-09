@@ -4,10 +4,16 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-if (!isset($_SESSION["AdminSession"])) {
+require_once __DIR__ . '/admin-session-core.php';
+if (!vs_admin_session_is_valid()) {
     header("Location: ../login.php");
     exit();
 }
+
+require_once __DIR__ . '/checkin-guard.php';
+
+require_once __DIR__ . '/admin-permissions.php';
+vs_admin_enforce_route();
 
 require_once __DIR__ . '/../connection.php'; 
 require_once __DIR__ . '/ui_helpers.php';

@@ -1,0 +1,245 @@
+/* VibeStream - neon look for login.php and Signup.php.
+   Same colors as the neon theme in index.php. Dark by default, neon-light when the site is in light mode.
+   Loaded AFTER header.php's stylesheets so it wins. */
+
+html:not([data-theme="light"]) {
+    --na-bg: #05060f; --na-card: rgba(10, 13, 31, 0.88); --na-field: rgba(10, 13, 31, 0.92);
+    --na-text: #eaf0ff; --na-muted: #8f9bd0; --na-placeholder: #6f7bb0;
+    --na-cyan: #00e5ff; --na-pink: #ff2e93; --na-violet: #8a5cff;
+    --na-line: rgba(138, 92, 255, 0.55);
+}
+html[data-theme="light"] {
+    --na-bg: #f4f6ff; --na-card: rgba(255, 255, 255, 0.92); --na-field: #ffffff;
+    --na-text: #0b1030; --na-muted: #55608f; --na-placeholder: #8a94c4;
+    --na-cyan: #00b8e6; --na-pink: #ff2e93; --na-violet: #7c4dff;
+    --na-line: rgba(124, 77, 255, 0.5);
+}
+
+/* page background */
+html:not([data-theme="light"]) body:has(.auth-layout) {
+    background:
+        radial-gradient(900px 480px at 8% -8%, rgba(138, 92, 255, 0.20), transparent 70%),
+        radial-gradient(800px 420px at 100% 0, rgba(0, 229, 255, 0.12), transparent 70%),
+        radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
+        #05060f;
+    background-attachment: fixed;
+}
+html[data-theme="light"] body:has(.auth-layout) {
+    background:
+        radial-gradient(900px 480px at 8% -8%, rgba(124, 77, 255, 0.14), transparent 70%),
+        radial-gradient(800px 420px at 100% 0, rgba(0, 184, 230, 0.14), transparent 70%),
+        radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
+        #f4f6ff;
+    background-attachment: fixed;
+}
+
+/* the card */
+html body .auth-card {
+    position: relative;
+    background: var(--na-card);
+    color: var(--na-text);
+    border: 1px solid var(--na-line);
+    border-radius: 20px;
+    box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.10), 0 0 34px -6px rgba(138, 92, 255, 0.55), 0 0 70px -20px rgba(0, 229, 255, 0.45), inset 0 0 40px -24px rgba(0, 229, 255, 0.5);
+    backdrop-filter: blur(10px);
+}
+html body .auth-card::before {            /* glowing top edge */
+    content: ""; position: absolute; left: 18px; right: 18px; top: -1px; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--na-cyan), var(--na-violet) 55%, var(--na-pink));
+    box-shadow: 0 0 14px var(--na-violet), 0 0 28px rgba(255, 46, 147, 0.5);
+    pointer-events: none;
+}
+
+/* brand, headings, text */
+html body .auth-brand { text-decoration: none; }
+html body .auth-brand span {
+    background: linear-gradient(90deg, var(--na-cyan), var(--na-violet) 55%, var(--na-pink));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 0 8px rgba(138, 92, 255, 0.6));
+    font-weight: 800;
+}
+html body .site-brand-icon { filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.6)); }
+html body .auth-eyebrow { color: var(--na-cyan); text-shadow: 0 0 10px rgba(0, 229, 255, 0.6); letter-spacing: .12em; text-transform: uppercase; }
+html body .auth-card h1 { color: var(--na-text); text-shadow: 0 0 18px rgba(138, 92, 255, 0.55); }
+html body .auth-description,
+html body .auth-card small { color: var(--na-muted); }
+
+/* errors */
+html body .auth-error {
+    color: #ff7ac0; background: rgba(255, 46, 147, 0.10);
+    border: 1px solid rgba(255, 46, 147, 0.6); border-radius: 12px;
+    text-shadow: 0 0 8px rgba(255, 46, 147, 0.55); box-shadow: 0 0 16px -4px rgba(255, 46, 147, 0.5);
+}
+html[data-theme="light"] body .auth-error { color: #c4106b; text-shadow: none; }
+
+/* "Continue with Google" placeholder */
+html body .google-coming-soon {
+    color: var(--na-text); background: rgba(23, 28, 66, 0.55);
+    border: 1px dashed rgba(0, 229, 255, 0.55); border-radius: 999px;
+    box-shadow: 0 0 18px -6px rgba(0, 229, 255, 0.5);
+}
+html[data-theme="light"] body .google-coming-soon { background: rgba(0, 184, 230, 0.08); }
+html body .google-coming-soon-badge {
+    color: #fff; background: linear-gradient(90deg, var(--na-violet), var(--na-pink)); border: 0;
+    box-shadow: 0 0 12px rgba(255, 46, 147, 0.55);
+}
+html body .google-coming-soon-note { color: var(--na-muted); }
+
+/* "or continue with email" divider */
+html body .auth-divider { color: var(--na-muted); }
+html body .auth-divider::before,
+html body .auth-divider::after { background: linear-gradient(90deg, transparent, var(--na-violet), transparent); box-shadow: 0 0 8px rgba(138, 92, 255, 0.6); }
+html body .auth-divider span { color: var(--na-cyan); text-shadow: 0 0 8px rgba(0, 229, 255, 0.5); }
+
+/* fields */
+html body .auth-card label { color: var(--na-text); }
+html body .auth-card input[type="text"],
+html body .auth-card input[type="email"],
+html body .auth-card input[type="password"] {
+    background: var(--na-field); color: var(--na-text);
+    border: 1px solid var(--na-line); border-radius: 12px;
+    box-shadow: 0 0 10px -3px rgba(138, 92, 255, 0.5);
+    transition: box-shadow .2s ease, border-color .2s ease;
+}
+html body .auth-card input::placeholder { color: var(--na-placeholder); }
+html body .auth-card input[type="text"]:focus,
+html body .auth-card input[type="email"]:focus,
+html body .auth-card input[type="password"]:focus {
+    outline: none; border-color: var(--na-cyan);
+    box-shadow: 0 0 0 1px var(--na-cyan), 0 0 22px rgba(0, 229, 255, 0.55);
+}
+html body .auth-card input:-webkit-autofill {
+    -webkit-text-fill-color: var(--na-text);
+    -webkit-box-shadow: 0 0 0 1000px #0a0d1f inset, 0 0 0 1px var(--na-violet);
+    caret-color: var(--na-cyan);
+}
+html[data-theme="light"] body .auth-card input:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px #ffffff inset, 0 0 0 1px var(--na-violet); }
+html body .show-password { color: var(--na-muted); }
+html body .show-password input { accent-color: var(--na-pink); }
+
+/* main button */
+html body .submit-btn {
+    background: linear-gradient(90deg, var(--na-violet), var(--na-pink)); color: #fff;
+    border: 0; border-radius: 999px; font-weight: 700; letter-spacing: .02em;
+    box-shadow: 0 0 20px rgba(255, 46, 147, 0.55), 0 0 44px -8px rgba(138, 92, 255, 0.7);
+    transition: box-shadow .2s ease, transform .2s ease, filter .2s ease;
+}
+html body .submit-btn:hover {
+    transform: translateY(-1px); filter: brightness(1.08);
+    box-shadow: 0 0 28px rgba(255, 46, 147, 0.8), 0 0 60px -6px rgba(0, 229, 255, 0.55);
+}
+html body .submit-btn:focus-visible { outline: 2px solid var(--na-cyan); outline-offset: 3px; }
+html body .submit-btn:disabled { opacity: .7; transform: none; }
+
+/* links */
+html body .auth-footer { color: var(--na-muted); }
+html body .auth-footer a { color: var(--na-cyan); text-decoration: none; text-shadow: 0 0 10px rgba(0, 229, 255, 0.55); }
+html body .auth-footer a:hover { color: var(--na-pink); text-shadow: 0 0 12px rgba(255, 46, 147, 0.8); }
+
+::selection { background: rgba(255, 46, 147, 0.45); color: #fff; }
+
+/* Keep sign-in and sign-up readable and theme-consistent when neon is disabled. */
+html.vs-neon-off body:has(.auth-layout) {
+    background: var(--surface-base, var(--bg)) !important;
+    background-image: none !important;
+    color: var(--text-primary, var(--text)) !important;
+}
+html.vs-neon-off body .auth-card {
+    background: var(--surface-raised, var(--surface)) !important;
+    color: var(--text-primary, var(--text)) !important;
+    border-color: var(--border) !important;
+    box-shadow: var(--shadow-overlay, 0 12px 32px rgba(0, 0, 0, 0.14)) !important;
+    backdrop-filter: none !important;
+}
+html.vs-neon-off body .auth-card::before { display: none; }
+html.vs-neon-off body .auth-brand span {
+    background: none !important;
+    -webkit-text-fill-color: currentColor;
+    color: var(--text-primary, var(--text)) !important;
+    filter: none !important;
+}
+html.vs-neon-off body .auth-eyebrow,
+html.vs-neon-off body .auth-card h1,
+html.vs-neon-off body .auth-card label,
+html.vs-neon-off body .auth-description,
+html.vs-neon-off body .auth-card small,
+html.vs-neon-off body .auth-footer {
+    color: var(--text-secondary, var(--muted)) !important;
+    text-shadow: none !important;
+}
+html.vs-neon-off body .auth-card h1 { color: var(--text-primary, var(--text)) !important; }
+html.vs-neon-off body .auth-divider,
+html.vs-neon-off body .auth-divider span {
+    color: var(--text-secondary, var(--muted)) !important;
+    text-shadow: none !important;
+}
+html.vs-neon-off body .auth-divider::before,
+html.vs-neon-off body .auth-divider::after {
+    background: var(--border) !important;
+    box-shadow: none !important;
+}
+html.vs-neon-off body .auth-card input[type="text"],
+html.vs-neon-off body .auth-card input[type="email"],
+html.vs-neon-off body .auth-card input[type="password"] {
+    background: var(--surface-base, var(--bg)) !important;
+    color: var(--text-primary, var(--text)) !important;
+    border-color: var(--border) !important;
+    box-shadow: none !important;
+}
+html.vs-neon-off body .auth-card input[type="text"]:focus,
+html.vs-neon-off body .auth-card input[type="email"]:focus,
+html.vs-neon-off body .auth-card input[type="password"]:focus {
+    border-color: var(--accent-hover, var(--accent)) !important;
+    box-shadow: 0 0 0 2px var(--accent-subtle, rgba(127, 127, 127, .2)) !important;
+}
+html.vs-neon-off body .auth-card input::placeholder { color: var(--text-tertiary, var(--muted)) !important; }
+html.vs-neon-off body .auth-card input:-webkit-autofill {
+    -webkit-text-fill-color: var(--text-primary, var(--text)) !important;
+    -webkit-box-shadow: 0 0 0 1000px var(--surface-base, var(--bg)) inset !important;
+    caret-color: var(--text-primary, var(--text));
+}
+html.vs-neon-off body .show-password input { accent-color: var(--accent, #b02a2a); }
+html.vs-neon-off body .submit-btn,
+html.vs-neon-off body .submit-btn:hover {
+    background: var(--accent, #b02a2a) !important;
+    color: var(--text-inverse, #fff) !important;
+    box-shadow: none !important;
+    filter: none !important;
+    transform: none !important;
+}
+html.vs-neon-off body .submit-btn:focus-visible {
+    outline-color: var(--accent-hover, var(--accent)) !important;
+}
+html.vs-neon-off body .auth-footer a,
+html.vs-neon-off body .auth-footer a:hover {
+    color: var(--accent-hover, var(--accent)) !important;
+    text-shadow: none !important;
+}
+html.vs-neon-off body .auth-error {
+    color: var(--danger, #d94c69) !important;
+    background: var(--danger-subtle, rgba(217, 76, 105, .1)) !important;
+    border-color: var(--danger, #d94c69) !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+}
+html.vs-neon-off body .google-coming-soon {
+    color: var(--text-primary, var(--text)) !important;
+    background: var(--surface-base, var(--bg)) !important;
+    border-color: var(--border) !important;
+    box-shadow: none !important;
+}
+html.vs-neon-off body .google-coming-soon-badge {
+    background: var(--surface-2, var(--surface)) !important;
+    color: var(--text-secondary, var(--muted)) !important;
+    box-shadow: none !important;
+}
+html.vs-neon-off body .google-coming-soon-note { color: var(--text-secondary, var(--muted)) !important; }
+html.vs-neon-off ::selection {
+    background: var(--accent-subtle, rgba(127, 127, 127, .2));
+    color: var(--text-primary, var(--text));
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html body .auth-card *, html body .submit-btn { transition: none !important; }
+}

@@ -28,7 +28,8 @@ if (!preg_match('/^cs_[A-Za-z0-9_]+$/', $sid) || !vs_stripe_ready()) {
             $error = $pdo ? vs_stripe_fulfil($pdo, $s) : 'No database connection.';
         }
     } catch (Throwable $e) {
-        $error = 'Could not check the payment: ' . $e->getMessage();
+        error_log('Stripe payment return could not be verified: ' . $e->getMessage());
+        $error = 'We could not verify the payment yet. If your card was charged, please wait a moment and check your Premium status before trying again.';
     }
 }
 if ($error === null) {

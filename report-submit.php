@@ -8,6 +8,7 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 require_once __DIR__ . '/report-widget.php';
+require_once __DIR__ . '/adminpanel/admin-alert-store.php';
 
 function vs_rs_reply(bool $ok, string $message, int $status = 200): void
 {
@@ -89,6 +90,19 @@ try {
         ':t' => $table, ':i' => $id, ':ty' => $type, ':re' => $reason,
         ':d' => $details, ':r' => $reporter, ':c' => date('Y-m-d H:i:s'),
     ]);
+    try {
+        vs_admin_alerts_ensure($pdo);
+        vs_admin_alert_add(
+            $pdo,
+            'content-report-' . (string)$pdo->lastInsertId(),
+            'report',
+            'New content report',
+            ucfirst($type) . ' reported for ' . $reason . ' by ' . $reporter . '.',
+            'reported.php?status=open'
+        );
+    } catch (Throwable $e) {
+        error_log('Could not save report alert: ' . $e->getMessage());
+    }
 
     vs_rs_reply(true, 'Thanks, we will take a look.');
 } catch (Throwable $e) {

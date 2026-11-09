@@ -1,6 +1,8 @@
 <?php
 // VibeStream admin check-in: shared helpers
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+require_once __DIR__ . '/task-store.php';
+require_once __DIR__ . '/admin-titles-store.php';
 
 define('VS_CHECKIN_DIR',      __DIR__ . '/data');
 define('VS_CHECKIN_FILE',     VS_CHECKIN_DIR . '/checkins.json');
@@ -73,8 +75,10 @@ function vs_checkin_set_idle_minutes($minutes) {
 
 /** Status to show for a stored record: "Offline" when the admin has been gone too long. */
 function vs_checkin_effective(array $r) {
+    if (!empty($r['checked_out']) || empty($r['checked_in'])) return 'Offline';
     $seen = strtotime($r['seen'] ?? $r['at'] ?? '') ?: 0;
-    return (time() - $seen) > vs_checkin_idle() ? 'Offline' : (string)($r['status'] ?? 'Offline');
+    if ($seen <= 0 || time() - $seen > vs_checkin_idle()) return 'Offline';
+    return (string)($r['status'] ?? 'Offline');
 }
 
 function vs_checkin_online_count() {
@@ -91,28 +95,55 @@ function vs_checkin_color($status) {
 
 /** Has this admin checked in during the current visit (not away too long, not forced to re-check)? */
 function vs_checkin_active($name) {
-    if (empty($_SESSION['vs_checkin']) || ($_SESSION['vs_checkin_for'] ?? '') !== $name) return false;
-    if ((time() - (int)($_SESSION['vs_seen'] ?? 0)) > vs_checkin_idle()) return false;
     $rec = vs_checkin_all()[$name] ?? null;
+    if (!$rec || empty($rec['checked_in']) || !empty($rec['checked_out'])) return false;
+    if (vs_checkin_effective($rec) === 'Offline') return false;
     if ($rec && !empty($rec['recheck']) && (int)$rec['recheck'] > (int)($_SESSION['vs_checkin_ts'] ?? 0)) return false;
+
+    // A server-side check-in remains active until explicit checkout or forced re-check.
+    if (empty($_SESSION['vs_checkin']) || ($_SESSION['vs_checkin_for'] ?? '') !== $name) {
+        $_SESSION['vs_checkin'] = [
+            'status' => (string)($rec['status'] ?? 'Available'),
+            'note' => (string)($rec['note'] ?? ''),
+            'at' => (string)($rec['at'] ?? ''),
+        ];
+        $_SESSION['vs_checkin_for'] = $name;
+        $_SESSION['vs_checkin_ts'] = strtotime((string)($rec['at'] ?? '')) ?: time();
+        $_SESSION['vs_seen'] = time();
+    }
     return true;
 }
 
-function vs_checkin_log($admin, $event, $status, $note) {
+function vs_checkin_log($admin, $event, $status, $note): bool {
     $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
     $ua = mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 160);
-    vs_checkin_json_update(VS_CHECKIN_HISTORY, function ($rows) use ($admin, $event, $status, $note, $ip, $ua) {
+    $saved = vs_checkin_json_update(VS_CHECKIN_HISTORY, function ($rows) use ($admin, $event, $status, $note, $ip, $ua) {
         $rows[] = ['admin' => $admin, 'event' => $event, 'status' => $status, 'note' => $note,
                    'at' => date('Y-m-d H:i:s'), 'ip' => $ip, 'ua' => $ua];
         return array_slice($rows, -VS_CHECKIN_HISTORY_MAX);
     });
+    if (!$saved) {
+        error_log('Admin check-in history could not be saved.');
+    }
+    return $saved;
 }
 
-function vs_checkin_save($name, $status, $note) {
+/** Record one sign-in event for this admin session. */
+function vs_checkin_log_login_once(string $admin): void {
+    if ($admin === '' || !empty($_SESSION['vs_checkin_login_logged'])) return;
+    if (vs_checkin_log($admin, 'logged in', 'Online', '')) {
+        $_SESSION['vs_checkin_login_logged'] = true;
+    }
+}
+
+function vs_checkin_save($name, $status, $note, bool $taskBusy = false) {
     $event = vs_checkin_active($name) ? 'changed' : 'checked in';
     $now = date('Y-m-d H:i:s');
-    $ok = vs_checkin_json_update(VS_CHECKIN_FILE, function ($data) use ($name, $status, $note, $now) {
-        $data[$name] = ['status' => $status, 'note' => $note, 'at' => $now, 'seen' => $now];
+    $ok = vs_checkin_json_update(VS_CHECKIN_FILE, function ($data) use ($name, $status, $note, $now, $taskBusy) {
+        $data[$name] = ['status' => $status, 'note' => $note, 'at' => $now, 'seen' => $now, 'checked_in' => 1, 'checked_out' => 0];
+        if ($taskBusy) {
+            $data[$name]['task_busy'] = 1;
+        }
         return $data;
     });
     if (!$ok) return false;
@@ -123,6 +154,23 @@ function vs_checkin_save($name, $status, $note) {
     $_SESSION['vs_seen']        = time();
     $_SESSION['vs_touch_at']    = time();
     return true;
+}
+
+/** Explicitly end an admin's check-in. Logout and idle activity do not call this function. */
+function vs_checkin_checkout($name) {
+    if ($name === '') return false;
+    $ok = vs_checkin_json_update(VS_CHECKIN_FILE, function ($data) use ($name) {
+        if (!isset($data[$name])) return $data;
+        $data[$name]['checked_in'] = 0;
+        $data[$name]['checked_out'] = 1;
+        $data[$name]['status'] = 'Offline';
+        $data[$name]['seen'] = date('Y-m-d H:i:s', 0);
+        unset($data[$name]['recheck']);
+        return $data;
+    });
+    if (!$ok) return false;
+    unset($_SESSION['vs_checkin'], $_SESSION['vs_checkin_for'], $_SESSION['vs_checkin_ts'], $_SESSION['vs_seen'], $_SESSION['vs_touch_at']);
+    return vs_checkin_log($name, 'checked out', 'Offline', '');
 }
 
 /** Owner action: make an admin check in again on their next page load. */

@@ -166,6 +166,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'check_username') {
+    header('Content-Type: application/json');
+    $candidate = trim((string)($_POST['username'] ?? ''));
+    if (!isset($pdo) || !($pdo instanceof PDO) || !$unameCol || !$matchCol || $avatarUser === '') {
+        echo json_encode(['ok' => false, 'message' => 'Could not check right now.']);
+        exit;
+    }
+    $problem = vs_profile_check_username($pdo, $candidate, $avatarUser, $unameCol, $matchCol, $matchVal);
+    echo json_encode(['ok' => $problem === '', 'same' => strcasecmp($candidate, $avatarUser) === 0, 'message' => $problem]);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($pdo) && $pdo instanceof PDO && $matchCol) {
     $newName  = trim($_POST['name'] ?? '');
     $newEmail = trim($_POST['email'] ?? '');
@@ -178,6 +190,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($pdo) && $pdo instanceof PDO 
     // Check everything first: if anything is wrong, nothing is saved.
     $blocked  = false;
     $renameTo = null;
+
+    $confirmPass = trim((string)($_POST['confirm_password'] ?? ''));
+    if ($newPass !== '' || $confirmPass !== '') {
+        if ($newPass !== $confirmPass) {
+            $errorMsg = 'The two passwords do not match.';
+            $blocked  = true;
+        } elseif (strlen($newPass) < 8 || strlen($newPass) > 72) {
+            $errorMsg = 'The new password must be 8 to 72 characters.';
+            $blocked  = true;
+        }
+    }
 
     if ($unameCol && $newUser !== '' && $avatarUser !== '' && $newUser !== $avatarUser) {
         $problem = vs_profile_check_username($pdo, $newUser, $avatarUser, $unameCol, $matchCol, $matchVal);
@@ -328,82 +351,207 @@ if (isset($pdo) && $pdo instanceof PDO && $matchCol && $emailCol) {
     }
 }
 
+
+// Account info card (best effort: shows a dash when the column does not exist)
+$acct = ['id' => '', 'role' => '', 'joined' => '', 'last' => ''];
+if (isset($pdo) && $pdo instanceof PDO && $matchCol && !empty($uCols)) {
+    try {
+        $st = $pdo->prepare("SELECT * FROM `users` WHERE `$matchCol` = :val LIMIT 1");
+        $st->execute([':val' => $matchVal]);
+        $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+        $pickCol = static function (array $names) use ($uCols) { return vs_pick($uCols, $names); };
+        $idC = $pickCol(['id', 'user_id']);
+        $roleC = $pickCol(['role', 'user_role', 'usertype', 'user_type', 'account_type']);
+        $joinC = $pickCol(['created_at', 'joined_at', 'registered_at', 'date_joined', 'created_on', 'reg_date']);
+        $lastC = $pickCol(['last_login', 'last_active', 'last_seen']);
+        $acct['id'] = $idC && isset($row[$idC]) ? '#' . $row[$idC] : '';
+        $acct['role'] = $roleC && isset($row[$roleC]) ? ucfirst(strtolower((string)$row[$roleC])) : '';
+        $acct['joined'] = $joinC && !empty($row[$joinC]) ? date('M j, Y', strtotime((string)$row[$joinC])) : '';
+        $acct['last'] = $lastC && !empty($row[$lastC]) ? date('M j, Y H:i', strtotime((string)$row[$lastC])) : '';
+        if (function_exists('vs_is_owner') && vs_is_owner($pdo)) {
+            $acct['role'] = 'Owner';
+        }
+        if ($acct['last'] === '' && $avatarUser !== '') {
+            // fall back to the sign-in log from the account-safety feature, if it is installed
+            try {
+                $ls = $pdo->prepare('SELECT created_at FROM login_activity WHERE username = :u AND success = 1 ORDER BY id DESC LIMIT 1');
+                $ls->execute([':u' => $avatarUser]);
+                $lt = $ls->fetchColumn();
+                if ($lt) {
+                    $acct['last'] = date('M j, Y H:i', strtotime((string)$lt));
+                }
+            } catch (Throwable $e) {
+                // no sign-in log table: leave it empty
+            }
+        }
+    } catch (Throwable $e) {
+        // leave the card with dashes
+    }
+}
+
 require_once __DIR__ . '/header.php';
+
+$h = static function ($s): string {
+    return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+};
 ?>
 
-      <main class="admin-content p-3 p-lg-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-          <h1 class="h4 mb-0">My Profile</h1>
+<style>
+  .mp-card{border:1px solid rgba(128,128,128,.28);border-radius:14px;background:rgba(128,128,128,.04);height:100%}
+  .mp-card-head{display:flex;align-items:center;gap:10px;padding:14px 18px 4px}
+  .mp-card-head h2{font-size:1rem;margin:0;font-weight:700}
+  .mp-body{padding:10px 18px 18px}
+  .mp-avatar{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:22px 14px;height:100%}
+  .mp-avatar img{width:112px;height:112px;border-radius:50%;object-fit:cover}
+  .mp-info-row{display:flex;align-items:center;gap:12px;padding:10px 0}
+  .mp-info-row i{font-size:18px;color:#4f6df5;width:22px;text-align:center}
+  .mp-info-row .k{flex:1;opacity:.85}
+  .mp-info-row .v{font-weight:600;text-align:right}
+  .mp-mini{display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border:1px solid rgba(128,128,128,.28);border-radius:14px;background:rgba(128,128,128,.04);height:100%}
+  .mp-mini>i{font-size:26px;color:#4f6df5}
+  .mp-mini h3{font-size:.95rem;margin:0 0 2px;font-weight:700}
+  .mp-mini p{font-size:.8rem;opacity:.75;margin:0 0 10px}
+  .mp-ok{display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:14px;background:rgba(39,199,122,.12);border:1px solid rgba(39,199,122,.4)}
+  .mp-ok>i{font-size:30px;color:#27c77a}
+  .mp-ok strong{display:block;color:#1fa971}
+  .mp-pw{position:relative}
+  .mp-pw .form-control{padding-right:2.6rem}
+  .mp-eye{position:absolute;top:50%;right:.6rem;transform:translateY(-50%);background:none;border:0;padding:.25rem;line-height:1;color:inherit;opacity:.7}
+  .mp-state{font-size:.75rem;font-weight:700;padding:2px 10px;border-radius:6px}
+  .mp-state.ok{background:rgba(39,199,122,.18);color:#1fa971}
+  .mp-state.bad{background:rgba(240,69,127,.16);color:#e0306f}
+  .mp-req{color:#e0306f}
+</style>
+
+<main class="admin-content p-3 p-lg-4">
+  <div class="page-heading mb-3">
+    <div class="page-heading-copy">
+      <span class="page-icon"><i class="bi bi-person-fill" aria-hidden="true"></i></span>
+      <div>
+        <h1 class="h3 mb-1">Manage Profile</h1>
+        <p class="text-muted mb-0">Update your profile information and settings.</p>
+      </div>
+    </div>
+  </div>
+
+  <?php if ($successMsg): ?>
+    <div class="alert alert-success" role="alert"><?php echo $h($successMsg); ?></div>
+  <?php endif; ?>
+  <?php if ($errorMsg): ?>
+    <div class="alert alert-danger" role="alert"><?php echo $h($errorMsg); ?></div>
+  <?php endif; ?>
+  <div id="avatarAlert"></div>
+
+  <!-- the picture chooser lives outside the form but belongs to it -->
+  <input class="d-none" type="file" id="avatar" name="avatar" form="profileForm" accept=".jpg,.jpeg,.png,.webp">
+
+  <div class="row g-3">
+    <div class="col-12 col-xl-9">
+      <div class="row g-3">
+        <!-- Avatar -->
+        <div class="col-12 col-md-4 col-lg-3">
+          <section class="mp-card" aria-label="Avatar">
+            <div class="mp-avatar">
+              <img src="<?php echo $h($adminAvatarPath); ?>" alt="Avatar" id="avatarPreview" class="avatar-img">
+              <button type="button" class="btn btn-primary btn-sm" data-pick-avatar>Change Avatar</button>
+            </div>
+          </section>
         </div>
 
-        <?php if ($successMsg): ?>
-          <div class="alert alert-success" role="alert"><?php echo htmlspecialchars($successMsg); ?></div>
-        <?php endif; ?>
-        <?php if ($errorMsg): ?>
-          <div class="alert alert-danger" role="alert"><?php echo htmlspecialchars($errorMsg); ?></div>
-        <?php endif; ?>
+        <!-- Profile information -->
+        <div class="col-12 col-md-8 col-lg-9">
+          <section class="mp-card" aria-label="Profile information">
+            <div class="mp-card-head"><h2 class="text-primary">Profile Information</h2></div>
+            <form method="post" enctype="multipart/form-data" id="profileForm" class="mp-body" autocomplete="off">
+              <div class="row g-3">
+                <div class="col-12 col-lg-7">
+                  <div class="mb-3">
+                    <label for="name" class="form-label fw-semibold">Full Name <span class="mp-req">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" value="<?php echo $h($adminDisplayName); ?>" placeholder="Full name">
+                  </div>
 
-        <div id="avatarAlert"></div>
+                  <?php if ($unameCol): ?>
+                  <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <label for="username" class="form-label fw-semibold">User Name <span class="mp-req">*</span></label>
+                      <span class="mp-state" id="unameState" hidden></span>
+                    </div>
+                    <input type="text" class="form-control" id="username" name="username" value="<?php echo $h($avatarUser); ?>" placeholder="User name" autocomplete="off" maxlength="30">
+                    <div class="form-text">3 - 30 characters (letters, numbers, . - _). Changing it also renames your videos, Shorts, comments and profile picture.</div>
+                  </div>
+                  <?php endif; ?>
 
-        <div class="card border-0 shadow-sm">
-          <div class="card-body p-4">
-            <form method="post" enctype="multipart/form-data" id="profileForm">
-              <div class="d-flex align-items-center gap-3 mb-4">
-                <img src="<?php echo htmlspecialchars($adminAvatarPath); ?>" alt="Avatar"
-                     id="avatarPreview"
-                     class="avatar-img" style="width:72px;height:72px;border-radius:50%;object-fit:cover;">
-                <div>
-                  <label for="avatar" class="form-label mb-1">Change avatar</label>
-                  <input class="form-control form-control-sm" type="file" id="avatar" name="avatar" accept=".jpg,.jpeg,.png,.webp">
+                  <?php if ($emailCol): ?>
+                  <div class="mb-3">
+                    <label for="email" class="form-label fw-semibold">Email Address</label>
+                    <input type="email" class="form-control" id="email" name="email" value="<?php echo $h($currentEmail); ?>" placeholder="you@example.com">
+                  </div>
+                  <?php endif; ?>
                 </div>
-              </div>
 
-              <?php if ($unameCol): ?>
-              <div class="mb-3">
-                <label for="username" class="form-label">User name</label>
-                <input type="text" class="form-control" id="username" name="username"
-                       value="<?php echo htmlspecialchars($avatarUser); ?>" placeholder="User name" autocomplete="off">
-                <div class="form-text">Changing it also renames your videos, shorts, comments and profile picture.</div>
-              </div>
-              <?php endif; ?>
-
-              <div class="mb-3">
-                <label for="name" class="form-label">Display name</label>
-                <input type="text" class="form-control" id="name" name="name"
-                       value="<?php echo htmlspecialchars($adminDisplayName); ?>" placeholder="Full name">
-              </div>
-
-              <?php if ($emailCol): ?>
-              <div class="mb-3">
-                <label for="email" class="form-label">Email</label>
-                <input type="email" class="form-control" id="email" name="email"
-                       value="<?php echo htmlspecialchars($currentEmail); ?>" placeholder="you@example.com">
-              </div>
-              <?php endif; ?>
-
-              <?php if ($passCol): ?>
-              <div class="mb-4">
-                <label for="password" class="form-label">New password</label>
-                <div style="position: relative;">
-                  <input type="password" class="form-control" id="password" name="password"
-                         placeholder="Leave blank to keep current password"
-                         style="padding-right: 2.6rem;">
-                  <button type="button" id="togglePassword"
-                          aria-label="Show password" aria-pressed="false" tabindex="-1"
-                          style="position: absolute; top: 50%; right: 0.6rem; transform: translateY(-50%);
-                                 background: none; border: none; padding: 0.25rem; line-height: 1;
-                                 color: var(--admin-muted, #6b7280);">
-                    <i class="bi bi-eye" id="togglePasswordIcon" aria-hidden="true"></i>
-                  </button>
+                <?php if ($passCol): ?>
+                <div class="col-12 col-lg-5">
+                  <div class="mb-3">
+                    <label for="password" class="form-label fw-semibold">New Password</label>
+                    <div class="mp-pw">
+                      <input type="password" class="form-control" id="password" name="password" placeholder="Leave blank to keep current" autocomplete="new-password" maxlength="72">
+                      <button type="button" class="mp-eye" data-eye="password" aria-label="Show password" tabindex="-1"><i class="bi bi-eye" aria-hidden="true"></i></button>
+                    </div>
+                  </div>
+                  <div class="mb-3">
+                    <label for="confirm_password" class="form-label fw-semibold">Confirm Password</label>
+                    <div class="mp-pw">
+                      <input type="password" class="form-control" id="confirm_password" name="confirm_password" placeholder="Leave blank to keep current" autocomplete="new-password" maxlength="72">
+                      <button type="button" class="mp-eye" data-eye="confirm_password" aria-label="Show password" tabindex="-1"><i class="bi bi-eye" aria-hidden="true"></i></button>
+                    </div>
+                    <div class="form-text">At least 8 characters.</div>
+                  </div>
                 </div>
+                <?php endif; ?>
               </div>
-              <?php endif; ?>
-
-              <button type="submit" class="btn btn-primary">Save changes</button>
+              <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1" aria-hidden="true"></i>Update Profile</button>
             </form>
-          </div>
+          </section>
         </div>
-      </main>
+      </div>
+
+      <div class="row g-3 mt-0">
+        <div class="col-12 col-md-4">
+          <div class="mp-mini"><i class="bi bi-shield-check" aria-hidden="true"></i>
+            <div><h3>Security</h3><p>Keep your account secure with a strong password.</p><button type="button" class="btn btn-outline-primary btn-sm" id="goPassword">Change Password <i class="bi bi-chevron-right" aria-hidden="true"></i></button></div></div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="mp-mini"><i class="bi bi-image" aria-hidden="true"></i>
+            <div><h3>Avatar</h3><p>Update your profile picture.</p><button type="button" class="btn btn-outline-primary btn-sm" data-pick-avatar>Change Avatar <i class="bi bi-chevron-right" aria-hidden="true"></i></button></div></div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="mp-mini"><i class="bi bi-gear-fill" aria-hidden="true"></i>
+            <div><h3>Account Settings</h3><p>Manage your account preferences.</p><a class="btn btn-outline-primary btn-sm" href="../profile.php">View Settings <i class="bi bi-chevron-right" aria-hidden="true"></i></a></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Account info -->
+    <div class="col-12 col-xl-3">
+      <section class="mp-card" aria-label="Account info">
+        <div class="mp-card-head"><i class="bi bi-people-fill text-primary" aria-hidden="true"></i><h2>Account Info</h2></div>
+        <div class="mp-body">
+          <div class="mp-info-row"><i class="bi bi-person-circle" aria-hidden="true"></i><span class="k">User ID</span><span class="v"><?php echo $acct['id'] !== '' ? $h($acct['id']) : '&mdash;'; ?></span></div>
+          <div class="mp-info-row"><i class="bi bi-person-badge" aria-hidden="true"></i><span class="k">Role</span><span class="v"><?php echo $acct['role'] !== '' ? $h($acct['role']) : '&mdash;'; ?></span></div>
+          <div class="mp-info-row"><i class="bi bi-calendar3" aria-hidden="true"></i><span class="k">Joined</span><span class="v"><?php echo $acct['joined'] !== '' ? $h($acct['joined']) : '&mdash;'; ?></span></div>
+          <div class="mp-info-row"><i class="bi bi-clock-history" aria-hidden="true"></i><span class="k">Last Login</span><span class="v"><?php echo $acct['last'] !== '' ? $h($acct['last']) : '&mdash;'; ?></span></div>
+        </div>
+      </section>
+      <div class="mp-ok mt-3">
+        <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+        <div>
+          <strong><?php echo $successMsg ? 'Profile updated!' : 'Your account is active'; ?></strong>
+          <span class="small"><?php echo $successMsg ? 'Your changes were saved.' : 'Keep your password strong and your e-mail up to date.'; ?></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
     </div>
   </div>
 
@@ -430,32 +578,28 @@ require_once __DIR__ . '/header.php';
           '</div>';
       }
 
+      document.querySelectorAll('[data-pick-avatar]').forEach(function (b) {
+        b.addEventListener('click', function () { if (avatarInput) avatarInput.click(); });
+      });
+
       if (avatarInput && avatarPreview) {
         avatarInput.addEventListener('change', function () {
           var file = avatarInput.files && avatarInput.files[0];
           if (!file) return;
           if (!file.type.startsWith('image/')) return;
 
-    
           var reader = new FileReader();
-          reader.onload = function (e) {
-            setAllAvatars(e.target.result);
-          };
+          reader.onload = function (e) { setAllAvatars(e.target.result); };
           reader.readAsDataURL(file);
 
-      
           var formData = new FormData();
           formData.append('action', 'update_avatar');
           formData.append('avatar', file);
 
-          fetch(window.location.href, {
-            method: 'POST',
-            body: formData
-          })
+          fetch(window.location.href, { method: 'POST', body: formData })
             .then(function (res) { return res.json(); })
             .then(function (data) {
               if (data.ok) {
-    
                 setAllAvatars(data.path + '?t=' + Date.now());
                 showAvatarMessage('Profile updated successfully.', false);
               } else {
@@ -465,26 +609,57 @@ require_once __DIR__ . '/header.php';
             .catch(function () {
               showAvatarMessage('Could not save avatar. Please check your connection and try again.', true);
             })
-            .finally(function () {
-              avatarInput.value = '';
-            });
+            .finally(function () { avatarInput.value = ''; });
         });
       }
     })();
 
-    (function () {
-      var input = document.getElementById('password');
-      var btn = document.getElementById('togglePassword');
-      var icon = document.getElementById('togglePasswordIcon');
-      if (!input || !btn || !icon) return;
-
+    // Show / hide password buttons
+    document.querySelectorAll('[data-eye]').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        var currentlyVisible = input.type === 'text';
-        input.type = currentlyVisible ? 'password' : 'text';
-        btn.setAttribute('aria-pressed', String(!currentlyVisible));
-        btn.setAttribute('aria-label', currentlyVisible ? 'Show password' : 'Hide password');
-        icon.classList.toggle('bi-eye-slash', !currentlyVisible);
-        icon.classList.toggle('bi-eye', currentlyVisible);
+        var input = document.getElementById(btn.getAttribute('data-eye'));
+        var icon = btn.querySelector('i');
+        if (!input) return;
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        icon.classList.toggle('bi-eye-slash', show);
+        icon.classList.toggle('bi-eye', !show);
+      });
+    });
+
+    // "Change Password" shortcut
+    (function () {
+      var go = document.getElementById('goPassword'), pw = document.getElementById('password');
+      if (go && pw) go.addEventListener('click', function () { pw.scrollIntoView({ behavior: 'smooth', block: 'center' }); pw.focus(); });
+    })();
+
+    // Live "Available" check for the user name
+    (function () {
+      var input = document.getElementById('username'), badge = document.getElementById('unameState'), timer = null;
+      if (!input || !badge) return;
+      function show(ok, text) {
+        badge.hidden = false;
+        badge.className = 'mp-state ' + (ok ? 'ok' : 'bad');
+        badge.textContent = text;
+      }
+      input.addEventListener('input', function () {
+        clearTimeout(timer);
+        var value = input.value.trim();
+        if (value === '') { badge.hidden = true; return; }
+        timer = setTimeout(function () {
+          var fd = new FormData();
+          fd.append('action', 'check_username');
+          fd.append('username', value);
+          fetch(window.location.href, { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (value !== input.value.trim()) return;
+              if (d.same) { badge.hidden = true; return; }
+              show(!!d.ok, d.ok ? 'Available' : (d.message || 'Not available'));
+            })
+            .catch(function () { badge.hidden = true; });
+        }, 400);
       });
     })();
   </script>

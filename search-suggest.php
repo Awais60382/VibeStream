@@ -59,11 +59,13 @@ $prefix = $esc . '%';
 $sql = "SELECT id, title, type, video_url
         FROM videos
         WHERE title LIKE ? ESCAPE '!' OR channel_name LIKE ? ESCAPE '!' OR username LIKE ? ESCAPE '!'
-        ORDER BY (title LIKE ? ESCAPE '!') DESC, views DESC, created_at DESC
+        ORDER BY (title LIKE ? ESCAPE '!') DESC,
+                 (username LIKE ? ESCAPE '!' OR channel_name LIKE ? ESCAPE '!') DESC,
+                 views DESC, created_at DESC
         LIMIT 8";
 try {
     $st = $pdo->prepare($sql);
-    $st->execute([$contains, $contains, $contains, $prefix]);
+    $st->execute([$contains, $contains, $contains, $prefix, $prefix, $prefix]);
     foreach ($st->fetchAll() as $row) {
         $out[] = [
             'id'    => (string)$row['id'],

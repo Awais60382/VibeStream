@@ -11,6 +11,69 @@ function vs_subscription_key(string $channelName): string
     return 'ch:' . mb_strtolower(trim($channelName));
 }
 
+function vs_subscription_channel_count(mysqli $conn, string $channelName, string $channelUsername, int $fallback = 0): int
+{
+    static $tableChecked = null;
+    if ($tableChecked === null) {
+        $tableChecked = false;
+        try {
+            $result = $conn->query(
+                "SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = DATABASE() AND table_name = 'user_subscriptions' LIMIT 1"
+            );
+            $tableChecked = (bool)($result && $result->fetch_row());
+        } catch (Throwable $error) {
+            $tableChecked = false;
+        }
+    }
+
+    if (!$tableChecked) {
+        return max(0, $fallback);
+    }
+
+    try {
+        $columns = [];
+        $result = $conn->query('SHOW COLUMNS FROM `user_subscriptions`');
+        while ($result && ($row = $result->fetch_assoc())) {
+            $columns[strtolower((string)$row['Field'])] = (string)$row['Field'];
+        }
+        if (isset($columns['channel_username'])) {
+            $column = '`' . str_replace('`', '``', $columns['channel_username']) . '`';
+            $stmt = $conn->prepare("SELECT COUNT(*) FROM `user_subscriptions` WHERE LOWER($column) = LOWER(?)");
+            $target = $channelUsername !== '' ? $channelUsername : $channelName;
+            $stmt->bind_param('s', $target);
+            $stmt->execute();
+            $count = max(0, (int)$stmt->get_result()->fetch_row()[0]);
+            $sync = $conn->prepare('UPDATE videos SET subscribers = ? WHERE username = ?');
+            if ($sync) {
+                $sync->bind_param('is', $count, $target);
+                $sync->execute();
+                $sync->close();
+            }
+            return $count;
+        }
+        if (isset($columns['channel_name'])) {
+            $column = '`' . str_replace('`', '``', $columns['channel_name']) . '`';
+            $stmt = $conn->prepare("SELECT COUNT(*) FROM `user_subscriptions` WHERE LOWER($column) = LOWER(?)");
+            $target = $channelName !== '' ? $channelName : $channelUsername;
+            $stmt->bind_param('s', $target);
+            $stmt->execute();
+            $count = max(0, (int)$stmt->get_result()->fetch_row()[0]);
+            $sync = $conn->prepare('UPDATE videos SET subscribers = ? WHERE channel_name = ?');
+            if ($sync) {
+                $sync->bind_param('is', $count, $target);
+                $sync->execute();
+                $sync->close();
+            }
+            return $count;
+        }
+    } catch (Throwable $error) {
+        error_log('Could not count channel subscriptions: ' . $error->getMessage());
+    }
+
+    return max(0, $fallback);
+}
+
 function vs_subscription_has_subscriber_count(mysqli $conn): bool
 {
     static $hasColumn = null;
@@ -172,14 +235,17 @@ function vs_subscription_change(
         $count->close();
     }
 
-    $subs = 0;
-    $countStmt = $conn->prepare('SELECT COALESCE(subscribers, 0) AS n FROM videos WHERE id = ? LIMIT 1');
-    if ($countStmt) {
-        $countStmt->bind_param('s', $videoId);
-        if ($countStmt->execute()) {
-            $subs = (int)($countStmt->get_result()->fetch_assoc()['n'] ?? 0);
+    $subs = vs_subscription_channel_count($conn, $channelName, $channelUsername, 0);
+    if ($subs > 0 || $changed) {
+        $syncTarget = $channelUsername !== '' ? $channelUsername : $channelName;
+        $sync = $channelUsername !== ''
+            ? $conn->prepare('UPDATE videos SET subscribers = ? WHERE username = ?')
+            : $conn->prepare('UPDATE videos SET subscribers = ? WHERE channel_name = ?');
+        if ($sync) {
+            $sync->bind_param('is', $subs, $syncTarget);
+            $sync->execute();
+            $sync->close();
         }
-        $countStmt->close();
     }
 
     if (vs_subscription_user_id() <= 0) {

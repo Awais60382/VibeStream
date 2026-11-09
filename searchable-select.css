@@ -1,0 +1,99 @@
+.vs-searchable-select {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.vs-searchable-select-input {
+  width: 100%;
+  padding-right: 2.4rem !important;
+  cursor: text;
+}
+
+.vs-searchable-select-input:disabled {
+  cursor: not-allowed;
+}
+
+.vs-searchable-select-menu {
+  position: absolute;
+  z-index: 1080;
+  top: calc(100% + .35rem);
+  right: 0;
+  left: 0;
+  max-height: min(18rem, 55vh);
+  overflow: auto;
+  padding: .35rem;
+  border: 1px solid var(--admin-border, var(--border, #d6d9e0));
+  border-radius: .75rem;
+  background: var(--admin-surface, var(--surface-raised, #fff));
+  color: var(--admin-text, var(--text, #202438));
+  box-shadow: 0 12px 32px rgba(13, 18, 40, .18);
+}
+
+.vs-searchable-select-menu[hidden] {
+  display: none;
+}
+
+.vs-searchable-select-option {
+  padding: .55rem .7rem;
+  border-radius: .45rem;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.vs-searchable-select-option:hover,
+.vs-searchable-select-option.is-active {
+  background: var(--admin-primary, #6d5dfc);
+  color: #fff;
+}
+
+.vs-searchable-select-option.is-selected:not(:hover) {
+  background: rgba(109, 93, 252, .12);
+  color: var(--admin-primary, #5141d9);
+  font-weight: 600;
+}
+
+.vs-searchable-select-option.is-disabled {
+  color: var(--admin-muted, #777d8c);
+  cursor: not-allowed;
+  opacity: .65;
+}
+
+.vs-searchable-select-option.is-disabled:hover {
+  background: transparent;
+  color: var(--admin-muted, #777d8c);
+}
+
+.vs-searchable-select-empty {
+  padding: .65rem .7rem;
+  color: var(--admin-muted, #777d8c);
+  font-size: .9rem;
+}
+
+.vs-searchable-select-native {
+  display: none !important;
+}
+
+html[data-theme="dark"] .vs-searchable-select-menu {
+  border-color: #3a3f56;
+  background: #171a27;
+  color: #eef0f6;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .42);
+}
+
+html[data-theme="dark"] .vs-searchable-select-option.is-selected:not(:hover) {
+  background: rgba(139, 92, 246, .2);
+  color: #d7c8ff;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vs-searchable-select-menu {
+    animation: vs-select-open .12s ease-out;
+  }
+
+  @keyframes vs-select-open {
+    from { opacity: 0; transform: translateY(-3px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}

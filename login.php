@@ -2,7 +2,16 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-require_once __DIR__ . '/google-oauth.php';
+$googleOauthFile = __DIR__ . '/google-oauth.php';
+if (is_file($googleOauthFile)) {
+    require_once $googleOauthFile;
+}
+if (!defined('GOOGLE_OAUTH_ENABLED')) {
+    define('GOOGLE_OAUTH_ENABLED', false);
+}
+if (!defined('GOOGLE_OAUTH_CLIENT_ID')) {
+    define('GOOGLE_OAUTH_CLIENT_ID', '');
+}
 $googleEnabled = GOOGLE_OAUTH_ENABLED && GOOGLE_OAUTH_CLIENT_ID !== '';
 if ($googleEnabled) {
     $_SESSION['google_oauth_nonce'] = bin2hex(random_bytes(32));
@@ -11,6 +20,7 @@ $googleClientId = GOOGLE_OAUTH_CLIENT_ID;
 $loginError = trim((string)($_GET['error'] ?? ''));
 include "header.php";
 ?>
+<link rel="stylesheet" href="neon-auth.css?v=3" data-vs-neon>
 <main class="auth-layout">
     <section class="auth-card" aria-labelledby="login-title">
         <a class="auth-brand" href="index.php"><img class="site-brand-icon" src="<?php echo htmlspecialchars($siteLogoUrl, ENT_QUOTES, 'UTF-8'); ?>" alt=""><span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span></a>
@@ -22,7 +32,7 @@ include "header.php";
             <p class="auth-error" role="alert"><?php echo htmlspecialchars($loginError); ?></p>
         <?php endif; ?>
         <?php if ($googleEnabled): ?>
-            <div id="google-signin"></div>
+            <div id="google-signin" style="display:flex;justify-content:center;width:100%;color-scheme:light"></div>
             <p id="google-error" class="auth-error" role="alert" hidden></p>
         <?php else: ?>
             <div class="google-coming-soon" role="status">
@@ -47,6 +57,7 @@ include "header.php";
                 <input type="checkbox" id="show-pass-checkbox">
                 <span>Show password</span>
             </label>
+            <p class="auth-footer" style="margin:10px 0 0"><a href="forgot-password.php">Forgot password?</a></p>
             <button type="submit" name="login_submit" class="submit-btn">Sign in</button>
         </form>
 

@@ -265,17 +265,45 @@ $items = (isset($conn) && $conn instanceof mysqli && $uid > 0) ? vs_notification
 $unreadCount = (isset($conn) && $conn instanceof mysqli && $uid > 0) ? vs_notifications_unread_count($conn, $uid) : 0;
 
 $css = vs_notification_css() . <<<'CSS'
-:root {
-    --yt-bg: #0f0f0f;
-    --yt-text: #f1f1f1;
-    --yt-muted: #aaaaaa;
-    --yt-blue: #3ea6ff;
-    --yt-switch-off: #383838;
+/* VibeStream - neon look for notifications.php.
+   Same palette as neon-auth.css: dark by default, neon-light when the site is in light mode. */
+
+html:not([data-theme="light"]) {
+    --na-bg: #05060f; --na-card: rgba(10, 13, 31, 0.88);
+    --na-text: #eaf0ff; --na-muted: #8f9bd0;
+    --na-cyan: #00e5ff; --na-cyan-text: #00e5ff; --na-pink: #ff2e93; --na-violet: #8a5cff;
+    --na-line: rgba(138, 92, 255, 0.55);
+    --na-off: #171c42; --na-chip: rgba(23, 28, 66, 0.55);
+    --na-glow-text: 0 0 10px rgba(0, 229, 255, 0.55);
+    --yt-bg: #05060f; --yt-text: #eaf0ff; --yt-muted: #8f9bd0; --yt-blue: #00e5ff; --yt-switch-off: #171c42;
+}
+html[data-theme="light"] {
+    --na-bg: #f4f6ff; --na-card: rgba(255, 255, 255, 0.92);
+    --na-text: #0b1030; --na-muted: #55608f;
+    --na-cyan: #00b8e6; --na-cyan-text: #00758f; --na-pink: #ff2e93; --na-violet: #7c4dff;
+    --na-line: rgba(124, 77, 255, 0.5);
+    --na-off: #d9defa; --na-chip: rgba(0, 184, 230, 0.08);
+    --na-glow-text: none;
+    --yt-bg: #f4f6ff; --yt-text: #0b1030; --yt-muted: #55608f; --yt-blue: #00758f; --yt-switch-off: #d9defa;
 }
 
-body {
-    background: var(--yt-bg);
-    color: var(--yt-text);
+/* page background */
+html body { color: var(--na-text); background-attachment: fixed; }
+html:not([data-theme="light"]) body {
+    background:
+        radial-gradient(900px 480px at 8% -8%, rgba(138, 92, 255, 0.20), transparent 70%),
+        radial-gradient(800px 420px at 100% 0, rgba(0, 229, 255, 0.12), transparent 70%),
+        radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
+        #05060f;
+    background-attachment: fixed;
+}
+html[data-theme="light"] body {
+    background:
+        radial-gradient(900px 480px at 8% -8%, rgba(124, 77, 255, 0.14), transparent 70%),
+        radial-gradient(800px 420px at 100% 0, rgba(0, 184, 230, 0.14), transparent 70%),
+        radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
+        #f4f6ff;
+    background-attachment: fixed;
 }
 
 .yt-container {
@@ -284,82 +312,103 @@ body {
     padding: 24px 20px 80px;
 }
 
+/* title bar with a glowing underline */
 .yt-topbar {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 28px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid #272727;
     flex-wrap: wrap;
     gap: 16px;
+    margin-bottom: 28px;
+    padding-bottom: 16px;
 }
-
+.yt-topbar::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--na-cyan), var(--na-violet) 55%, var(--na-pink));
+    box-shadow: 0 0 14px var(--na-violet), 0 0 28px rgba(255, 46, 147, 0.5);
+    pointer-events: none;
+}
 .yt-topbar h1 {
     margin: 0;
-    font-size: 24px;
-    font-weight: 600;
+    font-size: 26px;
+    font-weight: 800;
     letter-spacing: -0.2px;
-    color: #ffffff;
+    background: linear-gradient(90deg, var(--na-cyan), var(--na-violet) 55%, var(--na-pink));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    filter: drop-shadow(0 0 8px rgba(138, 92, 255, 0.6));
 }
 
-.yt-tabs {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
+/* tabs */
+.yt-tabs { display: flex; align-items: center; gap: 10px; }
 .yt-tab-btn {
-    background: #272727;
-    color: #f1f1f1;
+    background: var(--na-chip);
+    color: var(--na-text);
     padding: 7px 18px;
     border-radius: 999px;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     text-decoration: none;
-    transition: background 0.15s ease;
-    border: 1px solid transparent;
+    border: 1px solid var(--na-line);
+    box-shadow: 0 0 12px -4px rgba(138, 92, 255, 0.6);
+    transition: box-shadow .2s ease, border-color .2s ease, color .2s ease, transform .2s ease;
 }
 .yt-tab-btn:hover {
-    background: #383838;
+    background: var(--na-chip);
+    color: var(--na-cyan-text);
+    border-color: var(--na-cyan);
+    box-shadow: 0 0 18px -2px rgba(0, 229, 255, 0.55);
 }
-.yt-tab-btn.active {
-    background: #ffffff;
-    color: #0f0f0f;
-    font-weight: 600;
+.yt-tab-btn.active,
+.yt-tab-btn.active:hover {
+    background: linear-gradient(90deg, var(--na-violet), var(--na-pink));
+    color: #fff;
+    border-color: transparent;
+    font-weight: 700;
+    box-shadow: 0 0 20px rgba(255, 46, 147, 0.55), 0 0 44px -8px rgba(138, 92, 255, 0.7);
 }
+.yt-tab-btn:focus-visible { outline: 2px solid var(--na-cyan); outline-offset: 3px; }
 
-/* Two-column YouTube settings grid */
+/* settings sections are glowing cards */
 .yt-section {
+    position: relative;
     display: flex;
     gap: 52px;
-    padding: 24px 0 32px;
+    margin: 0 0 22px;
+    padding: 28px 30px;
+    background: var(--na-card);
+    border: 1px solid var(--na-line);
+    border-radius: 20px;
+    box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.10), 0 0 34px -6px rgba(138, 92, 255, 0.55), 0 0 70px -20px rgba(0, 229, 255, 0.45), inset 0 0 40px -24px rgba(0, 229, 255, 0.5);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
 }
-
+html[data-theme="light"] .yt-section {
+    box-shadow: 0 0 0 1px rgba(0, 184, 230, 0.10), 0 8px 30px -10px rgba(124, 77, 255, 0.35);
+}
+.yt-section::before {                      /* glowing top edge */
+    content: ""; position: absolute; left: 18px; right: 18px; top: -1px; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--na-cyan), var(--na-violet) 55%, var(--na-pink));
+    box-shadow: 0 0 14px var(--na-violet), 0 0 28px rgba(255, 46, 147, 0.5);
+    pointer-events: none;
+}
 .yt-section-title {
     width: 240px;
     flex-shrink: 0;
-    font-size: 15px;
-    font-weight: 500;
-    color: #ffffff;
+    padding-top: 3px;
+    font-size: 13px;
+    font-weight: 700;
     line-height: 22px;
-    padding-top: 2px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--na-cyan-text);
+    text-shadow: var(--na-glow-text);
 }
+.yt-section-items { flex: 1; display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.yt-row { display: flex; align-items: flex-start; gap: 20px; }
 
-.yt-section-items {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
-    min-width: 0;
-}
-
-.yt-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 20px;
-}
-
+/* neon switches */
 .yt-toggle {
     position: relative;
     width: 38px;
@@ -369,23 +418,15 @@ body {
     cursor: pointer;
     display: inline-block;
 }
-
-.yt-toggle input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-    pointer-events: none;
-}
-
+.yt-toggle input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
 .yt-track {
     position: absolute;
     inset: 0;
     border-radius: 999px;
-    background: var(--yt-switch-off);
-    transition: background 0.16s ease;
+    background: var(--na-off);
+    box-shadow: 0 0 0 1px var(--na-line), 0 0 10px -3px rgba(138, 92, 255, 0.5);
+    transition: background .2s ease, box-shadow .2s ease;
 }
-
 .yt-track::after {
     content: "";
     position: absolute;
@@ -395,51 +436,34 @@ body {
     height: 16px;
     border-radius: 50%;
     background: #ffffff;
-    transition: transform 0.16s ease;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    transition: transform .2s ease, box-shadow .2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
-
 .yt-toggle input:checked + .yt-track {
-    background: var(--yt-blue);
+    background: linear-gradient(90deg, var(--na-violet), var(--na-pink));
+    box-shadow: 0 0 0 1px transparent, 0 0 14px rgba(255, 46, 147, 0.65), 0 0 26px -4px rgba(138, 92, 255, 0.8);
 }
-
 .yt-toggle input:checked + .yt-track::after {
     transform: translateX(18px);
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.9);
 }
+.yt-toggle input:focus-visible + .yt-track { outline: 2px solid var(--na-cyan); outline-offset: 3px; }
 
-.yt-toggle input:focus-visible + .yt-track {
-    outline: 2px solid var(--yt-blue);
-    outline-offset: 2px;
-}
-
-.yt-info {
-    flex: 1;
-    min-width: 0;
-}
-
+/* text */
+.yt-info { flex: 1; min-width: 0; }
 .yt-title {
     display: block;
     font-size: 15px;
-    font-weight: 500;
-    color: #ffffff;
+    font-weight: 600;
+    color: var(--na-text);
     cursor: pointer;
     line-height: 20px;
     margin-bottom: 4px;
 }
-
-.yt-desc {
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--yt-muted);
-}
-
-.yt-desc a {
-    color: var(--yt-blue);
-    text-decoration: none;
-}
-.yt-desc a:hover {
-    text-decoration: underline;
-}
+.yt-desc { font-size: 13px; line-height: 1.5; color: var(--na-muted); }
+.yt-desc a { color: var(--na-cyan-text); text-decoration: none; text-shadow: var(--na-glow-text); }
+.yt-desc a:hover { color: var(--na-pink); text-decoration: underline; text-shadow: 0 0 12px rgba(255, 46, 147, 0.8); }
+html[data-theme="light"] .yt-desc a:hover { text-shadow: none; }
 
 .yt-browser-row {
     display: inline-flex;
@@ -447,66 +471,84 @@ body {
     gap: 8px;
     margin: 6px 0 4px;
     font-size: 14px;
-    font-weight: 600;
-    color: #ffffff;
+    font-weight: 700;
+    color: var(--na-text);
 }
+.yt-browser-row svg { filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.55)); }
 
 .yt-status-msg {
     min-height: 20px;
     font-size: 13px;
-    color: var(--yt-muted);
+    color: var(--na-cyan-text);
+    text-shadow: var(--na-glow-text);
     margin-top: 14px;
 }
 
+/* activity feed */
+.yt-feed-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.yt-feed-intro { margin: 0; color: var(--na-muted); font-size: 14px; }
+.yt-readall {
+    background: transparent;
+    color: var(--na-text);
+    border: 1px solid var(--na-cyan);
+    padding: 6px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 0 14px -4px rgba(0, 229, 255, 0.6);
+    transition: box-shadow .2s ease, background .2s ease, color .2s ease, transform .2s ease;
+}
+.yt-readall:hover {
+    background: linear-gradient(90deg, var(--na-violet), var(--na-pink));
+    border-color: transparent;
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 0 22px rgba(255, 46, 147, 0.6), 0 0 44px -8px rgba(138, 92, 255, 0.7);
+}
+.yt-readall:focus-visible { outline: 2px solid var(--na-cyan); outline-offset: 3px; }
+
 .notif-feed-card {
-    background: #181818;
-    border: 1px solid #272727;
-    border-radius: 16px;
+    position: relative;
+    background: var(--na-card);
+    color: var(--na-text);
+    border: 1px solid var(--na-line);
+    border-radius: 20px;
     overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.10), 0 0 34px -6px rgba(138, 92, 255, 0.55), 0 0 70px -20px rgba(0, 229, 255, 0.45), inset 0 0 40px -24px rgba(0, 229, 255, 0.5);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
 }
-.notif-feed-card .vs-n-list {
-    max-height: none;
+html[data-theme="light"] .notif-feed-card {
+    box-shadow: 0 0 0 1px rgba(0, 184, 230, 0.10), 0 8px 30px -10px rgba(124, 77, 255, 0.35);
 }
+.notif-feed-card::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 1;
+    background: linear-gradient(90deg, var(--na-cyan), var(--na-violet) 55%, var(--na-pink));
+    box-shadow: 0 0 14px var(--na-violet), 0 0 28px rgba(255, 46, 147, 0.5);
+    pointer-events: none;
+}
+.notif-feed-card .vs-n-list { max-height: none; background: transparent; }
+
+::selection { background: rgba(255, 46, 147, 0.45); color: #fff; }
 
 @media (max-width: 768px) {
-    .yt-section {
-        flex-direction: column;
-        gap: 16px;
-        padding: 20px 0;
-        border-bottom: 1px solid #222222;
-    }
-    .yt-section-title {
-        width: 100%;
-        font-size: 15px;
-        font-weight: 600;
-    }
-    .yt-section-items {
-        gap: 22px;
-    }
+    .yt-section { flex-direction: column; gap: 16px; padding: 22px 20px; }
+    .yt-section-title { width: 100%; }
+    .yt-section-items { gap: 22px; }
 }
 
-/* Light mode overrides */
-:root[data-theme="light"] {
-    --yt-bg: #ffffff;
-    --yt-text: #0f0f0f;
-    --yt-muted: #606060;
-    --yt-switch-off: #cccccc;
+@media (prefers-reduced-motion: reduce) {
+    .yt-tab-btn, .yt-track, .yt-track::after, .yt-readall { transition: none !important; }
+    .yt-readall:hover { transform: none; }
 }
-:root[data-theme="light"] body { background: #ffffff; color: #0f0f0f; }
-:root[data-theme="light"] .yt-topbar h1 { color: #0f0f0f; }
-:root[data-theme="light"] .yt-topbar { border-bottom-color: #e0e0e0; }
-:root[data-theme="light"] .yt-section-title { color: #0f0f0f; }
-:root[data-theme="light"] .yt-title { color: #0f0f0f; }
-:root[data-theme="light"] .yt-desc { color: #606060; }
-:root[data-theme="light"] .yt-desc a { color: #065fd4; }
-:root[data-theme="light"] .yt-browser-row { color: #0f0f0f; }
-:root[data-theme="light"] .yt-status-msg { color: #606060; }
-:root[data-theme="light"] .yt-track { background: #cccccc; }
-:root[data-theme="light"] .yt-tab-btn { background: #f2f2f2; color: #0f0f0f; }
-:root[data-theme="light"] .yt-tab-btn:hover { background: #e0e0e0; }
-:root[data-theme="light"] .yt-tab-btn.active { background: #0f0f0f; color: #ffffff; }
-:root[data-theme="light"] .notif-feed-card { background: #ffffff; border-color: #e0e0e0; }
-:root[data-theme="light"] .yt-section { border-bottom-color: #e0e0e0; }
 CSS;
 
 $js = <<<'JS'
@@ -599,12 +641,12 @@ vs_page_start('Notifications', 'notifications', $css);
 
     <?php if ($activeTab === 'feed'): ?>
         <!-- Activity Feed Tab -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
-            <p style="margin:0;color:var(--yt-muted);font-size:14px;">Recent activity from channels you subscribe to, likes, and comments.</p>
+        <div class="yt-feed-head">
+            <p class="yt-feed-intro">Recent activity from channels you subscribe to, likes, and comments.</p>
             <?php if ($unreadCount > 0): ?>
                 <form method="post" style="margin:0;">
                     <input type="hidden" name="action" value="read_all">
-                    <button type="submit" style="background:#272727;color:#fff;border:1px solid #383838;padding:6px 16px;border-radius:999px;cursor:pointer;font-size:13px;font-weight:600;">Mark all as read</button>
+                    <button type="submit" class="yt-readall">Mark all as read</button>
                 </form>
             <?php endif; ?>
         </div>
@@ -615,7 +657,7 @@ vs_page_start('Notifications', 'notifications', $css);
         </div>
 
     <?php else: ?>
-        <!-- Settings Tab: Exact layout from user screenshot -->
+        <!-- Settings Tab -->
         <form id="ytSettingsForm" method="post">
             <input type="hidden" name="csrf" value="<?php echo $e($csrf); ?>">
 

@@ -129,9 +129,33 @@ if (!function_exists('vs_reports_ensure_table')) {
                 `created_at` DATETIME NOT NULL,
                 `reviewed_by` VARCHAR(100) NULL,
                 `reviewed_at` DATETIME NULL,
+                `assigned_to` VARCHAR(100) NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `one_report_per_user` (`content_table`, `content_id`, `reporter`),
                 KEY `status_idx` (`status`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+        $columns = vsr_cols($pdo, 'content_reports');
+        if ($columns && !isset($columns['assigned_to'])) {
+            $pdo->exec('ALTER TABLE `content_reports` ADD COLUMN `assigned_to` VARCHAR(100) NULL');
+        }
+    }
+}
+
+if (!function_exists('vs_report_notes_ensure_table')) {
+    function vs_report_notes_ensure_table(PDO $pdo): void
+    {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS `content_report_notes` (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `content_table` VARCHAR(20) NOT NULL,
+                `content_id` VARCHAR(64) NOT NULL,
+                `admin` VARCHAR(100) NOT NULL,
+                `note` TEXT NOT NULL,
+                `created_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                KEY `content_lookup` (`content_table`, `content_id`),
+                KEY `created_at_idx` (`created_at`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
     }

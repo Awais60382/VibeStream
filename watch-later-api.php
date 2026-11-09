@@ -9,7 +9,7 @@ header('Cache-Control: no-store');
 $ids = [];
 foreach (explode(',', (string)($_GET['ids'] ?? '')) as $raw) {
     $raw = trim($raw);
-    if (preg_match('/^[A-Za-z0-9_-]{4,40}$/', $raw)) {
+    if (preg_match('/^[A-Za-z0-9_-]{1,191}$/', $raw)) {
         $ids[$raw] = true;
     }
     if (count($ids) >= 300) {

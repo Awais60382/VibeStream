@@ -59,13 +59,20 @@ foreach (vs_si_load()['site'] as $k => $entry) {
 ?>
 <script>window.VS_SIDEBAR_ICONS = <?php echo json_encode($vsSiteIcons, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
 <script src="sidebar.js" defer></script><script src="theme.js?v=3"></script>
+<link rel="stylesheet" href="neon-off.css?v=7">
+<script src="neon-switch.js?v=7"></script>
     <script>window.VS_PREMIUM_STATE = <?php echo json_encode($vsPremiumState, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;</script>
-    <script src="premium.js" defer></script>
+    <script src="premium.js?v=3" defer></script>
     <link rel="stylesheet" href="style.css?v=5">
-    <link rel="stylesheet" href="theme.css?v=3">
+    <link rel="stylesheet" href="theme.css?v=5">
     <link rel="stylesheet" href="navbar-fix.css?v=8">
+    <link rel="stylesheet" href="searchable-select.css?v=<?php echo (int)@filemtime(__DIR__ . '/searchable-select.css'); ?>">
     <link rel="stylesheet" href="search-suggest.css?v=3">
+    <script src="searchable-select.js?v=<?php echo (int)@filemtime(__DIR__ . '/searchable-select.js'); ?>" defer></script>
     <script src="search-suggest.js?v=3" defer></script>
+    <?php if (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) !== 'login.php'): ?>
+    <script src="brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/brain.js'); ?>" defer></script>
+    <?php endif; ?>
 </head>
 <body>
     <header class="navbar">
@@ -89,6 +96,9 @@ foreach (vs_si_load()['site'] as $k => $entry) {
             </div>
         </div>
         <div class="nav-right" style="display: flex; align-items: center; gap: 12px;">
+            <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
+            </button>
             <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
                 <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
             </button>
@@ -102,6 +112,41 @@ foreach (vs_si_load()['site'] as $k => $entry) {
             <?php endif; ?>
         </div>
     </header>
+    <?php
+    // E-mail verification reminder: only for signed-in users whose address is not verified yet,
+    // and only when the site can actually send e-mail (mail-config.php is filled in).
+    if ($isLoggedIn && !empty($_SESSION['email']) && basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) !== 'verify-email.php') {
+        try {
+            require_once __DIR__ . '/account-safety-store.php';
+            $vsMail = (string)$_SESSION['email'];
+            if (vs_as_mail_ready() && $vsPdo && ($_SESSION['vs_verified_for'] ?? '') !== $vsMail) {
+                if (vs_verify_status($vsPdo, (string)$username, $vsMail)) {
+                    $_SESSION['vs_verified_for'] = $vsMail;
+                } else {
+                    ?>
+    <div id="vs-verify-banner" role="status" style="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;max-width:calc(100% - 24px);display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;border-radius:14px;background:#181818;color:#fff;border:1px solid #f5b942;box-shadow:0 8px 30px rgba(0,0,0,.45);font-size:14px">
+        <span>Please verify your e-mail address.</span>
+        <a href="verify-email.php" style="background:linear-gradient(135deg,#f5b942,#ff8a3d);color:#2a1700;padding:6px 12px;border-radius:999px;font-weight:700;text-decoration:none">Verify now</a>
+        <button type="button" id="vs-verify-close" aria-label="Hide" style="background:none;border:0;color:inherit;font-size:20px;line-height:1;cursor:pointer">&times;</button>
+    </div>
+    <script>
+        (function () {
+            var box = document.getElementById('vs-verify-banner');
+            try { if (window.sessionStorage.getItem('vs-verify-hidden') === '1') { box.remove(); return; } } catch (e) {}
+            document.getElementById('vs-verify-close').addEventListener('click', function () {
+                try { window.sessionStorage.setItem('vs-verify-hidden', '1'); } catch (e) {}
+                box.remove();
+            });
+        })();
+    </script>
+                    <?php
+                }
+            }
+        } catch (Throwable $e) {
+            // the reminder must never break a page
+        }
+    }
+    ?>
     <script>
         (function () {
             var input = document.getElementById('vs-search-input');

@@ -11,8 +11,12 @@ function vs_q(string $id): string
     return '`' . str_replace('`', '', $id) . '`';
 }
 
-function vs_cols(PDO $pdo, string $table): array
+function vs_cols(?PDO $pdo, string $table): array
 {
+    if (!$pdo) {
+        return [];
+    }
+
     $out = [];
     try {
         $stmt = $pdo->query('SHOW COLUMNS FROM ' . vs_q($table));

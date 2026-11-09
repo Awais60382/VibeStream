@@ -1,5 +1,8 @@
 <?php
 require_once __DIR__ . '/layout.php';
+if (is_file(__DIR__ . '/premium-perks.php')) {
+    require_once __DIR__ . '/premium-perks.php';
+}
 require_once __DIR__ . '/icons.php';
 require_once __DIR__ . '/avatar.php';
 require_once __DIR__ . '/subscription-store.php';
@@ -213,10 +216,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ? ['type' => 'ok', 'text' => 'Avatar updated.']
                     : ['type' => 'err', 'text' => $err];
 
-            } elseif ($action === 'avatar_remove') {
-                avatar_delete($viewer);
-                $flash = ['type' => 'ok', 'text' => 'Avatar removed.'];
-
             } elseif ($action === 'banner') {
                 $err = banner_save($viewer, $_FILES['banner'] ?? null);
                 $flash = $err === ''
@@ -409,7 +408,7 @@ if ($accountFound) {
             error_log('Profile subscriptions unavailable: ' . $e->getMessage());
         }
     }
-    if (($uploaderCol ?? '') !== '' && isset($vCols['subscribers'])) {
+    if ($isMe && ($uploaderCol ?? '') !== '' && isset($vCols['subscribers'])) {
         $st = $conn->prepare("SELECT COALESCE(MAX(`subscribers`), 0) FROM `videos` WHERE LOWER(`$uploaderCol`) = LOWER(?)");
         if ($st) {
             $st->bind_param('s', $profileUser);
@@ -435,7 +434,9 @@ body { overflow-x: clip; }
     background: linear-gradient(120deg, #23253a, #1b2436 45%, #2c2140);
 }
 .channel-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.banner-actions { position: absolute; right: 16px; bottom: 12px; display: flex; gap: 8px; }
+.banner-actions { position: absolute; right: 16px; bottom: 12px; display: flex; gap: 8px; z-index: 5; }
+.banner-actions form { margin: 0; }
+.banner-actions .btn { cursor: pointer; pointer-events: auto; }
 .banner-actions .btn { background: #ffffff; color: #0f0f0f; border: 1px solid rgba(255, 255, 255, 0.7); box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); }
 .banner-actions .btn:hover { background: #e9e9ee; filter: none; }
 .banner-actions .btn svg { color: #0f0f0f; }
@@ -520,6 +521,173 @@ body { overflow-x: clip; }
     .channel-avatar-lg { width: 80px; height: 80px; font-size: 34px; }
     .channel-name { font-size: 24px; }
 }
+/* ===== CHANNEL LAYOUT (profile redesign) ===== */
+.channel-banner { max-height: 260px; margin-bottom: 0; }
+.channel-head { align-items: flex-start; gap: 26px; margin-top: -68px; padding: 0 12px; position: relative; z-index: 2; }
+.channel-avatar-lg { width: 168px; height: 168px; border: 5px solid var(--bg); position: relative; z-index: 2; }
+.channel-info { padding-top: 78px; flex: 1 1 420px; }
+.channel-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.channel-handle-line { margin: 0 0 8px; color: var(--muted); font-size: 15px; }
+.channel-stats { display: flex; flex-wrap: wrap; gap: 14px 30px; margin: 4px 0 8px; }
+.channel-stats-note { display: block; margin: 0 0 16px; color: var(--muted); font-size: 12px; }
+.ch-stat { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ch-stat svg { width: 26px; height: 26px; flex: 0 0 auto; color: var(--muted); }
+.ch-stat b { display: block; font-size: 22px; line-height: 1.1; font-weight: 700; }
+.ch-stat span { display: block; font-size: 13px; color: var(--muted); }
+.tabs { gap: 8px; padding: 8px; margin: 10px 0 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.tab { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px; border: 0; border-radius: 12px; }
+.tab svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.tab.active { background: linear-gradient(135deg, #6d5ffd, #4a3fe0); color: #fff; border-bottom-color: transparent; }
+.tab.active .count { color: rgba(255,255,255,.8); }
+.panel-cols { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+.panel-main { min-width: 0; }
+.about-side { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); padding: 20px; position: sticky; top: calc(var(--navbar-height) + 14px); }
+.about-side h2 { margin: 0 0 10px; font-size: 18px; }
+.about-side .about-desc { margin: 0 0 16px; font-size: 14px; line-height: 1.55; }
+.about-side .about-list { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+.about-side .about-list dd { font-size: 15px; }
+.p-card { display: block; transition: transform .18s ease; }
+.p-card:hover { transform: translateY(-3px); }
+.p-thumb, .p-short-thumb { border-radius: 14px; }
+.video-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+@media (max-width: 1100px) { .panel-cols { grid-template-columns: minmax(0, 1fr); } .about-side { position: static; } }
+@media (max-width: 760px) {
+    .channel-head { margin-top: -44px; gap: 14px; padding: 0 4px; }
+    .channel-avatar-lg { width: 92px; height: 92px; border-width: 4px; }
+    .channel-info { padding-top: 52px; flex-basis: 100%; }
+    .ch-stat b { font-size: 18px; }
+    .tab { padding: 0 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .p-card { transition: none; } .p-card:hover { transform: none; } }
+/* ===== NEON THEME (dark + light) ===== */
+html:not([data-theme="light"]) {
+            --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
+            --text: #eaf0ff; --muted: #8f9bd0; --border: #1d2557;
+            --accent: #ff2e93; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #00e5ff;
+            --neon-cyan: #00e5ff; --neon-pink: #ff2e93; --neon-violet: #8a5cff;
+        }
+        html:not([data-theme="light"]) body { background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.16), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.08), transparent 70%), #05060f; background-attachment: fixed; }
+        html:not([data-theme="light"]) body .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(0,229,255,.35); box-shadow: 0 1px 24px -4px rgba(0,229,255,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
+        html:not([data-theme="light"]) body .brand { background: linear-gradient(90deg, #00e5ff, #8a5cff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
+        html:not([data-theme="light"]) body .nav-toggle span { background: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.7); }
+        html:not([data-theme="light"]) body .nav-toggle:hover, html:not([data-theme="light"]) body .theme-toggle:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) body .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(138,92,255,.6)); }
+        html:not([data-theme="light"]) body .nav-link.active { background: rgba(255,46,147,.16); color: #ff7ac0; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) body .create-btn, html:not([data-theme="light"]) body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) body #search-input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.55); color: #eaf0ff; box-shadow: 0 0 10px -2px rgba(138,92,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html:not([data-theme="light"]) body #search-input:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 20px rgba(0,229,255,.55); }
+        html:not([data-theme="light"]) body .user-badge-pill { background: linear-gradient(180deg, rgba(23,28,66,.9), rgba(10,13,31,.95)); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html:not([data-theme="light"]) body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html:not([data-theme="light"]) body .app-sidebar { background: linear-gradient(180deg, rgba(10,13,31,.97), rgba(5,6,15,.98)); border-right: 1px solid rgba(138,92,255,.4); box-shadow: 4px 0 28px -10px rgba(138,92,255,.45); }
+        html:not([data-theme="light"]) body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html:not([data-theme="light"]) body .sidebar-link:hover { background: rgba(0,229,255,.10); box-shadow: inset 3px 0 0 #00e5ff, 0 0 16px -4px rgba(0,229,255,.5); }
+        html:not([data-theme="light"]) body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) body .sidebar-heading { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar-track { background: #05060f; }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
+        html:not([data-theme="light"]) body ::selection { background: rgba(255,46,147,.4); color: #fff; }
+
+/* ---- profile page ---- */
+html:not([data-theme="light"]) body .channel-banner { border: 1px solid rgba(138,92,255,.55); box-shadow: 0 0 30px -6px rgba(0,229,255,.5), 0 0 70px -20px rgba(255,46,147,.45); }
+html:not([data-theme="light"]) body .channel-avatar-lg { box-shadow: 0 0 0 3px rgba(255,46,147,.85), 0 0 22px rgba(255,46,147,.6); }
+html:not([data-theme="light"]) body .channel-name { text-shadow: 0 0 16px rgba(138,92,255,.6); }
+html:not([data-theme="light"]) body .channel-handle { color: #00e5ff; }
+html:not([data-theme="light"]) body .btn { transition: box-shadow .18s ease, transform .18s ease, filter .18s ease; }
+html:not([data-theme="light"]) body .btn:hover { transform: translateY(-1px); }
+html:not([data-theme="light"]) body .btn.primary { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); }
+html:not([data-theme="light"]) body .btn.subscribe { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; box-shadow: 0 0 18px rgba(255,46,147,.5); }
+html:not([data-theme="light"]) body .banner-actions .btn { background: rgba(5,6,15,.8); color: #fff; border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 14px rgba(0,229,255,.45); }
+html:not([data-theme="light"]) body .banner-actions .btn svg { color: #00e5ff; }
+html:not([data-theme="light"]) body .name-form input[type=text], html:not([data-theme="light"]) body .name-form textarea { background: rgba(10,13,31,.9); color: #eaf0ff; border: 1px solid rgba(138,92,255,.5); }
+html:not([data-theme="light"]) body .name-form input[type=text]:focus, html:not([data-theme="light"]) body .name-form textarea:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 16px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .chip { background: rgba(23,28,66,.7); color: #eaf0ff; border: 1px solid rgba(138,92,255,.35); transition: box-shadow .18s ease, border-color .18s ease; }
+html:not([data-theme="light"]) body .chip:hover { border-color: #00e5ff; box-shadow: 0 0 14px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .chip.active { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border-color: transparent; box-shadow: 0 0 18px rgba(255,46,147,.55); }
+html:not([data-theme="light"]) body .tabs { border-bottom: 1px solid rgba(138,92,255,.45); }
+html:not([data-theme="light"]) body .tab:hover { color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.6); }
+html:not([data-theme="light"]) body .tab.active { color: #00e5ff; border-bottom-color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.6); box-shadow: 0 8px 14px -10px rgba(0,229,255,.9); }
+html:not([data-theme="light"]) body .p-thumb, html:not([data-theme="light"]) body .p-short-thumb { border: 1px solid rgba(138,92,255,.28); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
+html:not([data-theme="light"]) body a:hover .p-thumb, html:not([data-theme="light"]) body a:hover .p-short-thumb { border-color: #00e5ff; box-shadow: 0 0 22px rgba(0,229,255,.55), 0 0 44px -8px rgba(138,92,255,.5); transform: translateY(-3px); }
+html:not([data-theme="light"]) body a:hover .p-title { color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .p-duration { background: rgba(5,6,15,.88); color: #00e5ff; border: 1px solid rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .about-list div { border-top: 1px solid rgba(138,92,255,.45); }
+html:not([data-theme="light"]) body .flash.ok { box-shadow: 0 0 18px -4px rgba(60,220,130,.55); }
+html:not([data-theme="light"]) body .flash.err { box-shadow: 0 0 18px -4px rgba(255,46,147,.55); }
+html:not([data-theme="light"]) body .empty-state { background: rgba(10,13,31,.88); border: 1px dashed rgba(0,229,255,.5); box-shadow: 0 0 24px -8px rgba(0,229,255,.4); }
+
+html[data-theme="light"] {
+            --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
+            --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
+            --accent: #ff2e93; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #00b8e6;
+            --neon-cyan: #00b8e6; --neon-pink: #ff2e93; --neon-violet: #7c4dff;
+        }
+        html[data-theme="light"] body { background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.14), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.10), transparent 70%), #f4f6ff; background-attachment: fixed; }
+        html[data-theme="light"] body .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(0,184,230,.55); box-shadow: 0 1px 22px -4px rgba(0,184,230,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
+        html[data-theme="light"] body .brand { background: linear-gradient(90deg, #00b8e6, #7c4dff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
+        html[data-theme="light"] body .nav-toggle span { background: #7c4dff; box-shadow: 0 0 6px rgba(124,77,255,.7); }
+        html[data-theme="light"] body .nav-toggle:hover, html[data-theme="light"] body .theme-toggle:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 14px rgba(0,184,230,.4); }
+        html[data-theme="light"] body .theme-toggle svg { color: #7c4dff; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
+        html[data-theme="light"] body .nav-link.active { background: rgba(255,46,147,.16); color: #d4147a; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html[data-theme="light"] body .create-btn, html[data-theme="light"] body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html[data-theme="light"] body #search-input { background: #ffffff; border: 1px solid rgba(124,77,255,.55); color: #0b1030; box-shadow: 0 0 10px -2px rgba(124,77,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html[data-theme="light"] body #search-input:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 20px rgba(0,184,230,.55); }
+        html[data-theme="light"] body .user-badge-pill { background: linear-gradient(180deg, #ffffff, #f1f3ff); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html[data-theme="light"] body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html[data-theme="light"] body .app-sidebar { background: linear-gradient(180deg, #ffffff, #f4f6ff); border-right: 1px solid rgba(124,77,255,.35); box-shadow: 4px 0 28px -10px rgba(124,77,255,.45); }
+        html[data-theme="light"] body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html[data-theme="light"] body .sidebar-link:hover { background: rgba(0,184,230,.12); box-shadow: inset 3px 0 0 #00b8e6, 0 0 16px -4px rgba(0,184,230,.5); }
+        html[data-theme="light"] body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html[data-theme="light"] body .sidebar-heading { color: #7c4dff; text-shadow: 0 0 8px rgba(124,77,255,.45); }
+        html[data-theme="light"] body ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html[data-theme="light"] body ::-webkit-scrollbar-track { background: #eceffd; }
+        html[data-theme="light"] body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
+        html[data-theme="light"] body ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
+
+/* ---- profile page ---- */
+html[data-theme="light"] body .channel-banner { border: 1px solid rgba(124,77,255,.55); box-shadow: 0 0 30px -6px rgba(0,184,230,.5), 0 0 70px -20px rgba(255,46,147,.45); }
+html[data-theme="light"] body .channel-avatar-lg { box-shadow: 0 0 0 3px rgba(255,46,147,.85), 0 0 22px rgba(255,46,147,.6); }
+html[data-theme="light"] body .channel-name { text-shadow: 0 0 16px rgba(124,77,255,.3); }
+html[data-theme="light"] body .channel-handle { color: #0086b3; }
+html[data-theme="light"] body .btn { transition: box-shadow .18s ease, transform .18s ease, filter .18s ease; }
+html[data-theme="light"] body .btn:hover { transform: translateY(-1px); }
+html[data-theme="light"] body .btn.primary { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); }
+html[data-theme="light"] body .btn.subscribe { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; box-shadow: 0 0 18px rgba(255,46,147,.5); }
+html[data-theme="light"] body .banner-actions .btn { background: rgba(5,6,15,.8); color: #fff; border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 14px rgba(0,184,230,.45); }
+html[data-theme="light"] body .banner-actions .btn svg { color: #00b8e6; }
+html[data-theme="light"] body .name-form input[type=text], html[data-theme="light"] body .name-form textarea { background: #ffffff; color: #0b1030; border: 1px solid rgba(124,77,255,.5); }
+html[data-theme="light"] body .name-form input[type=text]:focus, html[data-theme="light"] body .name-form textarea:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 16px rgba(0,184,230,.5); }
+html[data-theme="light"] body .chip { background: #ffffff; color: #0b1030; border: 1px solid rgba(124,77,255,.35); transition: box-shadow .18s ease, border-color .18s ease; }
+html[data-theme="light"] body .chip:hover { border-color: #00b8e6; box-shadow: 0 0 14px rgba(0,184,230,.5); }
+html[data-theme="light"] body .chip.active { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border-color: transparent; box-shadow: 0 0 18px rgba(255,46,147,.55); }
+html[data-theme="light"] body .tabs { border-bottom: 1px solid rgba(124,77,255,.45); }
+html[data-theme="light"] body .tab:hover { color: #0086b3; text-shadow: 0 0 10px rgba(0,184,230,.6); }
+html[data-theme="light"] body .tab.active { color: #0086b3; border-bottom-color: #00b8e6; text-shadow: 0 0 10px rgba(0,184,230,.6); box-shadow: 0 8px 14px -10px rgba(0,184,230,.9); }
+html[data-theme="light"] body .p-thumb, html[data-theme="light"] body .p-short-thumb { border: 1px solid rgba(124,77,255,.28); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
+html[data-theme="light"] body a:hover .p-thumb, html[data-theme="light"] body a:hover .p-short-thumb { border-color: #00b8e6; box-shadow: 0 0 22px rgba(0,184,230,.55), 0 0 44px -8px rgba(124,77,255,.5); transform: translateY(-3px); }
+html[data-theme="light"] body a:hover .p-title { color: #0086b3; text-shadow: 0 0 10px rgba(0,184,230,.5); }
+html[data-theme="light"] body .p-duration { background: rgba(5,6,15,.88); color: #7defff; border: 1px solid rgba(0,184,230,.5); }
+html[data-theme="light"] body .about-list div { border-top: 1px solid rgba(124,77,255,.45); }
+html[data-theme="light"] body .flash.ok { box-shadow: 0 0 18px -4px rgba(60,220,130,.55); }
+html[data-theme="light"] body .flash.err { box-shadow: 0 0 18px -4px rgba(255,46,147,.55); }
+html[data-theme="light"] body .empty-state { background: #ffffff; border: 1px dashed rgba(0,184,230,.5); box-shadow: 0 0 24px -8px rgba(0,184,230,.4); }
+html:not([data-theme="light"]) body .channel-avatar-lg { border-color: #05060f; box-shadow: 0 0 0 3px #8a5cff, 0 0 26px rgba(0,229,255,.55), 0 0 60px -10px rgba(255,46,147,.5); }
+html:not([data-theme="light"]) body .channel-name { text-shadow: 0 0 18px rgba(138,92,255,.55); }
+html:not([data-theme="light"]) body .ch-stat svg { color: #8a5cff; filter: drop-shadow(0 0 6px rgba(138,92,255,.7)); }
+html:not([data-theme="light"]) body .tabs { border-color: rgba(138,92,255,.45); background: rgba(10,13,31,.85); box-shadow: 0 0 22px -10px rgba(138,92,255,.6); }
+html:not([data-theme="light"]) body .tab.active { background: linear-gradient(135deg, #8a5cff, #5b3fe8); box-shadow: 0 0 18px rgba(138,92,255,.7); }
+html:not([data-theme="light"]) body .about-side { border-color: rgba(138,92,255,.45); background: linear-gradient(180deg, rgba(14,18,44,.88), rgba(8,10,28,.94)); box-shadow: 0 0 26px -10px rgba(138,92,255,.55); }
+html:not([data-theme="light"]) body .p-card:hover .p-thumb { box-shadow: 0 0 22px -4px rgba(0,229,255,.6); }
+html[data-theme="light"] body .channel-avatar-lg { border-color: #f4f6ff; box-shadow: 0 0 0 3px #7c4dff, 0 0 22px rgba(0,184,230,.45), 0 0 50px -10px rgba(255,46,147,.4); }
+html[data-theme="light"] body .ch-stat svg { color: #7c4dff; }
+html[data-theme="light"] body .tabs { border-color: rgba(124,77,255,.45); background: #ffffff; box-shadow: 0 0 20px -10px rgba(124,77,255,.5); }
+html[data-theme="light"] body .tab.active { background: linear-gradient(135deg, #7c4dff, #5b3fe8); box-shadow: 0 0 16px rgba(124,77,255,.55); }
+html[data-theme="light"] body .about-side { border-color: rgba(124,77,255,.45); background: #ffffff; box-shadow: 0 0 22px -10px rgba(124,77,255,.45); }
+html[data-theme="light"] body .p-card:hover .p-thumb { box-shadow: 0 0 20px -4px rgba(0,184,230,.55); }
 CSS;
 
 vs_page_start($accountFound ? '@' . $profileUser : 'Channel', 'profile', $extraCss);
@@ -568,23 +736,23 @@ vs_page_start($accountFound ? '@' . $profileUser : 'Channel', 'profile', $extraC
         <?php endif; ?>
 
         <div class="channel-info">
-            <h1 class="channel-name"><?= $h($profileUser) ?></h1>
-            <?php
-                $metaParts = [];
-                if ($subscriberCount !== null) {
-                    $metaParts[] = vs_short_views($subscriberCount) . ' subscriber' . ($subscriberCount === 1 ? '' : 's');
-                }
-                $metaParts[] = count($videos) . ' video' . (count($videos) === 1 ? '' : 's');
-                $metaParts[] = count($shorts) . ' short' . (count($shorts) === 1 ? '' : 's');
-                $metaParts[] = vs_short_views($totalViews) . ' views';
-                $metaParts[] = vs_short_views($totalLikes) . ' likes';
-            ?>
-            <p class="channel-meta"><span class="channel-handle">@<?= $h($profileUser) ?></span> • <?= $h(implode(' • ', $metaParts)) ?></p>
+            <h1 class="channel-name"><?= $h($profileUser) ?><?php echo function_exists('vs_vip_badge_html') ? vs_vip_badge_html($profileUser) : ''; ?></h1>
+            <p class="channel-handle-line"><span class="channel-handle">@<?= $h($profileUser) ?></span></p>
             <?php if ($description !== ''): ?>
                 <?php $descShort = mb_strlen($description) > 140 ? mb_substr($description, 0, 140) . '…' : $description; ?>
                 <p class="channel-desc"><?= $h($descShort) ?><?php if ($descShort !== $description): ?><button type="button" class="link-more" data-goto="about">more</button><?php endif; ?></p>
             <?php endif; ?>
 
+            <div class="channel-stats" aria-label="Public creator statistics">
+                <div class="ch-stat"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><div><b><?= $h(vs_short_views(count($videos))) ?></b><span>Videos</span></div></div>
+                <div class="ch-stat"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 2 4 14h6.5L9.5 22 20 9.5h-6.8z"/></svg><div><b><?= $h(vs_short_views(count($shorts))) ?></b><span>Shorts</span></div></div>
+                <?php if ($isMe && $subscriberCount !== null): ?>
+                <div class="ch-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg><div><b><?= $h(vs_short_views($subscriberCount)) ?></b><span>Subscribers</span></div></div>
+                <?php endif; ?>
+                <div class="ch-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><div><b><?= $h(vs_short_views($totalViews)) ?></b><span>Views</span></div></div>
+                <?php if ($isMe): ?><div class="ch-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.3-9.2C1.3 8.3 3.4 5 6.7 5c2 0 3.6 1.1 5.3 3 1.7-1.9 3.3-3 5.3-3 3.3 0 5.4 3.3 4 6.8C19.5 16.4 12 21 12 21z"/></svg><div><b><?= $h(vs_short_views($totalLikes)) ?></b><span>Likes</span></div></div><?php endif; ?>
+            </div>
+            <small class="channel-stats-note">Public totals are calculated from this channel’s uploaded videos and Shorts.</small>
             <?php if (!$isMe): ?>
                 <div class="channel-actions">
                     <form method="post" action="profile.php?u=<?= urlencode($profileUser) ?>" style="margin:0;">
@@ -592,6 +760,7 @@ vs_page_start($accountFound ? '@' . $profileUser : 'Channel', 'profile', $extraC
                         <input type="hidden" name="action" value="<?= $isSubscribed ? 'unsubscribe' : 'subscribe' ?>">
                         <button type="submit" class="btn<?= $isSubscribed ? '' : ' subscribe' ?>"<?= $isSubscribed ? ' title="Click to unsubscribe"' : '' ?>><?php if ($isSubscribed): ?><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg> Subscribed<?php else: ?>Subscribe<?php endif; ?></button>
                     </form>
+                    <button type="button" class="btn" id="shareChannel" data-u="<?= $h($profileUser) ?>"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.6l6.8-4M8.6 13.4l6.8 4"/></svg> Share channel</button>
                 </div>
             <?php endif; ?>
 
@@ -603,16 +772,10 @@ vs_page_start($accountFound ? '@' . $profileUser : 'Channel', 'profile', $extraC
                         <input type="file" name="avatar" id="avatarFile" accept=".jpg,.jpeg,.png,.webp,.gif">
                     </form>
                     <label class="btn" for="avatarFile"><?= vs_icon('contact', 16) ?> Change avatar</label>
-                    <?php if ($avatarUrl !== ''): ?>
-                        <form method="post" action="profile.php" style="margin:0;">
-                            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
-                            <input type="hidden" name="action" value="avatar_remove">
-                            <button type="submit" class="btn">Remove avatar</button>
-                        </form>
-                    <?php endif; ?>
                     <button type="button" class="btn" id="nameToggle"><?= vs_icon('contact', 16) ?> Change name</button>
                     <button type="button" class="btn" id="descToggle">Edit description</button>
                     <a class="btn primary" href="upload.php"><?= vs_icon('plus-square', 16) ?> Upload</a>
+                    <button type="button" class="btn" id="shareChannel" data-u="<?= $h($profileUser) ?>"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.6l6.8-4M8.6 13.4l6.8 4"/></svg> Share channel</button>
                     <a class="btn" href="logout.php">Logout</a>
                 </div>
             <?php endif; ?>
@@ -644,12 +807,13 @@ vs_page_start($accountFound ? '@' . $profileUser : 'Channel', 'profile', $extraC
     <?php endif; ?>
 
     <div class="tabs" role="tablist">
-        <button type="button" class="tab<?= $defaultTab === 'videos' ? ' active' : '' ?>" role="tab" data-tab="videos">Videos<span class="count"><?= count($videos) ?></span></button>
-        <button type="button" class="tab<?= $defaultTab === 'shorts' ? ' active' : '' ?>" role="tab" data-tab="shorts">Shorts<span class="count"><?= count($shorts) ?></span></button>
-        <button type="button" class="tab" role="tab" data-tab="about">About</button>
+        <button type="button" class="tab<?= $defaultTab === 'videos' ? ' active' : '' ?>" role="tab" data-tab="videos"><svg class="tab-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Videos<span class="count"><?= count($videos) ?></span></button>
+        <button type="button" class="tab<?= $defaultTab === 'shorts' ? ' active' : '' ?>" role="tab" data-tab="shorts"><svg class="tab-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 2 4 14h6.5L9.5 22 20 9.5h-6.8z"/></svg>Shorts<span class="count"><?= count($shorts) ?></span></button>
+        <button type="button" class="tab" role="tab" data-tab="about"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>About</button>
     </div>
 
     <div class="tab-panel<?= $defaultTab === 'videos' ? ' active' : '' ?>" data-panel="videos">
+      <div class="panel-cols"><div class="panel-main">
         <?php if (!$videos): ?>
             <div class="empty-state">
                 <p>No videos yet.</p>
@@ -680,6 +844,18 @@ vs_page_start($accountFound ? '@' . $profileUser : 'Channel', 'profile', $extraC
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
+      </div>
+      <aside class="about-side" aria-label="About this channel">
+        <h2>About</h2>
+        <p class="about-desc"><?php if ($description !== ''): ?><?= $h($description) ?><?php else: ?><span style="color:var(--muted)"><?= $isMe ? 'Add a description with "Edit description".' : 'No description yet.' ?></span><?php endif; ?></p>
+        <dl class="about-list">
+            <?php if ($joinedAt !== '' && strtotime($joinedAt)): ?><div><dt>Joined</dt><dd><?= $h(date('M j, Y', strtotime($joinedAt))) ?></dd></div><?php endif; ?>
+            <?php if ($isMe && $subscriberCount !== null): ?><div><dt>Subscribers</dt><dd><?= $h(vs_short_views($subscriberCount)) ?></dd></div><?php endif; ?>
+            <div><dt>Total views</dt><dd><?= $h(vs_short_views($totalViews)) ?></dd></div>
+            <?php if ($isMe): ?><div><dt>Total likes</dt><dd><?= $h(vs_short_views($totalLikes)) ?></dd></div><?php endif; ?>
+        </dl>
+      </aside>
+      </div>
     </div>
 
     <div class="tab-panel<?= $defaultTab === 'shorts' ? ' active' : '' ?>" data-panel="shorts">
@@ -807,6 +983,21 @@ vs_page_end(<<<'JS'
     if (bannerFile && bannerForm) {
         bannerFile.addEventListener('change', function () {
             if (bannerFile.files && bannerFile.files.length) { bannerForm.submit(); }
+        });
+    }
+    var shareBtn = document.getElementById('shareChannel');
+    if (shareBtn) {
+        shareBtn.addEventListener('click', function () {
+            var url = new URL('profile.php?u=' + encodeURIComponent(shareBtn.getAttribute('data-u') || ''), window.location.href).href;
+            function done() { if (typeof toast === 'function') { toast('Channel link copied'); } }
+            function fallback() {
+                var t = document.createElement('textarea');
+                t.value = url; t.style.position = 'fixed'; t.style.opacity = '0';
+                document.body.appendChild(t); t.select();
+                try { document.execCommand('copy'); done(); } catch (e) { window.prompt('Copy this link:', url); }
+                document.body.removeChild(t);
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(done, fallback); } else { fallback(); }
         });
     }
 })();

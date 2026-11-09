@@ -1,13 +1,15 @@
 <?php
 /*
  * VibeStream - Watch later page (like YouTube's playlist page).
- * Reads the list saved by the three-dot menu ("Save to Watch Later", stored in this browser)
+ * Reads the signed-in user's server-saved list (or browser storage for guests)
  * and shows it with Play all, Shuffle, sorting, drag to reorder and remove.
  */
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 require_once __DIR__ . '/layout.php';
+require_once __DIR__ . '/connection.php';
+require_once __DIR__ . '/vip-badge.php';
 
 $owner = trim((string)($_SESSION['username'] ?? ''));
 
@@ -59,6 +61,111 @@ $extraCss = <<<'CSS'
     .wl-title { font-size: 14px; }
     .wl-handle { display: none; }
 }
+/* ===== NEON THEME (dark + light) ===== */
+html:not([data-theme="light"]) {
+            --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
+            --text: #eaf0ff; --muted: #8f9bd0; --border: #1d2557;
+            --accent: #ff2e93; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #00e5ff;
+            --neon-cyan: #00e5ff; --neon-pink: #ff2e93; --neon-violet: #8a5cff;
+        }
+        html:not([data-theme="light"]) body { background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.16), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.08), transparent 70%), #05060f; background-attachment: fixed; }
+        html:not([data-theme="light"]) body .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(0,229,255,.35); box-shadow: 0 1px 24px -4px rgba(0,229,255,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
+        html:not([data-theme="light"]) body .brand { background: linear-gradient(90deg, #00e5ff, #8a5cff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
+        html:not([data-theme="light"]) body .nav-toggle span { background: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.7); }
+        html:not([data-theme="light"]) body .nav-toggle:hover, html:not([data-theme="light"]) body .theme-toggle:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) body .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(138,92,255,.6)); }
+        html:not([data-theme="light"]) body .nav-link.active { background: rgba(255,46,147,.16); color: #ff7ac0; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) body .create-btn, html:not([data-theme="light"]) body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) body #search-input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.55); color: #eaf0ff; box-shadow: 0 0 10px -2px rgba(138,92,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html:not([data-theme="light"]) body #search-input:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 20px rgba(0,229,255,.55); }
+        html:not([data-theme="light"]) body .user-badge-pill { background: linear-gradient(180deg, rgba(23,28,66,.9), rgba(10,13,31,.95)); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html:not([data-theme="light"]) body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html:not([data-theme="light"]) body .app-sidebar { background: linear-gradient(180deg, rgba(10,13,31,.97), rgba(5,6,15,.98)); border-right: 1px solid rgba(138,92,255,.4); box-shadow: 4px 0 28px -10px rgba(138,92,255,.45); }
+        html:not([data-theme="light"]) body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html:not([data-theme="light"]) body .sidebar-link:hover { background: rgba(0,229,255,.10); box-shadow: inset 3px 0 0 #00e5ff, 0 0 16px -4px rgba(0,229,255,.5); }
+        html:not([data-theme="light"]) body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) body .sidebar-heading { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar-track { background: #05060f; }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
+        html:not([data-theme="light"]) body ::selection { background: rgba(255,46,147,.4); color: #fff; }
+
+/* ---- watch later ---- */
+html:not([data-theme="light"]) body .wl-side { border: 1px solid rgba(138,92,255,.55); box-shadow: 0 0 30px -6px rgba(0,229,255,.5), 0 0 70px -20px rgba(255,46,147,.4); }
+html:not([data-theme="light"]) body .wl-cover { box-shadow: 0 0 22px -4px rgba(138,92,255,.7); }
+html:not([data-theme="light"]) body .wl-side h1 { text-shadow: 0 0 16px rgba(138,92,255,.65); }
+html:not([data-theme="light"]) body .wl-btn { transition: box-shadow .18s ease, transform .18s ease; }
+html:not([data-theme="light"]) body .wl-btn:hover:not(:disabled) { transform: translateY(-1px); }
+html:not([data-theme="light"]) body .wl-btn.play { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; box-shadow: 0 0 18px rgba(255,46,147,.55); }
+html:not([data-theme="light"]) body .wl-btn.shuffle { background: rgba(5,6,15,.55); color: #fff; border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+html:not([data-theme="light"]) body .wl-note { border: 1px solid rgba(0,229,255,.45); box-shadow: 0 0 18px -6px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .wl-sort { background: rgba(23,28,66,.7); color: #eaf0ff; border: 1px solid rgba(138,92,255,.45); }
+html:not([data-theme="light"]) body .wl-sort:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 14px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .wl-row { transition: background .15s ease, box-shadow .15s ease; }
+html:not([data-theme="light"]) body .wl-row:hover { background: rgba(0,229,255,.08); box-shadow: inset 3px 0 0 #00e5ff, 0 0 20px -8px rgba(0,229,255,.6); }
+html:not([data-theme="light"]) body .wl-row.over { box-shadow: 0 -2px 0 #ff2e93, 0 0 14px rgba(255,46,147,.6); }
+html:not([data-theme="light"]) body .wl-handle:hover { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.8); }
+html:not([data-theme="light"]) body .wl-thumb { border: 1px solid rgba(138,92,255,.3); transition: box-shadow .22s ease, border-color .22s ease; }
+html:not([data-theme="light"]) body .wl-row:hover .wl-thumb { border-color: #00e5ff; box-shadow: 0 0 20px rgba(0,229,255,.55), 0 0 40px -8px rgba(138,92,255,.5); }
+html:not([data-theme="light"]) body .wl-row:hover .wl-title { color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .wl-tag { background: rgba(5,6,15,.88); color: #00e5ff; border: 1px solid rgba(0,229,255,.5); }
+html:not([data-theme="light"]) body .wl-remove:hover { background: rgba(255,46,147,.18); color: #ff2e93; box-shadow: 0 0 12px rgba(255,46,147,.55); }
+html:not([data-theme="light"]) body .wl-empty { border: 1px dashed rgba(0,229,255,.5); border-radius: 16px; box-shadow: 0 0 24px -8px rgba(0,229,255,.4); }
+
+html[data-theme="light"] {
+            --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
+            --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
+            --accent: #ff2e93; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #00b8e6;
+            --neon-cyan: #00b8e6; --neon-pink: #ff2e93; --neon-violet: #7c4dff;
+        }
+        html[data-theme="light"] body { background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.14), transparent 70%),
+                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.10), transparent 70%), #f4f6ff; background-attachment: fixed; }
+        html[data-theme="light"] body .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(0,184,230,.55); box-shadow: 0 1px 22px -4px rgba(0,184,230,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
+        html[data-theme="light"] body .brand { background: linear-gradient(90deg, #00b8e6, #7c4dff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
+        html[data-theme="light"] body .nav-toggle span { background: #7c4dff; box-shadow: 0 0 6px rgba(124,77,255,.7); }
+        html[data-theme="light"] body .nav-toggle:hover, html[data-theme="light"] body .theme-toggle:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 14px rgba(0,184,230,.4); }
+        html[data-theme="light"] body .theme-toggle svg { color: #7c4dff; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
+        html[data-theme="light"] body .nav-link.active { background: rgba(255,46,147,.16); color: #d4147a; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
+        html[data-theme="light"] body .create-btn, html[data-theme="light"] body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
+        html[data-theme="light"] body #search-input { background: #ffffff; border: 1px solid rgba(124,77,255,.55); color: #0b1030; box-shadow: 0 0 10px -2px rgba(124,77,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
+        html[data-theme="light"] body #search-input:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 20px rgba(0,184,230,.55); }
+        html[data-theme="light"] body .user-badge-pill { background: linear-gradient(180deg, #ffffff, #f1f3ff); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
+        html[data-theme="light"] body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html[data-theme="light"] body .app-sidebar { background: linear-gradient(180deg, #ffffff, #f4f6ff); border-right: 1px solid rgba(124,77,255,.35); box-shadow: 4px 0 28px -10px rgba(124,77,255,.45); }
+        html[data-theme="light"] body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
+        html[data-theme="light"] body .sidebar-link:hover { background: rgba(0,184,230,.12); box-shadow: inset 3px 0 0 #00b8e6, 0 0 16px -4px rgba(0,184,230,.5); }
+        html[data-theme="light"] body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
+        html[data-theme="light"] body .sidebar-heading { color: #7c4dff; text-shadow: 0 0 8px rgba(124,77,255,.45); }
+        html[data-theme="light"] body ::-webkit-scrollbar { width: 10px; height: 10px; }
+        html[data-theme="light"] body ::-webkit-scrollbar-track { background: #eceffd; }
+        html[data-theme="light"] body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
+        html[data-theme="light"] body ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
+
+/* ---- watch later ---- */
+html[data-theme="light"] body .wl-side { border: 1px solid rgba(124,77,255,.55); box-shadow: 0 0 30px -6px rgba(0,184,230,.5), 0 0 70px -20px rgba(255,46,147,.4); }
+html[data-theme="light"] body .wl-cover { box-shadow: 0 0 22px -4px rgba(124,77,255,.7); }
+html[data-theme="light"] body .wl-side h1 { text-shadow: 0 0 16px rgba(124,77,255,.3); }
+html[data-theme="light"] body .wl-btn { transition: box-shadow .18s ease, transform .18s ease; }
+html[data-theme="light"] body .wl-btn:hover:not(:disabled) { transform: translateY(-1px); }
+html[data-theme="light"] body .wl-btn.play { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; box-shadow: 0 0 18px rgba(255,46,147,.55); }
+html[data-theme="light"] body .wl-btn.shuffle { background: rgba(5,6,15,.55); color: #fff; border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 14px rgba(0,184,230,.4); }
+html[data-theme="light"] body .wl-note { border: 1px solid rgba(0,184,230,.45); box-shadow: 0 0 18px -6px rgba(0,184,230,.5); }
+html[data-theme="light"] body .wl-sort { background: #ffffff; color: #0b1030; border: 1px solid rgba(124,77,255,.45); }
+html[data-theme="light"] body .wl-sort:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 14px rgba(0,184,230,.5); }
+html[data-theme="light"] body .wl-row { transition: background .15s ease, box-shadow .15s ease; }
+html[data-theme="light"] body .wl-row:hover { background: rgba(0,184,230,.08); box-shadow: inset 3px 0 0 #00b8e6, 0 0 20px -8px rgba(0,184,230,.6); }
+html[data-theme="light"] body .wl-row.over { box-shadow: 0 -2px 0 #ff2e93, 0 0 14px rgba(255,46,147,.6); }
+html[data-theme="light"] body .wl-handle:hover { color: #00b8e6; text-shadow: 0 0 8px rgba(0,184,230,.8); }
+html[data-theme="light"] body .wl-thumb { border: 1px solid rgba(124,77,255,.3); transition: box-shadow .22s ease, border-color .22s ease; }
+html[data-theme="light"] body .wl-row:hover .wl-thumb { border-color: #00b8e6; box-shadow: 0 0 20px rgba(0,184,230,.55), 0 0 40px -8px rgba(124,77,255,.5); }
+html[data-theme="light"] body .wl-row:hover .wl-title { color: #0086b3; text-shadow: 0 0 10px rgba(0,184,230,.5); }
+html[data-theme="light"] body .wl-tag { background: rgba(5,6,15,.88); color: #7defff; border: 1px solid rgba(0,184,230,.5); }
+html[data-theme="light"] body .wl-remove:hover { background: rgba(255,46,147,.18); color: #ff2e93; box-shadow: 0 0 12px rgba(255,46,147,.55); }
+html[data-theme="light"] body .wl-empty { border: 1px dashed rgba(0,184,230,.5); border-radius: 16px; box-shadow: 0 0 24px -8px rgba(0,184,230,.4); }
+
 CSS;
 
 vs_page_start('Watch later', 'watch-later', $extraCss);
@@ -67,7 +174,7 @@ vs_page_start('Watch later', 'watch-later', $extraCss);
     <aside class="wl-side" id="wlSide">
         <img class="wl-cover" id="wlCover" alt="" hidden>
         <h1>Watch later</h1>
-        <p class="wl-owner"><?= htmlspecialchars($owner !== '' ? $owner : 'You', ENT_QUOTES, 'UTF-8') ?></p>
+        <p class="wl-owner"><?= htmlspecialchars($owner !== '' ? $owner : 'You', ENT_QUOTES, 'UTF-8') ?><?= $owner !== '' ? vs_vip_badge($owner, $conn ?? null, 16) : '' ?></p>
         <p class="wl-count" id="wlCount">0 videos &middot; Saved in this browser</p>
         <div class="wl-actions">
             <button type="button" class="wl-btn play" id="wlPlay" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg> Play all</button>
@@ -100,10 +207,28 @@ vs_page_start('Watch later', 'watch-later', $extraCss);
   var saved = [];            // [{id,title,channel,kind,url}] in the order they were saved / arranged
   var info = {};             // id -> details from the server
   var mode = 'newest';
+  var serverMode = false;
+  var storeState = null;
   var rowsEl = document.getElementById('wlRows');
 
   function load() { try { var v = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
   function store() { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
+  function note(text) {
+    document.getElementById('wlNoteText').textContent = text;
+    document.getElementById('wlNote').hidden = false;
+  }
+  function storeRequest(action, ids) {
+    return fetch('watch-later-store-api.php', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action, ids: ids, csrf: storeState.csrf })
+    }).then(function (r) {
+      return r.json().then(function (data) {
+        if (!r.ok) throw new Error(data.error || 'Could not update Watch Later.');
+        return data;
+      });
+    });
+  }
 
   function short(n) {
     n = +n || 0;
@@ -132,7 +257,8 @@ vs_page_start('Watch later', 'watch-later', $extraCss);
     var list = visible();
     rowsEl.textContent = '';
     document.getElementById('wlEmpty').hidden = list.length > 0;
-    document.getElementById('wlCount').textContent = list.length + (list.length === 1 ? ' video' : ' videos') + ' \u00b7 Saved in this browser';
+    document.getElementById('wlCount').textContent = list.length + (list.length === 1 ? ' video' : ' videos') +
+      (serverMode ? ' \u00b7 Saved to your account' : ' \u00b7 Saved in this browser');
     document.getElementById('wlPlay').disabled = document.getElementById('wlShuffle').disabled = !list.length;
 
     var cover = document.getElementById('wlCover'), side = document.getElementById('wlSide');
@@ -157,6 +283,13 @@ vs_page_start('Watch later', 'watch-later', $extraCss);
       inf.appendChild(t); inf.appendChild(m);
       var rm = document.createElement('button'); rm.type = 'button'; rm.className = 'wl-remove'; rm.title = 'Remove from Watch later'; rm.setAttribute('aria-label', 'Remove from Watch later'); rm.textContent = '\u2715';
       rm.addEventListener('click', function () {
+        if (serverMode) {
+          storeRequest('remove', [x.s.id]).then(function (data) {
+            saved = data.ids.map(function (id) { return { id: id }; });
+            render();
+          }).catch(function (e) { note(e.message); });
+          return;
+        }
         saved = saved.filter(function (s) { return s.id !== x.s.id; }); store(); render();
       });
       row.appendChild(handle); row.appendChild(th); row.appendChild(inf); row.appendChild(rm);
@@ -172,9 +305,16 @@ vs_page_start('Watch later', 'watch-later', $extraCss);
   rowsEl.addEventListener('drop', function (e) {
     if (!dragId) return; e.preventDefault();
     var r = e.target.closest('.wl-row'); if (!r || r.dataset.id === dragId) return;
+    var previous = saved.slice();
     var from = saved.findIndex(function (s) { return s.id === dragId; }), moved = saved.splice(from, 1)[0];
     var to = saved.findIndex(function (s) { return s.id === r.dataset.id; });
-    saved.splice(to, 0, moved); store(); render();
+    saved.splice(to, 0, moved);
+    if (serverMode) {
+      storeRequest('order', saved.map(function (s) { return s.id; })).then(function (data) {
+        saved = data.ids.map(function (id) { return { id: id }; });
+        render();
+      }).catch(function (error) { saved = previous; render(); note(error.message); });
+    } else { store(); render(); }
   });
 
   document.getElementById('wlSort').addEventListener('change', function () { mode = this.value; render(); });
@@ -182,19 +322,46 @@ vs_page_start('Watch later', 'watch-later', $extraCss);
   document.getElementById('wlShuffle').addEventListener('click', function () { var l = visible(); if (l.length) location.href = href(l[Math.floor(Math.random() * l.length)].s); });
   document.getElementById('wlNoteClose').addEventListener('click', function () { document.getElementById('wlNote').hidden = true; });
 
+  function loadDetails() {
+    if (!saved.length) { render(); return Promise.resolve(); }
+    return fetch('watch-later-api.php?ids=' + encodeURIComponent(saved.map(function (s) { return s.id; }).join(',')), { credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('Could not load video details.');
+        return r.json();
+      })
+      .then(function (list) {
+        (list || []).forEach(function (d) { info[d.id] = d; });
+        var missing = saved.filter(function (s) { return !info[s.id]; }).length;
+        if (missing) note(missing + (missing === 1 ? ' unavailable video is hidden' : ' unavailable videos are hidden'));
+        render();
+      })
+      .catch(function (e) { note(e.message); render(); });
+  }
+
   saved = load().filter(function (s) { return s && typeof s.id === 'string'; });
-  if (!saved.length) { render(); return; }
-  fetch('watch-later-api.php?ids=' + encodeURIComponent(saved.map(function (s) { return s.id; }).join(',')), { credentials: 'same-origin' })
-    .then(function (r) { return r.ok ? r.json() : []; })
-    .catch(function () { return []; })
-    .then(function (list) {
-      (list || []).forEach(function (d) { info[d.id] = d; });
-      var missing = saved.filter(function (s) { return !info[s.id]; }).length;
-      if (missing && Object.keys(info).length) {
-        document.getElementById('wlNoteText').textContent = missing + (missing === 1 ? ' unavailable video is hidden' : ' unavailable videos are hidden');
-        document.getElementById('wlNote').hidden = false;
-      }
-      render();
+  fetch('watch-later-store-api.php', { credentials: 'same-origin' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('Your saved list could not be checked.');
+      return r.json();
+    })
+    .then(function (state) {
+      if (!state.loggedIn) return loadDetails();
+      storeState = state;
+      serverMode = true;
+      return storeRequest('sync', saved.map(function (s) { return s.id; })).then(function (data) {
+        saved = data.ids.map(function (id) { return { id: id }; });
+        localStorage.removeItem(KEY);
+        if (data.skipped) {
+          note(data.skipped + ' older browser-saved ' + (data.skipped === 1 ? 'video was' : 'videos were') +
+            ' not imported because your account Watch Later limit is ' + state.limit + '.');
+        }
+        return loadDetails();
+      });
+    })
+    .catch(function (e) {
+      note(e.message + ' Showing this browser’s saved list instead.');
+      serverMode = false;
+      return loadDetails();
     });
 })();
 </script>

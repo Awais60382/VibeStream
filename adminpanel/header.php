@@ -8,6 +8,13 @@ if (!isset($_SESSION["AdminSession"])) {
     exit();
 }
 
+require_once __DIR__ . '/admin-permissions.php';
+vs_admin_enforce_route();
+$vsAdminAccessRole = vs_admin_access_role(vs_admin_access_user_id());
+$vsCanOpenAdminRoute = static function (string $route) use ($vsAdminAccessRole): bool {
+    return vs_admin_route_allowed($route, $vsAdminAccessRole);
+};
+
 // Admin check-in: must check in after login (can change it, never remove it)
 require_once __DIR__ . '/checkin-guard.php';
 
@@ -20,7 +27,12 @@ if (is_file(__DIR__ . '/system-check-core.php')) {
 }
 require_once __DIR__ . '/../site-branding.php';
 require_once __DIR__ . '/../sidebar-icons-store.php';
-require_once __DIR__ . '/icon-access-store.php';
+// Owner's own admin sidebar sections / pages (optional: the sidebar works without this file)
+$vsAcsbFile = __DIR__ . '/../admin-sidebar-custom-store.php';
+$vsAcsbReady = is_file($vsAcsbFile);
+if ($vsAcsbReady) {
+    require_once $vsAcsbFile;
+}
 require_once __DIR__ . '/../avatar.php';
 $siteLogoUrl = vs_branding_logo_url();
 $brandingState = vs_branding_state();
@@ -37,6 +49,21 @@ $brandingNotificationTime = is_array($brandingNotification)
 
 // "Someone you subscribe to uploaded" notifications for this admin account
 require_once __DIR__ . '/../notifications-store.php';
+require_once __DIR__ . '/admin-alert-store.php';
+$adminAlertUnread = 0;
+if (empty($_SESSION['admin_alert_csrf'])) {
+    $_SESSION['admin_alert_csrf'] = bin2hex(random_bytes(32));
+}
+$adminAlertCsrf = (string)$_SESSION['admin_alert_csrf'];
+$adminAlertAdmin = trim((string)($_SESSION['AdminSession'] ?? $_SESSION['username'] ?? 'Admin')) ?: 'Admin';
+if (isset($pdo) && $pdo instanceof PDO) {
+    try {
+        vs_admin_alerts_ensure($pdo);
+        $adminAlertUnread = vs_admin_alert_unread_count($pdo, $adminAlertAdmin);
+    } catch (Throwable $error) {
+        error_log('Admin alerts could not be loaded: ' . $error->getMessage());
+    }
+}
 $adminNotifUserId = (int)($_SESSION['user_id'] ?? $_SESSION['AdminID'] ?? 0);
 $adminReaderKey = $adminNotifUserId > 0
     ? 'id:' . $adminNotifUserId
@@ -218,9 +245,6 @@ if (isset($pdo) && $pdo instanceof PDO && isset($uCols) && $uCols) {
 }
 $isSiteOwner = vs_is_site_owner_email($adminEmail);
 $_SESSION['vs_is_owner'] = $isSiteOwner ? 1 : 0; // lets checkin.php show the history to the owner only
-// Icon permission requests: only the site owner is told about pending requests.
-$vsIconPending = $isSiteOwner ? vs_ia_pending_list() : [];
-$vsIconPendingCount = count($vsIconPending);
 $adminAvatarPath = avatar_url($adminUsername !== '' ? $adminUsername : $adminDisplayName, (string)$adminAvatarPath);
 // Letter-avatar fallback so the avatar never renders as a blank/broken box
 $adminInitial = mb_strtoupper(mb_substr(trim((string)$adminDisplayName) !== '' ? trim((string)$adminDisplayName) : 'A', 0, 1));
@@ -273,8 +297,80 @@ vs_admin_log_page_view(
   <link rel="stylesheet" href="./assets/vendors/bootstrap-icons/bootstrap-icons.css">
   <link rel="stylesheet" href="./assets/css/style.css?v=<?php echo (int)@filemtime(__DIR__ . '/assets/css/style.css'); ?>">
   <link rel="stylesheet" href="./assets/css/sidebar-modern.css?v=<?php echo (int)@filemtime(__DIR__ . '/assets/css/sidebar-modern.css'); ?>">
+  <link rel="stylesheet" href="../searchable-select.css?v=<?php echo (int)@filemtime(__DIR__ . '/../searchable-select.css'); ?>">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../search-suggest.css?v=<?php echo (int)@filemtime(__DIR__ . '/../search-suggest.css'); ?>">
+  <link rel="stylesheet" href="./assets/css/admin-sidebar-rail.css?v=<?php echo (int)@filemtime(__DIR__ . '/assets/css/admin-sidebar-rail.css'); ?>">
+  <script src="./assets/js/admin-sidebar-rail.js?v=<?php echo (int)@filemtime(__DIR__ . '/assets/js/admin-sidebar-rail.js'); ?>" defer></script>
+  <script src="../searchable-select.js?v=<?php echo (int)@filemtime(__DIR__ . '/../searchable-select.js'); ?>" defer></script>
+  <script src="../brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/../brain.js'); ?>" defer></script>
+  <style id="vs-admin-theme-surfaces">
+    html[data-theme="dark"] { color-scheme:dark; --vs-shell-bg:#050211; --vs-shell-panel:#0c071c; --vs-shell-soft:#160d2c; --vs-shell-text:#f5f1ff; --vs-shell-muted:#b9adcf; --vs-shell-line:rgba(157,85,255,.23); --vs-shell-active:linear-gradient(110deg,#9600ec,#6924e9); --vs-shell-accent:#cc94ff; }
+    html[data-theme="light"] { color-scheme:light; --vs-shell-bg:#f6f4fc; --vs-shell-panel:#fff; --vs-shell-soft:#f2edfb; --vs-shell-text:#241b39; --vs-shell-muted:#6c607e; --vs-shell-line:rgba(112,67,166,.16); --vs-shell-active:linear-gradient(110deg,#7c3aed,#6322cf); --vs-shell-accent:#7230c2; }
+    body { background:var(--vs-shell-bg); color:var(--vs-shell-text); }
+    .admin-shell .admin-sidebar,.admin-shell .admin-navbar.navbar { background:var(--vs-shell-panel)!important; color:var(--vs-shell-text); border-color:var(--vs-shell-line)!important; }
+    .admin-shell .admin-sidebar { border-right:1px solid var(--vs-shell-line); }
+    .admin-shell .admin-navbar.navbar { border-bottom:1px solid var(--vs-shell-line); box-shadow:0 2px 18px rgba(60,20,100,.035); }
+    .admin-shell .sidebar-header,.admin-shell .sidebar-user,.admin-shell .sidebar-footer { border-color:var(--vs-shell-line); background:transparent; }
+    .admin-shell .brand-title,.admin-shell .brand-mark,.admin-shell .sidebar-user-copy strong,.admin-shell .profile-name { color:var(--vs-shell-text); }
+    .admin-shell .brand-subtitle,.admin-shell .sidebar-section-title,.admin-shell .sidebar-user-copy small,.admin-shell .sidebar-footer-text { color:var(--vs-shell-muted); }
+    .admin-shell .sidebar-nav .nav-link { color:var(--vs-shell-muted); border-radius:11px; transition:background .18s,color .18s; }
+    .admin-shell .sidebar-nav .nav-link:hover { background:var(--vs-shell-soft); color:var(--vs-shell-text); }
+    .admin-shell .sidebar-nav .nav-link.active { background:var(--vs-shell-active); color:#fff; box-shadow:0 5px 18px rgba(124,58,237,.22); }
+    .admin-shell .sidebar-nav .nav-link.active .nav-icon,.admin-shell .sidebar-nav .nav-link.active .nav-text { color:#fff; }
+    .admin-shell .admin-navbar .icon-button,.admin-shell .admin-navbar .profile-button { background:var(--vs-shell-soft); color:var(--vs-shell-text); border:1px solid var(--vs-shell-line); border-radius:12px; }
+    .admin-shell .admin-navbar .icon-button { position:relative; }
+    .admin-shell .admin-navbar .sidebar-toggle { color:var(--vs-shell-text); }
+    .admin-shell .admin-navbar .sidebar-toggle span { background:var(--vs-shell-text); }
+    .admin-shell .admin-navbar .search-input { background:var(--vs-shell-soft); color:var(--vs-shell-text); border:1px solid var(--vs-shell-line); border-radius:12px; }
+    .admin-shell .admin-navbar .search-input::placeholder { color:var(--vs-shell-muted); }
+    .admin-shell .admin-navbar .dropdown-menu { background:var(--vs-shell-panel); color:var(--vs-shell-text); border:1px solid var(--vs-shell-line); box-shadow:0 18px 50px rgba(40,10,70,.16); }
+    .admin-shell .admin-navbar .dropdown-item { color:var(--vs-shell-text); }
+    .admin-shell .admin-navbar .dropdown-item:hover,.admin-shell .admin-navbar .dropdown-item:focus { background:var(--vs-shell-soft); color:var(--vs-shell-text); }
+    .admin-shell .admin-navbar .text-muted,.admin-shell .notification-time { color:var(--vs-shell-muted)!important; }
+    .admin-shell .admin-navbar .menu-danger { color:#e04465; }
+    .admin-shell .admin-footer { background:var(--vs-shell-bg); color:var(--vs-shell-muted); border-color:var(--vs-shell-line); }
+    .admin-shell :is(.theme-toggle,.profile-button,.sidebar-toggle,.nav-link):focus-visible { outline:3px solid var(--vs-shell-accent); outline-offset:3px; }
+    @media(prefers-reduced-motion:reduce) { .admin-shell .sidebar-nav .nav-link { transition:none; } }
+  </style>
+  <script>
+    (function () {
+      'use strict';
+      var root = document.documentElement;
+      function apply(theme, persist) {
+        theme = theme === 'light' ? 'light' : 'dark';
+        if (root.getAttribute('data-theme') !== theme) root.setAttribute('data-theme', theme);
+        if (root.getAttribute('data-bs-theme') !== theme) root.setAttribute('data-bs-theme', theme);
+        if (persist) { try { localStorage.setItem('vs-theme', theme); } catch (error) { console.warn('Theme could not be saved.', error); } }
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = theme === 'dark' ? '#050211' : '#f6f4fc';
+        document.querySelectorAll('[data-theme-toggle]').forEach(function (button) {
+          var label = 'Switch to ' + (theme === 'dark' ? 'light' : 'dark') + ' theme';
+          button.setAttribute('aria-label', label); button.title = label;
+          button.setAttribute('aria-pressed', String(theme === 'dark'));
+          var icon = button.querySelector('[data-theme-icon]');
+          if (icon) icon.className = theme === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars';
+        });
+      }
+      // Own this control in capture phase so legacy main.js cannot toggle it twice.
+      document.addEventListener('click', function (event) {
+        var button = event.target.closest && event.target.closest('[data-theme-toggle]');
+        if (!button) return;
+        event.preventDefault(); event.stopImmediatePropagation();
+        apply(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark', true);
+        window.dispatchEvent(new CustomEvent('vs:themechange', {detail:{theme:root.getAttribute('data-theme')}}));
+      }, true);
+      window.addEventListener('storage', function (event) {
+        if (event.key === 'vs-theme') {
+          var configured = document.querySelector('meta[name="vs-default-theme"]');
+          apply(event.newValue === 'light' || event.newValue === 'dark' ? event.newValue : (configured ? configured.content : 'dark'), false);
+        }
+      });
+      new MutationObserver(function () { apply(root.getAttribute('data-theme'), false); }).observe(root, {attributes:true,attributeFilter:['data-theme']});
+      document.addEventListener('DOMContentLoaded', function () { apply(root.getAttribute('data-theme'), false); });
+      apply(root.getAttribute('data-theme'), false);
+    })();
+  </script>
 </head>
 
 <body>
@@ -295,52 +391,93 @@ vs_admin_log_page_view(
       </div>
 
       <nav class="sidebar-nav">
+        <?php if ($vsAcsbReady) { vs_acsb_render_places('top', $vsCurrent); } ?>
         <div class="sidebar-section-title">MAIN</div>
         <a class="nav-link<?php echo $vsCurrent === 'index.php' ? ' active' : ''; ?>" href="index.php"<?php echo $vsCurrent === 'index.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','dashboard'); ?><i class="bi bi-speedometer2" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Dashboard</span>
         </a>
+<?php if ($vsCanOpenAdminRoute('insights.php')): ?>
+        <a class="nav-link<?php echo $vsCurrent === 'insights.php' ? ' active' : ''; ?>" href="insights.php"<?php echo $vsCurrent === 'insights.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','insights'); ?><i class="bi bi-activity" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">Live Insights</span>
+        </a>
+<?php endif; ?>
 
+<?php if ($vsCanOpenAdminRoute('top-creators.php')): ?>
+        <a class="nav-link<?php echo $vsCurrent === 'top-creators.php' ? ' active' : ''; ?>" href="top-creators.php"<?php echo $vsCurrent === 'top-creators.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','topcreators'); ?><i class="bi bi-trophy-fill" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">Top Creators</span>
+        </a>
+<?php endif; ?>
+
+<?php if ($vsCanOpenAdminRoute('videos.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'videos.php' ? ' active' : ''; ?>" href="videos.php"<?php echo $vsCurrent === 'videos.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','videos'); ?><i class="bi bi-collection-play" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Videos</span>
         </a>
+<?php endif; ?>
 
+<?php if ($vsCanOpenAdminRoute('shorts.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'shorts.php' ? ' active' : ''; ?>" href="shorts.php"<?php echo $vsCurrent === 'shorts.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','shorts'); ?><span aria-hidden="true" style="display:block;width:16px;height:20px;background-color:currentColor;-webkit-mask:url(data:image/png;base64,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) center/contain no-repeat;mask:url(data:image/png;base64,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) center/contain no-repeat;"></span><?php vs_si_close(); ?></span>
           <span class="nav-text">Shorts</span>
         </a>
+<?php endif; ?>
 
-        <a class="nav-link<?php echo $vsCurrent === 'addvideos.php' ? ' active' : ''; ?>" href="addvideos.php"<?php echo $vsCurrent === 'addvideos.php' ? ' aria-current="page"' : ''; ?>>
-          <span class="nav-icon"><?php vs_si_open('admin','addvideo'); ?><i class="bi bi-plus-square" aria-hidden="true"></i><?php vs_si_close(); ?></span>
-          <span class="nav-text">Add Video</span>
-        </a>
-
+<?php if ($vsCanOpenAdminRoute('categories.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'categories.php' ? ' active' : ''; ?>" href="categories.php"<?php echo $vsCurrent === 'categories.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','categories'); ?><i class="bi bi-tags" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Categories</span>
         </a>
+<?php endif; ?>
 
+<?php if ($vsCanOpenAdminRoute('reported.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'reported.php' ? ' active' : ''; ?>" href="reported.php"<?php echo $vsCurrent === 'reported.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','reported'); ?><i class="bi bi-flag" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Reported content</span>
         </a>
+<?php endif; ?>
+<?php if ($vsCanOpenAdminRoute('context-notes.php')): ?>
+        <a class="nav-link<?php echo $vsCurrent === 'context-notes.php' ? ' active' : ''; ?>" href="context-notes.php"<?php echo $vsCurrent === 'context-notes.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','contextnotes'); ?><i class="bi bi-journal-check" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">Context notes</span>
+        </a>
+<?php endif; ?>
 
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('main', $vsCurrent); } ?>
+        <div class="sidebar-section-title">MY WORK</div>
+        <a class="nav-link<?php echo $vsCurrent === 'my-tasks.php' ? ' active' : ''; ?>" href="my-tasks.php"<?php echo $vsCurrent === 'my-tasks.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','mytasks'); ?><i class="bi bi-list-check" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">My tasks</span>
+        </a>
+        <a class="nav-link<?php echo $vsCurrent === 'my-pay.php' ? ' active' : ''; ?>" href="my-pay.php"<?php echo $vsCurrent === 'my-pay.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','mypay'); ?><i class="bi bi-wallet2" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">My pay</span>
+        </a>
+
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('mywork', $vsCurrent); } ?>
         <div class="sidebar-section-title">USERS</div>
+<?php if ($vsCanOpenAdminRoute('Users.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'Users.php' ? ' active' : ''; ?>" href="Users.php"<?php echo $vsCurrent === 'Users.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','users'); ?><i class="bi bi-people" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Users</span>
         </a>
+<?php endif; ?>
 
+<?php if ($vsCanOpenAdminRoute('admins.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'admins.php' ? ' active' : ''; ?>" href="admins.php"<?php echo $vsCurrent === 'admins.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','admins'); ?><i class="bi bi-shield-check" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Admins</span>
         </a>
+<?php endif; ?>
 
+<?php if ($vsCanOpenAdminRoute('user_profile.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'user_profile.php' ? ' active' : ''; ?>" href="user_profile.php"<?php echo $vsCurrent === 'user_profile.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','userprofile'); ?><i class="bi bi-person-lines-fill" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Users profile</span>
         </a>
+<?php endif; ?>
 
         <a class="nav-link<?php echo $vsCurrent === 'messages.php' ? ' active' : ''; ?>" href="messages.php"<?php echo $vsCurrent === 'messages.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','messages'); ?><i class="bi bi-chat-dots" aria-hidden="true"></i><?php vs_si_close(); ?></span>
@@ -348,37 +485,47 @@ vs_admin_log_page_view(
           <?php if ($adminMsgUnread > 0): ?><span class="badge rounded-pill bg-danger ms-auto"><?php echo $adminMsgUnread > 99 ? '99+' : (int)$adminMsgUnread; ?></span><?php endif; ?>
         </a>
 
+<?php if ($vsCanOpenAdminRoute('premium.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'premium.php' ? ' active' : ''; ?>" href="premium.php"<?php echo $vsCurrent === 'premium.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','premium'); ?><i class="bi bi-gem" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Premium</span>
         </a>
+<?php endif; ?>
 
+<?php if ($vsCanOpenAdminRoute('profit-loss.php')): ?>
+          <a class="nav-link<?php echo $vsCurrent === 'profit-loss.php' ? ' active' : ''; ?>" href="profit-loss.php"<?php echo $vsCurrent === 'profit-loss.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','successchart'); ?><i class="bi bi-graph-up-arrow" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">Success Chart</span>
+        </a>
+<?php endif; ?>
+
+
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('users', $vsCurrent); } ?>
         <div class="sidebar-section-title">SYSTEM</div>
         <a class="nav-link<?php echo $vsCurrent === 'profile.php' ? ' active' : ''; ?>" href="profile.php"<?php echo $vsCurrent === 'profile.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','profile'); ?><i class="bi bi-person-badge" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Profile</span>
         </a>
+<?php if ($vsCanOpenAdminRoute('platform-settings.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'platform-settings.php' ? ' active' : ''; ?>" href="platform-settings.php"<?php echo $vsCurrent === 'platform-settings.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','settings'); ?><i class="bi bi-sliders" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">App settings</span>
         </a>
-        <a class="nav-link<?php echo $vsCurrent === 'icons.php' ? ' active' : ''; ?>" href="icons.php<?php echo $vsIconPendingCount > 0 ? '#tab-access' : ''; ?>"<?php echo $vsCurrent === 'icons.php' ? ' aria-current="page"' : ''; ?>>
-          <span class="nav-icon"><?php vs_si_open('admin','icons'); ?><i class="bi bi-image" aria-hidden="true"></i><?php vs_si_close(); ?></span>
-          <span class="nav-text">Icons</span>
-          <?php if ($vsIconPendingCount > 0): ?><span class="badge rounded-pill bg-danger ms-auto"><?php echo (int)$vsIconPendingCount; ?></span><?php endif; ?>
-        </a>
+<?php endif; ?>
+<?php if ($vsCanOpenAdminRoute('owner-notices.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'owner-notices.php' ? ' active' : ''; ?>" href="owner-notices.php"<?php echo $vsCurrent === 'owner-notices.php' ? ' aria-current="page"' : ''; ?>>
-          <span class="nav-icon"><i class="bi bi-send-check" aria-hidden="true"></i></span>
+          <span class="nav-icon"><?php vs_si_open('admin','ownernotices'); ?><i class="bi bi-send-check" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Owner notices</span>
         </a>
+<?php endif; ?>
         <a class="nav-link<?php echo $vsCurrent === 'notifications.php' ? ' active' : ''; ?>" href="notifications.php"<?php echo $vsCurrent === 'notifications.php' ? ' aria-current="page"' : ''; ?>>
-          <span class="nav-icon"><i class="bi bi-bell" aria-hidden="true"></i></span>
+          <span class="nav-icon"><?php vs_si_open('admin','notifications'); ?><i class="bi bi-bell" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Notifications</span>
           <?php if ($adminPremiumPendingCount > 0): ?><span class="badge rounded-pill bg-danger ms-auto"><?php echo (int)$adminPremiumPendingCount; ?></span><?php endif; ?>
         </a>
 <?php if (!empty($isSiteOwner)): ?>
         <a class="nav-link<?php echo $vsCurrent === 'site-icons.php' ? ' active' : ''; ?>" href="site-icons.php"<?php echo $vsCurrent === 'site-icons.php' ? ' aria-current="page"' : ''; ?>>
-          <span class="nav-icon"><i class="bi bi-images" aria-hidden="true"></i></span>
+          <span class="nav-icon"><?php vs_si_open('admin','siteicons'); ?><i class="bi bi-images" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Site icons</span>
         </a>
 <?php
@@ -397,25 +544,37 @@ vs_admin_log_page_view(
         $vsBackupStale = $vsBackupAge === null || $vsBackupAge >= 7;
 ?>
         <a class="nav-link<?php echo $vsCurrent === 'backup.php' ? ' active' : ''; ?>" href="backup.php"<?php echo $vsCurrent === 'backup.php' ? ' aria-current="page"' : ''; ?>>
-          <span class="nav-icon"><i class="bi bi-database-down" aria-hidden="true"></i></span>
+          <span class="nav-icon"><?php vs_si_open('admin','backup'); ?><i class="bi bi-database-down" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Backups</span>
           <?php if ($vsBackupStale): ?><span class="badge rounded-pill bg-warning text-dark ms-auto" title="<?php echo $vsBackupAge === null ? 'No backup yet' : 'Last backup is ' . (int)$vsBackupAge . ' days old'; ?>">!</span><?php endif; ?>
         </a>
         <a class="nav-link<?php echo $vsCurrent === 'system-check.php' ? ' active' : ''; ?>" href="system-check.php"<?php echo $vsCurrent === 'system-check.php' ? ' aria-current="page"' : ''; ?>>
-          <span class="nav-icon"><i class="bi bi-heart-pulse" aria-hidden="true"></i></span>
+          <span class="nav-icon"><?php vs_si_open('admin','syscheck'); ?><i class="bi bi-heart-pulse" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">System check</span>
         </a>
         <a class="nav-link<?php echo $vsCurrent === 'admin-activity.php' ? ' active' : ''; ?>" href="admin-activity.php"<?php echo $vsCurrent === 'admin-activity.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','activity'); ?><i class="bi bi-activity" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Admin activity</span>
         </a>
+        <a class="nav-link<?php echo $vsCurrent === 'failed-admin-logins.php' ? ' active' : ''; ?>" href="failed-admin-logins.php"<?php echo $vsCurrent === 'failed-admin-logins.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','failedlogins'); ?><i class="bi bi-shield-exclamation" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">Failed admin logins</span>
+        </a>
+        <a class="nav-link<?php echo $vsCurrent === 'admin-pay.php' ? ' active' : ''; ?>" href="admin-pay.php"<?php echo $vsCurrent === 'admin-pay.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','adminpay'); ?><i class="bi bi-cash-stack" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">Admin pay</span>
+        </a>
 <?php endif; ?>
 
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('system', $vsCurrent); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_places('before_navigation', $vsCurrent); } ?>
         <div class="sidebar-section-title">NAVIGATION</div>
         <a class="nav-link" href="../index.php">
           <span class="nav-icon"><?php vs_si_open('admin','mainsite'); ?><i class="bi bi-house" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Main Site</span>
         </a>
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('navigation', $vsCurrent); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_places('bottom', $vsCurrent); } ?>
       </nav>
 
       <div class="sidebar-user">
@@ -426,9 +585,48 @@ vs_admin_log_page_view(
         </span>
       </div>
 
+<?php
+// Live system status for the sidebar footer (reads the result of the last system check; never breaks the page)
+$vsSideClass = 'is-unknown';
+$vsSideText = 'System status unknown';
+$vsSideTitle = '';
+$vsSideLink = '';
+try {
+    if (function_exists('vs_syscheck_state')) {
+        $vsSideState = vs_syscheck_state();
+        $vsSideBad = (array)($vsSideState['bad'] ?? []);
+        $vsSideLast = (int)($vsSideState['last_run'] ?? 0);
+        if ($vsSideBad) {
+            $n = count($vsSideBad);
+            $vsSideClass = 'is-bad';
+            $vsSideText = $n === 1 ? '1 problem found' : $n . ' problems found';
+            $vsSideTitle = implode(', ', array_map(static fn($b) => (string)$b['label'], array_slice($vsSideBad, 0, 5)));
+        } elseif ($vsSideLast === 0) {
+            $vsSideText = 'Not checked yet';
+        } elseif ((time() - $vsSideLast) > 86400) {
+            $vsSideClass = 'is-warn';
+            $vsSideText = 'Last check was over a day ago';
+        } else {
+            $vsSideClass = 'is-ok';
+            $vsSideText = 'System running smoothly';
+        }
+        if ($vsSideClass !== 'is-ok' && function_exists('vs_is_owner') && isset($pdo) && $pdo instanceof PDO && vs_is_owner($pdo)) {
+            $vsSideLink = 'system-check.php';
+        }
+    }
+} catch (Throwable $e) {
+    // keep "System status unknown"
+}
+?>
       <div class="sidebar-footer">
-        <span class="status-dot"></span>
-        <span class="sidebar-footer-text">System running smoothly &middot; <a href="checkin.php#team" style="color:inherit;text-decoration:underline dotted"><?php echo (int)vs_checkin_online_count(); ?> online</a></span>
+        <span class="status-dot <?php echo $vsSideClass; ?>"></span>
+        <span class="sidebar-footer-text"<?php echo $vsSideTitle !== '' ? ' title="' . htmlspecialchars($vsSideTitle, ENT_QUOTES) . '"' : ''; ?>><?php
+            if ($vsSideLink !== '') {
+                echo '<a href="' . $vsSideLink . '" style="color:inherit;text-decoration:none;font-weight:600">' . htmlspecialchars($vsSideText) . '</a>';
+            } else {
+                echo htmlspecialchars($vsSideText);
+            }
+        ?> &middot; <a href="checkin.php#team" style="color:inherit;text-decoration:underline dotted"><?php echo (int)vs_checkin_online_count(); ?> online</a></span>
       </div>
     </aside>
 
@@ -463,11 +661,20 @@ vs_admin_log_page_view(
 
             <div class="dropdown">
               <button class="icon-button notification-toggle dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Admin notifications" title="Admin notifications">
-                <i class="bi bi-bell" aria-hidden="true"></i>
-                <?php if (($brandingNotificationMessage !== '' && !$brandingNotificationRead) || $adminChannelUnread > 0 || $adminPremiumEndedCount > 0 || $vsIconPendingCount > 0 || $adminPremiumPendingCount > 0): ?><span class="notification-dot" aria-hidden="true"></span><?php endif; ?>
+                <?php vs_si_open('admin','topbar_bell'); ?><i class="bi bi-bell" aria-hidden="true"></i><?php vs_si_close(); ?>
+                <?php if (($brandingNotificationMessage !== '' && !$brandingNotificationRead) || $adminChannelUnread > 0 || $adminPremiumEndedCount > 0 || $adminPremiumPendingCount > 0): ?><span class="notification-dot" aria-hidden="true"></span><?php endif; ?>
+                <span class="vs-alert-count" id="vsAdminAlertCount" aria-live="polite"<?php echo $adminAlertUnread > 0 ? '' : ' hidden'; ?>><?php echo $adminAlertUnread > 99 ? '99+' : number_format($adminAlertUnread); ?></span>
               </button>
               <style>
                 .vs-an-menu { width: 380px; max-width: calc(100vw - 24px); padding: 0; border-radius: 14px; overflow: hidden; }
+                .vs-alert-count{position:absolute;top:-4px;right:-7px;min-width:18px;padding:1px 4px;border-radius:999px;background:#dc2626;color:#fff;font-size:10px;line-height:1.4;text-align:center;font-weight:700}
+                .vs-admin-alert-list{margin:0;padding:0;list-style:none}
+                .vs-admin-alert-list li{padding:0;border-bottom:1px solid rgba(128,128,128,.15)}
+                .vs-admin-alert-list a{display:block;padding:10px 18px;color:inherit;text-decoration:none;white-space:normal}
+                .vs-admin-alert-list a:hover{background:rgba(128,128,128,.12)}
+                .vs-admin-alert-list .is-read{opacity:.65}
+                .vs-admin-alert-list strong,.vs-admin-alert-list small{display:block}
+                .vs-admin-alert-list small{opacity:.68;margin-top:2px}
                 .vs-an-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--bs-border-color, rgba(128,128,128,.3)); font-size: 17px; }
                 .vs-an-head a { color: inherit; font-size: 20px; line-height: 1; display: inline-flex; padding: 4px; border-radius: 50%; }
                 .vs-an-head a:hover { background: rgba(128,128,128,.18); }
@@ -496,6 +703,10 @@ vs_admin_log_page_view(
                   <a href="notifications.php#notifSettings" title="Notification settings" aria-label="Notification settings"><i class="bi bi-gear" aria-hidden="true"></i></a>
                 </div>
                 <div class="vs-an-body">
+                  <div class="vs-an-sep">Admin alerts</div>
+                  <ul class="vs-admin-alert-list" id="vsAdminAlertList" data-csrf="<?php echo htmlspecialchars($adminAlertCsrf, ENT_QUOTES); ?>">
+                    <li><a href="index.php" class="text-muted">Loading alerts...</a></li>
+                  </ul>
                   <?php
                   // Build one list: unread first, anything already read is moved below. Every row gets an avatar.
                   $vsAnLetter = static function (string $n): string {
@@ -512,15 +723,6 @@ vs_admin_log_page_view(
                           'unread' => true, 'href' => 'notifications.php', 'name' => (string)$pp['username'],
                           'title' => (string)$pp['username'] . ' wants Premium',
                           'sub' => ucfirst((string)$pp['plan']) . ' plan · $' . number_format((float)$pp['amount'], 2) . ' · ' . date('M j, g:i A', strtotime((string)$pp['created_at'])),
-                          'form' => false,
-                      ];
-                  }
-                  // Owner only: admins asking for permission to change icons (stays here until approved or denied)
-                  foreach ($vsIconPending as $reqName => $reqAt) {
-                      $vsAnItems[] = [
-                          'unread' => true, 'href' => 'icons.php#tab-access', 'name' => (string)$reqName,
-                          'title' => (string)$reqName . ' is asking permission to change icons',
-                          'sub' => ($reqAt !== '' && strtotime($reqAt)) ? date('M j, Y, H:i', strtotime($reqAt)) . ' · Tap to approve or deny' : 'Tap to approve or deny',
                           'form' => false,
                       ];
                   }
@@ -603,9 +805,80 @@ vs_admin_log_page_view(
                         var d = new FormData();
                         d.append('csrf', f.querySelector('[name=csrf]').value);
                         navigator.sendBeacon('mark_premium_alerts_seen.php', d);
+                        var alertList = document.getElementById('vsAdminAlertList');
+                        if (alertList && alertList.dataset.csrf) {
+                          var alertData = new FormData();
+                          alertData.append('csrf', alertList.dataset.csrf);
+                          alertData.append('action', 'read_all');
+                          navigator.sendBeacon('admin-alerts-api.php', alertData);
+                        }
                       } catch (e) {}
                     });
                   });
+                </script>
+                <script>
+                  (function () {
+                    var list = document.getElementById('vsAdminAlertList');
+                    var count = document.getElementById('vsAdminAlertCount');
+                    if (!list || !count) { return; }
+                    function refresh() {
+                      fetch('admin-alerts-api.php', { cache: 'no-store', credentials: 'same-origin' })
+                        .then(function (response) {
+                          if (!response.ok) { throw new Error('Alert request failed with status ' + response.status); }
+                          return response.json();
+                        })
+                        .then(function (data) {
+                          if (!data.ok) { throw new Error(data.error || 'Alert request failed.'); }
+                          var unread = Number(data.count || 0);
+                          count.textContent = unread > 99 ? '99+' : String(unread);
+                          count.hidden = unread < 1;
+                          list.textContent = '';
+                          if (!data.alerts || !data.alerts.length) {
+                            var empty = document.createElement('li');
+                            var emptyLink = document.createElement('a');
+                            emptyLink.href = 'index.php';
+                            emptyLink.className = 'text-muted';
+                            emptyLink.textContent = 'No admin alerts yet.';
+                            empty.appendChild(emptyLink);
+                            list.appendChild(empty);
+                            return;
+                          }
+                          data.alerts.forEach(function (alert) {
+                            var row = document.createElement('li');
+                            var link = document.createElement('a');
+                            var href = String(alert.href || 'index.php');
+                            link.href = /^[A-Za-z0-9_.#?=&-]+$/.test(href) ? href : 'index.php';
+                            if (Number(alert.is_read)) { link.className = 'is-read'; }
+                            var title = document.createElement('strong');
+                            title.textContent = alert.title || 'Admin alert';
+                            var message = document.createElement('small');
+                            message.textContent = alert.message || '';
+                            var time = document.createElement('small');
+                            time.textContent = alert.created_at || '';
+                            link.appendChild(title);
+                            link.appendChild(message);
+                            link.appendChild(time);
+                            row.appendChild(link);
+                            list.appendChild(row);
+                          });
+                        })
+                        .catch(function (error) {
+                          console.error('Could not refresh admin alerts.', error);
+                          if (!list.childElementCount) {
+                            var failed = document.createElement('li');
+                            failed.textContent = 'Alerts are temporarily unavailable.';
+                            list.appendChild(failed);
+                          }
+                        });
+                    }
+                    refresh();
+                    window.setInterval(refresh, 30000);
+                    document.querySelectorAll('.vs-an-foot form').forEach(function (form) {
+                      form.addEventListener('submit', function () {
+                        window.setTimeout(refresh, 1000);
+                      });
+                    });
+                  })();
                 </script>
               </div>
             </div>
@@ -617,7 +890,9 @@ vs_admin_log_page_view(
               </button>
               <ul class="dropdown-menu dropdown-menu-end profile-menu">
                 <li><a class="dropdown-item" href="profile.php"><span class="menu-icon"><?php vs_si_open('admin','menu_profile'); ?><i class="bi bi-person-badge" aria-hidden="true"></i><?php vs_si_close(); ?></span><span>Profile</span></a></li>
+<?php if ($vsCanOpenAdminRoute('platform-settings.php')): ?>
                 <li><a class="dropdown-item" href="platform-settings.php"><span class="menu-icon"><?php vs_si_open('admin','menu_settings'); ?><i class="bi bi-sliders" aria-hidden="true"></i><?php vs_si_close(); ?></span><span>App settings</span></a></li>
+<?php endif; ?>
                 <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item" href="../index.php"><span class="menu-icon"><?php vs_si_open('admin','menu_mainsite'); ?><i class="bi bi-house" aria-hidden="true"></i><?php vs_si_close(); ?></span><span>Go to Main Site</span></a></li>
                 <li><a class="dropdown-item menu-danger" href="../logout.php"><span class="menu-icon"><?php vs_si_open('admin','menu_logout'); ?><i class="bi bi-box-arrow-right" aria-hidden="true"></i><?php vs_si_close(); ?></span><span>Log out</span></a></li>

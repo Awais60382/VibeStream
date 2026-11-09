@@ -18,7 +18,13 @@ function vs_current_admin_email(PDO $pdo): string
         $emailCol = vs_pick($cols, ['email', 'email_address', 'mail']);
         $idCol    = vs_pick($cols, ['id', 'user_id']);
         $nameCol  = vs_pick($cols, ['username', 'user_name', 'login', 'uname']);
-        $id = $_SESSION['user_id'] ?? $_SESSION['AdminID'] ?? $_SESSION['id'] ?? $_SESSION['userid'] ?? $_SESSION['uid'] ?? null;
+        $id = null;
+        foreach (['AdminID', 'AdminId', 'user_id', 'id', 'userid', 'uid'] as $sessionKey) {
+            if (isset($_SESSION[$sessionKey]) && is_scalar($_SESSION[$sessionKey]) && (string)$_SESSION[$sessionKey] !== '') {
+                $id = $_SESSION[$sessionKey];
+                break;
+            }
+        }
         $name = trim((string)($_SESSION['AdminSession'] ?? $_SESSION['username'] ?? ''));
 
         if ($emailCol) {

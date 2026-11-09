@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once __DIR__ . '/liked-store.php';
 
 ini_set('display_errors', '0');   
 error_reporting(E_ALL);
@@ -87,6 +88,13 @@ if (!$video) {
 $_SESSION['liked_videos']        = $_SESSION['liked_videos']        ?? [];
 $_SESSION['disliked_videos']     = $_SESSION['disliked_videos']     ?? [];
 $_SESSION['subscribed_channels'] = $_SESSION['subscribed_channels'] ?? [];
+if ($action === 'like' || $action === 'dislike') {
+    try {
+        vs_likes_session_sync($conn);
+    } catch (Throwable $error) {
+        jout(['success' => false, 'error' => 'Could not load your saved votes. Please try again.']);
+    }
+}
 
 
 switch ($action) {
@@ -96,26 +104,35 @@ switch ($action) {
             jout(['success' => false, 'error' => 'videos.likes column is missing']);
         }
 
-        if (in_array($video_id, $_SESSION['liked_videos'])) {
-            bump($conn, $video_id, 'likes', -1);
-            $_SESSION['liked_videos'] = array_values(array_diff($_SESSION['liked_videos'], [$video_id]));
-            $liked = false;
-        } else {
-            bump($conn, $video_id, 'likes', +1);
-            $_SESSION['liked_videos'][] = $video_id;
-            $liked = true;
-
-            if (in_array($video_id, $_SESSION['disliked_videos'])) {
-                bump($conn, $video_id, 'dislikes', -1);
-                $_SESSION['disliked_videos'] = array_values(array_diff($_SESSION['disliked_videos'], [$video_id]));
+        $likedBefore = $_SESSION['liked_videos'];
+        $dislikedBefore = $_SESSION['disliked_videos'];
+        $liked = vs_likes_has($conn, (string)$video_id);
+        $disliked = in_array((string)$video_id, array_map('strval', $_SESSION['disliked_videos']), true);
+        try {
+            $conn->begin_transaction();
+            if (!bump($conn, $video_id, 'likes', $liked ? -1 : +1)) {
+                throw new RuntimeException('Could not update the video like count.');
             }
+            vs_likes_set($conn, (string)$video_id, !$liked);
+            if (!$liked && $disliked) {
+                if (!bump($conn, $video_id, 'dislikes', -1)) {
+                    throw new RuntimeException('Could not clear the video dislike count.');
+                }
+                $_SESSION['disliked_videos'] = array_values(array_diff(array_map('strval', $_SESSION['disliked_videos']), [(string)$video_id]));
+            }
+            $conn->commit();
+        } catch (Throwable $error) {
+            $conn->rollback();
+            $_SESSION['liked_videos'] = $likedBefore;
+            $_SESSION['disliked_videos'] = $dislikedBefore;
+            jout(['success' => false, 'error' => 'Could not save your like. Please try again.']);
         }
 
         $c = counts($conn, $video_id);
         jout([
             'success'  => true,
-            'liked'    => $liked,
-            'disliked' => in_array($video_id, $_SESSION['disliked_videos']),
+            'liked'    => !$liked,
+            'disliked' => in_array((string)$video_id, array_map('strval', $_SESSION['disliked_videos']), true),
             'likes'    => $c['likes'],
             'dislikes' => $c['dislikes'],
         ]);
@@ -126,26 +143,37 @@ switch ($action) {
             jout(['success' => false, 'error' => 'videos.dislikes column is missing']);
         }
 
-        if (in_array($video_id, $_SESSION['disliked_videos'])) {
-            bump($conn, $video_id, 'dislikes', -1);
-            $_SESSION['disliked_videos'] = array_values(array_diff($_SESSION['disliked_videos'], [$video_id]));
-            $disliked = false;
-        } else {
-            bump($conn, $video_id, 'dislikes', +1);
-            $_SESSION['disliked_videos'][] = $video_id;
-            $disliked = true;
-
-            if (in_array($video_id, $_SESSION['liked_videos'])) {
-                bump($conn, $video_id, 'likes', -1);
-                $_SESSION['liked_videos'] = array_values(array_diff($_SESSION['liked_videos'], [$video_id]));
+        $dislikedBefore = $_SESSION['disliked_videos'];
+        $likedBefore = $_SESSION['liked_videos'];
+        $disliked = in_array((string)$video_id, array_map('strval', $_SESSION['disliked_videos']), true);
+        $liked = vs_likes_has($conn, (string)$video_id);
+        try {
+            $conn->begin_transaction();
+            if (!bump($conn, $video_id, 'dislikes', $disliked ? -1 : +1)) {
+                throw new RuntimeException('Could not update the video dislike count.');
             }
+            if (!$disliked && $liked) {
+                if (!bump($conn, $video_id, 'likes', -1)) {
+                    throw new RuntimeException('Could not clear the video like count.');
+                }
+                vs_likes_set($conn, (string)$video_id, false);
+            }
+            $_SESSION['disliked_videos'] = $disliked
+                ? array_values(array_diff(array_map('strval', $_SESSION['disliked_videos']), [(string)$video_id]))
+                : array_merge(array_map('strval', $_SESSION['disliked_videos']), [(string)$video_id]);
+            $conn->commit();
+        } catch (Throwable $error) {
+            $conn->rollback();
+            $_SESSION['liked_videos'] = $likedBefore;
+            $_SESSION['disliked_videos'] = $dislikedBefore;
+            jout(['success' => false, 'error' => 'Could not save your dislike. Please try again.']);
         }
 
         $c = counts($conn, $video_id);
         jout([
             'success'  => true,
-            'disliked' => $disliked,
-            'liked'    => in_array($video_id, $_SESSION['liked_videos']),
+            'disliked' => !$disliked,
+            'liked'    => vs_likes_has($conn, (string)$video_id),
             'likes'    => $c['likes'],
             'dislikes' => $c['dislikes'],
         ]);

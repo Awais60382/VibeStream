@@ -3,12 +3,8 @@
  * VibeStream Premium storage (MySQL via the $pdo from connection.php).
  * Put this file in the site root, next to header.php.
  *
- * How paying works:
- *  1. The user sends money using one of the methods in VS_PREMIUM_PAY_INFO.
- *  2. They type the transaction ID on premium.php. That creates a "pending" request.
- *  3. You open premium-requests.php, check the payment arrived, and press Approve.
- *  4. Approve switches Premium on. Nobody gets Premium without that step.
- * Later, a real payment provider can call vs_premium_set() after a confirmed payment.
+ * Manual transfers create pending requests for an admin to review.
+ * Confirmed Stripe payments are recorded by vs_premium_confirm_payment().
  */
 
 // Usernames allowed to approve or reject payments on premium-requests.php. EDIT THIS.
@@ -20,11 +16,13 @@ const VS_PREMIUM_PAY_INFO = [
     'Mobile wallet: wallet number and account name',
 ];
 
-// What each level gets. Used by the site to decide quality, ads and downloads (see vs_premium_user_limits()).
+// Benefits that are currently available and enforced by the site.
 const VS_PREMIUM_LIMITS = [
-    'free'    => ['max_height' => 720,  'ads' => true,  'downloads' => false, 'background_play' => false],
-    'premium' => ['max_height' => 1080, 'ads' => false, 'downloads' => true,  'background_play' => true],
-    'plus'    => ['max_height' => 2160, 'ads' => false, 'downloads' => true,  'background_play' => true],
+    // playlists / watch_later / uploads_per_day are enforced by the site (see premium-perks.php).
+    // 100000 or more means "no cap".
+    'free'    => ['downloads' => false, 'playlists' => 5,      'watch_later' => 25,     'uploads_per_day' => 5],
+    'premium' => ['downloads' => true,  'playlists' => 50,     'watch_later' => 250,    'uploads_per_day' => 20],
+    'plus'    => ['downloads' => true,  'playlists' => 100000, 'watch_later' => 300,    'uploads_per_day' => 100000],
 ];
 
 // Plan keys must be 10 characters or fewer (premium_members.plan is VARCHAR(10)).
@@ -113,6 +111,335 @@ function vs_premium_ensure(PDO $pdo): void
             UNIQUE KEY uq_reminder (username, expires_at, kind)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
     );
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS watch_later_items (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(100) NOT NULL,
+            video_id VARCHAR(191) NOT NULL,
+            video_key CHAR(64) NOT NULL,
+            sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+            added_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_watch_later_user_video (username, video_key),
+            KEY idx_watch_later_user_order (username, sort_order, added_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+    );
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS reward_points_accounts (
+            username VARCHAR(100) NOT NULL PRIMARY KEY,
+            points INT UNSIGNED NOT NULL DEFAULT 0,
+            updated_at DATETIME NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+    );
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS reward_points_ledger (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(100) NOT NULL,
+            amount INT NOT NULL,
+            reason VARCHAR(32) NOT NULL,
+            reference_key CHAR(64) NOT NULL,
+            created_at DATETIME NOT NULL,
+            UNIQUE KEY uq_reward_points_reference (reference_key),
+            KEY idx_reward_points_username_created (username, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+    );
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS reward_points_upload_backfills (
+            username VARCHAR(100) NOT NULL PRIMARY KEY,
+            completed_at DATETIME NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+    );
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS reward_points_daily_checkins (
+            username VARCHAR(100) NOT NULL,
+            checkin_date DATE NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (username, checkin_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+    );
+}
+
+function vs_rewards_points(PDO $pdo, string $username): int
+{
+    if ($username === '') {
+        return 0;
+    }
+    $st = $pdo->prepare('SELECT points FROM reward_points_accounts WHERE username = :u LIMIT 1');
+    $st->execute([':u' => $username]);
+    return (int)($st->fetchColumn() ?: 0);
+}
+
+/** Credit five points once for each successfully published video or short. */
+function vs_rewards_award_upload(PDO $pdo, string $username, string $videoId): bool
+{
+    if ($username === '' || $videoId === '') {
+        throw new InvalidArgumentException('A signed-in username and published video ID are required.');
+    }
+    vs_premium_ensure($pdo);
+    $reference = hash('sha256', "upload\0" . strtolower($username) . "\0" . $videoId);
+    $pdo->beginTransaction();
+    try {
+        $account = $pdo->prepare('INSERT IGNORE INTO reward_points_accounts (username, points, updated_at) VALUES (:u, 0, NOW())');
+        $account->execute([':u' => $username]);
+        $lock = $pdo->prepare('SELECT points FROM reward_points_accounts WHERE username = :u FOR UPDATE');
+        $lock->execute([':u' => $username]);
+        if ($lock->fetchColumn() === false) {
+            throw new RuntimeException('Could not lock the reward points account.');
+        }
+        $entry = $pdo->prepare(
+            'INSERT IGNORE INTO reward_points_ledger (username, amount, reason, reference_key, created_at)
+             VALUES (:u, 5, \'upload\', :r, NOW())'
+        );
+        $entry->execute([':u' => $username, ':r' => $reference]);
+        $awarded = $entry->rowCount() === 1;
+        if ($awarded) {
+            $update = $pdo->prepare('UPDATE reward_points_accounts SET points = points + 5, updated_at = NOW() WHERE username = :u');
+            $update->execute([':u' => $username]);
+        }
+        $pdo->commit();
+        return $awarded;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/** Credit existing published uploads once, without changing rewards already in the ledger. */
+function vs_rewards_backfill_uploads(PDO $pdo, string $username): int
+{
+    if ($username === '') {
+        return 0;
+    }
+
+    vs_premium_ensure($pdo);
+    $columns = [];
+    foreach ($pdo->query('SHOW COLUMNS FROM `videos`')->fetchAll(PDO::FETCH_ASSOC) as $column) {
+        $columns[strtolower((string)$column['Field'])] = (string)$column['Field'];
+    }
+    $idColumn = $columns['id'] ?? $columns['video_id'] ?? null;
+    $ownerColumns = array_values(array_filter([
+        $columns['username'] ?? null,
+        $columns['channel_name'] ?? null,
+        $columns['uploader'] ?? null,
+    ]));
+    if ($idColumn === null || !$ownerColumns) {
+        throw new RuntimeException('The videos table is missing its upload owner or ID column.');
+    }
+
+    $quote = static function (string $identifier): string {
+        return '`' . str_replace('`', '``', $identifier) . '`';
+    };
+    $ownerConditions = [];
+    $ownerParams = [];
+    foreach ($ownerColumns as $index => $ownerColumn) {
+        $parameter = ':owner' . $index;
+        $ownerConditions[] = 'LOWER(TRIM(COALESCE(' . $quote($ownerColumn) . ', \'\'))) = LOWER(' . $parameter . ')';
+        $ownerParams[$parameter] = $username;
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $account = $pdo->prepare(
+            'INSERT IGNORE INTO reward_points_accounts (username, points, updated_at) VALUES (:u, 0, NOW())'
+        );
+        $account->execute([':u' => $username]);
+        $backfill = $pdo->prepare(
+            'INSERT IGNORE INTO reward_points_upload_backfills (username, completed_at) VALUES (:u, NULL)'
+        );
+        $backfill->execute([':u' => $username]);
+
+        $lockBackfill = $pdo->prepare(
+            'SELECT completed_at FROM reward_points_upload_backfills WHERE username = :u FOR UPDATE'
+        );
+        $lockBackfill->execute([':u' => $username]);
+        $completedAt = $lockBackfill->fetchColumn();
+        if ($completedAt !== null && $completedAt !== false) {
+            $pdo->commit();
+            return 0;
+        }
+
+        $lockAccount = $pdo->prepare(
+            'SELECT points FROM reward_points_accounts WHERE username = :u FOR UPDATE'
+        );
+        $lockAccount->execute([':u' => $username]);
+        if ($lockAccount->fetchColumn() === false) {
+            throw new RuntimeException('Could not lock the reward points account for upload backfill.');
+        }
+
+        $videos = $pdo->prepare(
+            'SELECT DISTINCT CAST(' . $quote($idColumn) . ' AS CHAR)
+             FROM `videos`
+             WHERE ' . implode(' OR ', $ownerConditions) . '
+               AND ' . $quote($idColumn) . ' IS NOT NULL
+               AND TRIM(CAST(' . $quote($idColumn) . ' AS CHAR)) <> \'\''
+        );
+        $videos->execute($ownerParams);
+
+        $insert = $pdo->prepare(
+            'INSERT IGNORE INTO reward_points_ledger (username, amount, reason, reference_key, created_at)
+             VALUES (:u, 5, \'upload\', :r, NOW())'
+        );
+        $awardedCount = 0;
+        while (($videoId = $videos->fetchColumn()) !== false) {
+            $reference = hash('sha256', "upload\0" . strtolower($username) . "\0" . (string)$videoId);
+            $insert->execute([':u' => $username, ':r' => $reference]);
+            $awardedCount += $insert->rowCount();
+        }
+        $videos->closeCursor();
+
+        if ($awardedCount > 0) {
+            $update = $pdo->prepare(
+                'UPDATE reward_points_accounts
+                 SET points = points + :points, updated_at = NOW()
+                 WHERE username = :u'
+            );
+            $update->execute([':points' => $awardedCount * 5, ':u' => $username]);
+            if ($update->rowCount() !== 1) {
+                throw new RuntimeException('Could not update the reward points account after upload backfill.');
+            }
+        }
+
+        $complete = $pdo->prepare(
+            'UPDATE reward_points_upload_backfills SET completed_at = NOW() WHERE username = :u'
+        );
+        $complete->execute([':u' => $username]);
+        $pdo->commit();
+        return $awardedCount;
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $error;
+    }
+}
+
+function vs_rewards_daily_checkin_claimed(PDO $pdo, string $username): bool
+{
+    if ($username === '') {
+        return false;
+    }
+
+    $statement = $pdo->prepare(
+        'SELECT 1 FROM reward_points_daily_checkins
+         WHERE username = :u AND checkin_date = CURDATE()
+         LIMIT 1'
+    );
+    $statement->execute([':u' => $username]);
+    return $statement->fetchColumn() !== false;
+}
+
+/** Award five points for a daily check-in, at most once per server calendar day. */
+function vs_rewards_claim_daily_checkin(PDO $pdo, string $username): bool
+{
+    if ($username === '') {
+        throw new InvalidArgumentException('A signed-in username is required for a daily check-in.');
+    }
+
+    vs_premium_ensure($pdo);
+    $pdo->beginTransaction();
+    try {
+        $account = $pdo->prepare(
+            'INSERT IGNORE INTO reward_points_accounts (username, points, updated_at)
+             VALUES (:u, 0, NOW())'
+        );
+        $account->execute([':u' => $username]);
+        $lock = $pdo->prepare(
+            'SELECT points FROM reward_points_accounts WHERE username = :u FOR UPDATE'
+        );
+        $lock->execute([':u' => $username]);
+        if ($lock->fetchColumn() === false) {
+            throw new RuntimeException('Could not lock the reward points account for daily check-in.');
+        }
+
+        $date = (string)$pdo->query('SELECT CURDATE()')->fetchColumn();
+        $checkin = $pdo->prepare(
+            'INSERT IGNORE INTO reward_points_daily_checkins (username, checkin_date, created_at)
+             VALUES (:u, :date, NOW())'
+        );
+        $checkin->execute([':u' => $username, ':date' => $date]);
+        if ($checkin->rowCount() !== 1) {
+            $pdo->commit();
+            return false;
+        }
+
+        $reference = hash('sha256', "daily-checkin\0" . strtolower($username) . "\0" . $date);
+        $entry = $pdo->prepare(
+            'INSERT INTO reward_points_ledger (username, amount, reason, reference_key, created_at)
+             VALUES (:u, 5, \'daily_checkin\', :r, NOW())'
+        );
+        $entry->execute([':u' => $username, ':r' => $reference]);
+        if ($entry->rowCount() !== 1) {
+            throw new RuntimeException('Could not record the daily check-in reward.');
+        }
+
+        $update = $pdo->prepare(
+            'UPDATE reward_points_accounts
+             SET points = points + 5, updated_at = NOW()
+             WHERE username = :u'
+        );
+        $update->execute([':u' => $username]);
+        if ($update->rowCount() !== 1) {
+            throw new RuntimeException('Could not update the reward points account after daily check-in.');
+        }
+        $pdo->commit();
+        return true;
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $error;
+    }
+}
+
+/** Redeem 500 points for one 31-day Premium month. Returns an error or null on success. */
+function vs_rewards_redeem_monthly(PDO $pdo, string $username): ?string
+{
+    if ($username === '') {
+        return 'Please sign in first.';
+    }
+    if (vs_premium_is_admin($username)) {
+        return 'Admins already have Premium.';
+    }
+    vs_premium_ensure($pdo);
+    $pdo->beginTransaction();
+    try {
+        $account = $pdo->prepare('INSERT IGNORE INTO reward_points_accounts (username, points, updated_at) VALUES (:u, 0, NOW())');
+        $account->execute([':u' => $username]);
+        $lock = $pdo->prepare('SELECT points FROM reward_points_accounts WHERE username = :u FOR UPDATE');
+        $lock->execute([':u' => $username]);
+        $points = $lock->fetchColumn();
+        if ($points === false) {
+            throw new RuntimeException('Could not lock the reward points account.');
+        }
+        if (vs_premium_is_active(vs_premium_get($pdo, $username))) {
+            $pdo->rollBack();
+            return 'Redeem your points after your current Premium period ends.';
+        }
+        if ((int)$points < 500) {
+            $pdo->rollBack();
+            return 'You need 500 points to redeem one month of Premium.';
+        }
+
+        $reference = hash('sha256', "premium-monthly\0" . strtolower($username) . "\0" . bin2hex(random_bytes(16)));
+        $entry = $pdo->prepare(
+            'INSERT INTO reward_points_ledger (username, amount, reason, reference_key, created_at)
+             VALUES (:u, -500, \'premium_monthly\', :r, NOW())'
+        );
+        $entry->execute([':u' => $username, ':r' => $reference]);
+        $update = $pdo->prepare('UPDATE reward_points_accounts SET points = points - 500, updated_at = NOW() WHERE username = :u AND points >= 500');
+        $update->execute([':u' => $username]);
+        if ($update->rowCount() !== 1 || !vs_premium_set($pdo, $username, 'monthly')) {
+            throw new RuntimeException('Could not complete the Premium points redemption.');
+        }
+        $pdo->commit();
+        return null;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -183,7 +510,7 @@ function vs_premium_tier(?array $row): string
     return strpos((string)$row['plan'], 'plus') === 0 ? 'plus' : 'premium';
 }
 
-/** What this person may use: ['tier', 'max_height', 'ads', 'downloads', 'background_play']. Admins get Plus. */
+/** What this person may use, including each enforced plan limit. Admins get Plus. */
 function vs_premium_user_limits(?PDO $pdo, string $username): array
 {
     $tier = 'free';
@@ -604,6 +931,10 @@ function vs_premium_state(?PDO $pdo, string $username): array
         'payInfo'  => vs_premium_pay_info(),
         'history'  => [],
         'limits'   => VS_PREMIUM_LIMITS['free'],
+        'points'   => 0,
+        'pointsAvailable' => false,
+        'checkinClaimed' => false,
+        'checkinAwarded' => false,
         'csrf'     => $_SESSION['premium_csrf'],
     ];
     if (vs_premium_is_admin($username)) {
@@ -612,6 +943,17 @@ function vs_premium_state(?PDO $pdo, string $username): array
         $state['since']   = time() * 1000;
         $state['expires'] = (time() + 3153600000) * 1000; // about 100 years
         $state['limits']  = VS_PREMIUM_LIMITS['plus'];
+        if ($pdo && $username !== '') {
+            try {
+                vs_premium_ensure($pdo);
+                vs_rewards_backfill_uploads($pdo, $username);
+                $state['points'] = vs_rewards_points($pdo, $username);
+                $state['checkinClaimed'] = vs_rewards_daily_checkin_claimed($pdo, $username);
+                $state['pointsAvailable'] = true;
+            } catch (Throwable $e) {
+                error_log('VibeStream Premium/rewards state could not be loaded: ' . $e->getMessage());
+            }
+        }
         return $state;
     }
     if ($pdo && $username !== '') {
@@ -627,8 +969,12 @@ function vs_premium_state(?PDO $pdo, string $username): array
             $state['pending'] = vs_premium_pending($pdo, $username);
             $state['history'] = vs_premium_user_history($pdo, $username, 10);
             $state['limits']  = VS_PREMIUM_LIMITS[vs_premium_tier($row)];
+            vs_rewards_backfill_uploads($pdo, $username);
+            $state['points']  = vs_rewards_points($pdo, $username);
+            $state['checkinClaimed'] = vs_rewards_daily_checkin_claimed($pdo, $username);
+            $state['pointsAvailable'] = true;
         } catch (Throwable $e) {
-            // never break a page because of premium
+            error_log('VibeStream Premium/rewards state could not be loaded: ' . $e->getMessage());
         }
     }
     return $state;

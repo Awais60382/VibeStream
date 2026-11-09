@@ -100,7 +100,9 @@ try {
     $user = $st->get_result()->fetch_assoc();
     $st->close();
 
+    $isNew = false;
     if (!$user) {
+        $isNew = true;   // first time with Google = a brand-new account
         // Build a unique username.
         $base = preg_replace('/[^A-Za-z0-9_.-]/', '', $name !== '' ? str_replace(' ', '', $name) : explode('@', $email)[0]);
         if (strlen($base) < 3) {
@@ -152,16 +154,24 @@ try {
         $_SESSION['id'] = $user['id'];
     }
 
-    $isAdmin = strcasecmp((string)$_SESSION['role'], 'admin') === 0;
+    $googleRole = strtolower(trim((string)$_SESSION['role']));
+    $isAdmin = preg_match('/(^|[^a-z])(admin|owner|ceo|founder)([^a-z]|$)/i', $googleRole) === 1;
     if ($isAdmin) {
         // The admin panel (adminpanel/header.php) only lets you in when these are set.
         $_SESSION['AdminSession'] = $user['username'];
         if (isset($user['id'])) {
             $_SESSION['AdminID'] = $user['id'];
         }
+        require_once __DIR__ . '/adminpanel/admin-session-core.php';
+        vs_admin_mark_authenticated_session(
+            (string)$user['username'],
+            isset($user['id']) ? (string)$user['id'] : '',
+            'admin'
+        );
     }
 
-    $redirect = $isAdmin ? 'adminpanel/index.php' : 'index.php';
+    // Brand-new members see the About page once; everyone else goes where they went before.
+    $redirect = $isAdmin ? 'adminpanel/index.php' : ($isNew ? 'about.php' : 'index.php');
     gl_out(true, ['redirect' => $redirect]);
 } catch (Throwable $e) {
     error_log('google-login.php: ' . $e->getMessage());

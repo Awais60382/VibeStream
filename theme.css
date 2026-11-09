@@ -473,8 +473,59 @@ html[data-theme] .user-badge-pill { background-image: none; }
 html[data-theme="light"] .vs-theme-toggle .icon-sun { display: none; }
 html[data-theme="light"] .vs-theme-toggle .icon-moon { display: block; }
 
+html.vs-neon-off *:not(:focus):not(:focus-visible):not(:focus-within),
+html.vs-neon-off *::before,
+html.vs-neon-off *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+html.vs-neon-off .site-brand-icon,
+html.vs-neon-off .shorts-title-icon,
+html.vs-neon-off .vs-neon-toggle svg {
+  filter: none !important;
+}
+
 /* Make sure the bell + user menu icons always show on every page's top bar */
 .nav-right .nav-bell svg,
 .nav-right .vs-user-caret svg,
 .vs-user-icon svg { display: block; fill: none; stroke: currentColor; }
 .nav-right .nav-bell { padding: 0; border-radius: 50%; }
+/* ===== Neon (lightning) toggle: same round look as the sun/moon button.
+   Beats the generic ".nav-right button" red style in style.css. ===== */
+.nav-right .vs-neon-toggle {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-raised, var(--surface));
+  color: var(--muted, #aaaaaa);
+  box-shadow: none;
+}
+.nav-right .vs-neon-toggle:hover,
+.nav-right .vs-neon-toggle:focus,
+.nav-right .vs-neon-toggle:active {
+  background: var(--surface-hover, var(--surface-3));
+  border-color: #00e5ff;
+}
+.nav-right .vs-neon-toggle[aria-pressed="true"] {
+  color: #00e5ff;
+  border-color: rgba(0, 229, 255, 0.45);
+}
+html[data-theme="light"] .nav-right .vs-neon-toggle[aria-pressed="true"] {
+  color: #0086b3;
+  border-color: rgba(0, 134, 179, 0.45);
+}
+.nav-right .vs-neon-toggle svg {
+  width: 20px !important;
+  height: 20px !important;
+  flex: 0 0 20px;
+}
+@media (max-width: 640px) {
+  .nav-right .vs-neon-toggle { width: 36px; height: 36px; }
+}

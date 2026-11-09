@@ -1,0 +1,63 @@
+/*
+ * VibeStream - slim icon bar for a closed menu (desktop only).
+ * Pressing the menu button (the three lines) shrinks the sidebar to a narrow bar that
+ * keeps only: Home, Shorts, Subscriptions, You and Premium. Press it again to open the full menu.
+ * Phones and small windows keep the normal slide-in menu.
+ */
+@media (min-width: 1001px) {
+  html.vs-rail { --sidebar-width: 76px; }
+
+  html.vs-rail .app-sidebar {
+    width: 76px !important;
+    min-width: 0;
+    padding: 12px 6px 16px !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  html.vs-rail .app-sidebar::-webkit-scrollbar { display: none; }
+  html.vs-rail.vs-rail-fixed .app-main { margin-left: 76px !important; }
+
+  /* everything that is not one of the five main icons goes away */
+  html.vs-rail .app-sidebar .sidebar-top,
+  html.vs-rail .app-sidebar .sidebar-block-title,
+  html.vs-rail .app-sidebar .vs-subs-wrap,
+  html.vs-rail .app-sidebar .vs-more-btn,
+  html.vs-rail .app-sidebar .sidebar-account,
+  html.vs-rail .app-sidebar hr,
+  html.vs-rail .app-sidebar .sidebar-link.vs-rail-hide,
+  html.vs-rail .app-sidebar .vs-rail-empty {
+    display: none !important;
+  }
+  /* ...even when its section is folded behind "Show more" */
+  html.vs-rail .app-sidebar .sidebar-link.vs-rail-keep { display: flex !important; }
+
+  html.vs-rail .app-sidebar .sidebar-block,
+  html.vs-rail .app-sidebar .sidebar-section {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+  html.vs-rail .app-sidebar .sidebar-nav { gap: 4px; }
+
+  html.vs-rail .app-sidebar .sidebar-link {
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 12px 2px !important;
+    text-align: center;
+  }
+  /* the long label is replaced by a short one under the icon */
+  html.vs-rail .app-sidebar .sidebar-link .sidebar-label { display: none; }
+  html.vs-rail .app-sidebar .sidebar-link.vs-rail-keep::after {
+    content: attr(data-rail-label);
+    font-size: 10px;
+    line-height: 1.1;
+    letter-spacing: -0.1px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

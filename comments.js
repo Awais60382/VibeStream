@@ -16,7 +16,11 @@
     }
 
     function post(root, action, extra) {
-        var body = new URLSearchParams(Object.assign({ action: action, video_id: root.dataset.videoId }, extra || {}));
+        var body = new URLSearchParams(Object.assign({
+            action: action,
+            video_id: root.dataset.videoId,
+            csrf_token: root.dataset.csrf || ''
+        }, extra || {}));
         return fetch(root.dataset.endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
