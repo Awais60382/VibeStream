@@ -44,7 +44,7 @@ if (!function_exists('vs_user_menu_html')) {
             $avatar .= '<img src="' . $e($avatarUrl) . '" alt="" onerror="this.remove()">';
         }
         $avatar .= '</span>';
-        // Premium members and admins: gold ring + VIP pill around the avatar, check mark after the name.
+        // Premium members: gold ring + VIP pill around the avatar, check mark after the name.
         $vipDb = $GLOBALS['conn'] ?? ($GLOBALS['pdo'] ?? null);
         $avatar = vs_vip_ring_auto_open($username, $vipDb) . $avatar . vs_vip_ring_auto_close($username, $vipDb);
         $nameBadge = vs_vip_badge($username, $vipDb, 16);

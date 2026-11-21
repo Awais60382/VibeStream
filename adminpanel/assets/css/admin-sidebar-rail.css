@@ -34,6 +34,7 @@
   /* everything that is not one of the main icons goes away */
   html.vs-arail body .admin-sidebar .sidebar-section-title,
   html.vs-arail body .admin-sidebar .sidebar-owner-card,
+  html.vs-arail body .admin-sidebar .vs-side-card,
   html.vs-arail body .admin-sidebar .sidebar-user-copy,
   html.vs-arail body .admin-sidebar .sidebar-footer-text,
   html.vs-arail body .admin-sidebar .nav-link.vs-arail-hide {

@@ -28,18 +28,15 @@ function vs_si_items(): array
             'dashboard'   => ['Dashboard', 'bi bi-speedometer2'],
             'videos'      => ['Videos', 'bi bi-collection-play'],
             'shorts'      => ['Shorts', 'bi bi-camera-reels'],
-            'addvideo'    => ['Add Video', 'bi bi-plus-square'],
             'categories'  => ['Categories', 'bi bi-tags'],
             'reported'    => ['Reported content', 'bi bi-flag'],
             'users'       => ['Users', 'bi bi-people'],
-            'bannedusers' => ['Banned users', 'bi bi-person-fill-slash'],
             'admins'      => ['Admins', 'bi bi-shield-check'],
             'userprofile' => ['Users profile', 'bi bi-person-lines-fill'],
             'messages'    => ['Messages', 'bi bi-chat-dots'],
             'premium'     => ['Premium', 'bi bi-gem'],
             'profile'     => ['Profile', 'bi bi-person-badge'],
             'settings'    => ['App settings', 'bi bi-sliders'],
-            'icons'       => ['Icons', 'bi bi-image'],
             'activity'    => ['Admin activity', 'bi bi-activity'],
             'mainsite'    => ['Main Site', 'bi bi-house'],
             'insights'    => ['Live Insights', 'bi bi-activity'],
@@ -76,8 +73,6 @@ function vs_si_items(): array
             'subscriptions' => ['All subscriptions', 'bi bi-collection-play'],
             'upload'        => ['Upload Video', 'bi bi-upload'],
             'premium'       => ['Premium', 'bi bi-gem'],
-            'live'          => ['Live streams', 'bi bi-broadcast'],
-            'membership'    => ['Channel memberships', 'bi bi-shield-check'],
             'music'         => ['Music', 'bi bi-music-note-beamed'],
             'adminpanel'    => ['Admin Panel', 'bi bi-shield-check'],
             'adminpremium'  => ['Premium members', 'bi bi-stars'],
@@ -119,7 +114,7 @@ function vs_si_hidden_load(): array
 function vs_si_hidden_save(array $data): void
 {
     $dir = __DIR__ . '/' . VS_SI_DIR;
-    if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
         throw new RuntimeException('Could not create the icon upload directory.');
     }
     $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
@@ -194,7 +189,7 @@ function vs_si_load(): array
 function vs_si_save(array $data): void
 {
     $dir = __DIR__ . '/' . VS_SI_DIR;
-    if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
         throw new RuntimeException('Could not create the icon upload directory.');
     }
     $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
@@ -306,7 +301,7 @@ if (!function_exists('vs_fetch_remote_png')) {
         }
 
         $dir = __DIR__ . '/' . VS_SI_DIR;
-        if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
             throw new RuntimeException('Could not create the icon upload directory.');
         }
         $tmp = tempnam($dir, 'vsf');
@@ -393,7 +388,7 @@ function vs_si_set(string $scope, string $key, array $upload, bool $keepColors, 
     $hasFile = $error !== UPLOAD_ERR_NO_FILE;
 
     $dir = __DIR__ . '/' . VS_SI_DIR;
-    if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+    if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
         throw new RuntimeException('Could not create the icon upload directory.');
     }
     $relative = VS_SI_DIR . '/si-' . bin2hex(random_bytes(16)) . '.png';

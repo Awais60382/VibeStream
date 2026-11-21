@@ -5,6 +5,8 @@ require_once __DIR__ . '/notifications-store.php';
 require_once __DIR__ . '/user-menu.php';
 require_once __DIR__ . '/sidebar-navigation.php';
 require_once __DIR__ . '/dashboard-events.php';
+require_once __DIR__ . '/premium-store.php';
+require_once __DIR__ . '/premium-popup.php';
 if (!isset($GLOBALS['pdo']) || !($GLOBALS['pdo'] instanceof PDO)) {
     require_once __DIR__ . '/connection.php';
 }
@@ -77,12 +79,19 @@ if (!function_exists('render_navbar')) {
                     <img class="site-brand-icon" src="<?php echo htmlspecialchars($siteLogoUrl); ?>" alt="">
                     <span><?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?></span>
                 </a>
+                <form class="nav-search" action="index.php" method="get" role="search">
+                    <input type="text" name="q" id="search-input" placeholder="Search videos" aria-label="Search videos" autocomplete="off">
+                    <button type="submit" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+                </form>
             </div>
 
-            <div class="nav-center">
-                <a class="nav-link<?php echo $active === 'watch' ? ' active' : ''; ?>" href="watch.php">Watch</a>
-                <a class="nav-link<?php echo $active === 'shorts' ? ' active' : ''; ?>" href="shorts.php">Shorts</a>
-            </div>
+            <nav class="nav-center" aria-label="Main">
+                <a class="nav-link<?php echo $active === 'home' ? ' active' : ''; ?>" href="index.php" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 2.5 11.5H5V20h5v-5.5h4V20h5v-8.5h2.5z"/></svg><span>Home</span></a>
+                <a class="nav-link<?php echo $active === 'watch' ? ' active' : ''; ?>" href="watch.php" aria-label="Explore" title="Explore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15.8 8.2-2.1 5.5-5.5 2.1 2.1-5.5z"/></svg><span>Explore</span></a>
+                <a class="nav-link<?php echo $active === 'shorts' ? ' active' : ''; ?>" href="shorts.php" aria-label="Shorts" title="Shorts"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 2 4.5 14H10l-1 8 9.5-12.5H13z"/></svg><span>Shorts</span></a>
+                <a class="nav-link<?php echo $active === 'live' ? ' active' : ''; ?>" href="live.php" aria-label="Live" title="Live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8 8a5.7 5.7 0 0 0 0 8m8-8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14"/></svg><span>Live</span></a>
+                <a class="nav-link nav-premium<?php echo $active === 'premium' ? ' active' : ''; ?>" href="premium.php" aria-label="Premium" title="Premium"><svg viewBox="0 0 24 20" fill="currentColor" aria-hidden="true"><path d="M2 17 0 5l6.5 5L12 1l5.5 9L24 5l-2 12zM3 19h18v1.5H3z"/></svg><span>Premium</span></a>
+            </nav>
 
             <div class="nav-right">
                 <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
@@ -92,7 +101,7 @@ if (!function_exists('render_navbar')) {
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                 </button>
                 <?php echo vs_notification_bell_html(); ?>
-                <a href="upload.php" class="create-btn">+ Create</a>
+                <a href="upload.php" class="create-btn" aria-label="Create video" title="Create video"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10 5-3v10l-5-3M9.5 10v4M7.5 12h4"/></svg><span class="create-label">Create</span></a>
                 <?php if ($isLoggedIn): ?>
                     <?php echo vs_user_menu_html($username, avatar_url($username)); ?>
                 <?php else: ?>
@@ -156,15 +165,35 @@ button, input, textarea, select { font: inherit; }
 }
 .nav-toggle:hover { background: var(--surface-3); }
 .nav-toggle span { display: block; width: 100%; height: 2px; border-radius: 999px; background: var(--text); }
+.nav-search { position: relative; display: flex; align-items: center; width: clamp(180px, 22vw, 340px); margin-left: 6px; }
+        .nav-search input { width: 100%; height: 42px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); padding: 0 44px 0 16px; font-size: 14px; outline: none; }
+        .nav-search input::placeholder { color: var(--muted); }
+        .nav-search input:focus { border-color: var(--blue); }
+        .nav-search button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+        .nav-search button:hover { color: var(--text); }
+        .nav-search button svg { width: 19px; height: 19px; }
+        @media (max-width: 1100px) { .nav-search { width: 160px; } }
+        @media (max-width: 960px) { .nav-search { display: none; } }
+        .nav-center { gap: 8px; }
 .nav-link {
-    background: var(--surface-2); border-radius: 999px; padding: 8px 14px;
-    font-size: 14px; color: var(--text); border: 1px solid transparent;
+    display: inline-flex; align-items: center; gap: 8px; background: transparent; border-radius: 999px; padding: 9px 14px;
+    font-size: 15px; font-weight: 500; color: var(--text); border: 1px solid transparent; white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
 }
+.nav-link svg { width: 20px; height: 20px; flex: 0 0 auto; }
+.nav-link:hover { background: var(--surface-2); }
 .nav-link.active { background: var(--accent-soft); color: #ffb3b3; border-color: rgba(176, 42, 42, 0.45); }
+.nav-link.nav-premium { color: #ffc933; }
+.nav-link.nav-premium svg { width: 22px; height: 18px; }
+.nav-center .nav-link { width: 42px; height: 42px; justify-content: center; padding: 9px; }
+.nav-center .nav-link span { display: none; }
 .create-btn, .sign-in-btn {
     background: var(--accent); color: #ffffff; padding: 10px 16px; border-radius: 999px;
     font-size: 14px; font-weight: 700; white-space: nowrap;
 }
+.nav-right .create-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
+.nav-right .create-btn svg { width: 20px; height: 20px; }
+.nav-right .create-label { display: none; }
 .user-badge-pill {
     display: inline-flex; align-items: center; gap: 10px;
     background: linear-gradient(180deg, #252526 0%, #1b1b1d 100%);
@@ -222,13 +251,32 @@ button, input, textarea, select { font: inherit; }
     color: #ffffff; padding: 10px 18px; border-radius: 10px; font-size: 14px; display: none; z-index: 1200;
 }
 
+@media (max-width: 1180px) {
+    .nav-link span { display: none; }
+    .nav-link { padding: 9px 11px; }
+}
 @media (max-width: 760px) {
-    .app-navbar { grid-template-columns: minmax(0, 1fr) auto; padding: 0 12px; gap: 12px; }
+    body { padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
+    .app-navbar { grid-template-columns: minmax(0, 1fr) auto; padding: 0 12px; gap: 12px; backdrop-filter: none; }
     .nav-left { min-width: 0; }
     .nav-right { gap: 8px; }
     .brand { font-size: 20px; }
-    .nav-center { display: none; }
-    .create-btn { display: none; }
+    .nav-center {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 1100;
+        display: flex !important; justify-content: space-around; gap: 2px;
+        height: calc(58px + env(safe-area-inset-bottom, 0px));
+        padding: 4px 6px env(safe-area-inset-bottom, 0px);
+        background: var(--surface); border-top: 1px solid var(--border);
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, .24);
+    }
+    .nav-center .nav-link {
+        display: flex; flex: 1 1 0; flex-direction: column; justify-content: center;
+        width: auto; height: 48px; min-width: 0; gap: 3px; padding: 3px 2px;
+        border: 0; border-radius: 10px;
+    }
+    .nav-center .nav-link span { display: block !important; font-size: 10px; line-height: 1; }
+    .nav-center .nav-link svg { width: 20px; height: 20px; }
+    .nav-right .create-btn { display: none; }
     .user-name, .logout-link { display: none; }
     .user-badge-pill { padding-right: 6px; }
     .page { padding: 20px 14px 48px; }
@@ -289,6 +337,11 @@ if (!function_exists('vs_page_start')) {
 </head>
 <body>
     <?php render_navbar($active); ?>
+<?php
+$vsPromptUser = trim((string)($_SESSION['username'] ?? ''));
+$vsPromptEligible = vs_premium_popup_eligible($vsPromptUser);
+echo vs_premium_popup_html($vsPromptUser, $vsPromptEligible);
+?>
     <?php echo vs_site_announcement_html($GLOBALS['pdo'] ?? null); ?>
     <div class="admin-shell">
     <div class="sidebar-backdrop" data-sidebar-close></div>

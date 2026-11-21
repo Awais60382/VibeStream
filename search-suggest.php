@@ -56,16 +56,26 @@ $esc = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $q);
 $contains = '%' . $esc . '%';
 $prefix = $esc . '%';
 
-$sql = "SELECT id, title, type, video_url
-        FROM videos
-        WHERE title LIKE ? ESCAPE '!' OR channel_name LIKE ? ESCAPE '!' OR username LIKE ? ESCAPE '!'
-        ORDER BY (title LIKE ? ESCAPE '!') DESC,
-                 (username LIKE ? ESCAPE '!' OR channel_name LIKE ? ESCAPE '!') DESC,
-                 views DESC, created_at DESC
-        LIMIT 8";
 try {
+    $scheduleFilter = '';
+    $params = [$contains, $contains, $contains, $prefix, $prefix, $prefix];
+    $scheduleColumn = $pdo->query("SHOW COLUMNS FROM `videos` LIKE 'scheduled_at'");
+    if (!$scheduleColumn) {
+        throw new RuntimeException('Could not verify scheduled video visibility.');
+    }
+    if ($scheduleColumn->fetchColumn()) {
+        $scheduleFilter = '(scheduled_at IS NULL OR scheduled_at <= ?) AND ';
+        array_unshift($params, date('Y-m-d H:i:s'));
+    }
+    $sql = "SELECT id, title, type, video_url
+            FROM videos
+            WHERE " . $scheduleFilter . "(title LIKE ? ESCAPE '!' OR channel_name LIKE ? ESCAPE '!' OR username LIKE ? ESCAPE '!')
+            ORDER BY (title LIKE ? ESCAPE '!') DESC,
+                     (username LIKE ? ESCAPE '!' OR channel_name LIKE ? ESCAPE '!') DESC,
+                     views DESC, created_at DESC
+            LIMIT 8";
     $st = $pdo->prepare($sql);
-    $st->execute([$contains, $contains, $contains, $prefix, $prefix, $prefix]);
+    $st->execute($params);
     foreach ($st->fetchAll() as $row) {
         $out[] = [
             'id'    => (string)$row['id'],

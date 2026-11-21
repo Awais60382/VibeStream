@@ -1,0 +1,74 @@
+[
+    {
+        "file": "vibestream-backup-2026-11-18_070304.zip",
+        "created": "2026-11-18 07:03:05",
+        "by": "automatic",
+        "size": 14825332,
+        "sha256": "dbcf945f86f072d6a6e04c47d30ce6896a9b77d111aa50a9e1e29fd7a5f7e2f2",
+        "format": "zip",
+        "tables": 78,
+        "rows": 7387,
+        "files": 55,
+        "kept": true
+    },
+    {
+        "file": "vibestream-backup-2026-11-11_060302.zip",
+        "created": "2026-11-11 06:03:04",
+        "by": "automatic",
+        "size": 14808002,
+        "sha256": "5e34e5aaaa002f8ea6c4f5f77f7c13643d2880217c93c79845791c38f11e97ed",
+        "format": "zip",
+        "tables": 74,
+        "rows": 3751,
+        "files": 55,
+        "kept": true
+    },
+    {
+        "file": "vibestream-backup-2026-11-04_055615.zip",
+        "created": "2026-11-04 05:56:18",
+        "by": "automatic",
+        "size": 14792040,
+        "sha256": "f776e843852c4ff3a26349281c424b48334ca34316589044a83dbb62d3730841",
+        "format": "zip",
+        "tables": 57,
+        "rows": 1216,
+        "files": 54,
+        "kept": true
+    },
+    {
+        "file": "vibestream-backup-2026-10-27_195839.zip",
+        "created": "2026-10-27 19:58:40",
+        "by": "automatic",
+        "size": 14865147,
+        "sha256": "334c416d7c1421cdf46bc2901b9ca08e8ff240215f0e9896e8f949a8a5260c8b",
+        "format": "zip",
+        "tables": 54,
+        "rows": 946,
+        "files": 53,
+        "copy": ""
+    },
+    {
+        "file": "vibestream-backup-2026-10-22_201028.zip",
+        "created": "2026-10-22 20:10:31",
+        "by": "VibeStreams",
+        "size": 14856964,
+        "sha256": "dc2d4b30bebe5e5525d78f203e179c7012071e2c2a6ba93e089db0f2b6a35b1d",
+        "format": "zip",
+        "tables": 46,
+        "rows": 204,
+        "files": 53,
+        "copy": ""
+    },
+    {
+        "file": "vibestream-backup-2026-10-15_213019.zip",
+        "created": "2026-10-15 21:30:21",
+        "by": "system check",
+        "size": 5112573,
+        "sha256": "c5bb91029b2264fb9d1dd66c0b6425840138b1ed9dcb03d92464506fc102eb13",
+        "format": "zip",
+        "tables": 24,
+        "rows": 418,
+        "files": 45,
+        "kept": true
+    }
+]

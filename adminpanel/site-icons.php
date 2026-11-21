@@ -200,6 +200,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'acsb_update_item':
             case 'acsb_move_item':
             case 'acsb_move_section':
+            case 'acsb_rename_section':
+            case 'acsb_reorder_items':
+            case 'acsb_reorder_sections':
+            case 'acsb_reset_all':
                 if (!$acsbReady) {
                     throw new RuntimeException('Upload admin-sidebar-custom-store.php to the main site folder first.');
                 }
@@ -210,13 +214,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     vs_acsb_delete_section($name);
                     vs_si_flash('success', 'Section and its menu items deleted.');
                 } elseif ($act === 'acsb_add_item') {
-                    vs_acsb_add_item((string)($_POST['label'] ?? ''), (string)($_POST['href'] ?? ''), (string)($_POST['section'] ?? ''), $_FILES['icon'] ?? [], !empty($_POST['owner']));
+                    vs_acsb_add_item((string)($_POST['label'] ?? ''), (string)($_POST['href'] ?? ''), (string)($_POST['section'] ?? ''), $_FILES['icon'] ?? [], ['owner' => !empty($_POST['owner']), 'newtab' => !empty($_POST['newtab']), 'emails' => (string)($_POST['emails'] ?? '')]);
                     vs_si_flash('success', 'Menu item added to the admin sidebar.');
                 } elseif ($act === 'acsb_item_icon') {
                     vs_acsb_set_item_icon($name, $_FILES['icon'] ?? []);
                     vs_si_flash('success', 'Menu item icon updated.');
                 } elseif ($act === 'acsb_update_item') {
-                    vs_acsb_update_item($name, (string)($_POST['label'] ?? ''), (string)($_POST['href'] ?? ''), (string)($_POST['section'] ?? ''), !empty($_POST['owner']));
+                    vs_acsb_update_item($name, (string)($_POST['label'] ?? ''), (string)($_POST['href'] ?? ''), (string)($_POST['section'] ?? ''), ['owner' => !empty($_POST['owner']), 'newtab' => !empty($_POST['newtab']), 'emails' => (string)($_POST['emails'] ?? '')]);
                     vs_si_flash('success', 'Menu item saved.');
                 } elseif ($act === 'acsb_move_item') {
                     vs_acsb_move_item($name, (string)($_POST['dir'] ?? ''));
@@ -224,6 +228,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif ($act === 'acsb_move_section') {
                     vs_acsb_move_section($name, (string)($_POST['dir'] ?? ''));
                     vs_si_flash('success', 'Order updated.');
+                } elseif ($act === 'acsb_rename_section') {
+                    vs_acsb_rename_section($name, (string)($_POST['title'] ?? ''));
+                    vs_si_flash('success', 'Section renamed.');
+                } elseif ($act === 'acsb_reorder_items' || $act === 'acsb_reorder_sections') {
+                    $acsbIds = isset($_POST['ids']) && is_array($_POST['ids']) ? array_map('strval', $_POST['ids']) : [];
+                    vs_acsb_reorder($act === 'acsb_reorder_items' ? 'items' : 'sections', $acsbIds);
+                    vs_si_flash('success', 'Order updated.');
+                } elseif ($act === 'acsb_reset_all') {
+                    vs_acsb_reset_all();
+                    vs_si_flash('success', 'All custom admin menu sections and items were removed.');
                 } else {
                     vs_acsb_delete_item($name);
                     vs_si_flash('success', 'Menu item deleted.');
@@ -431,6 +445,7 @@ $groupHelp = [
         .si-tab.si-on i{opacity:1}
         .si-js .si-pane:not(.si-on){display:none}
         .si-pane>.panel{margin-bottom:16px}
+        .si-row.si-drag{opacity:.45}
         .si-js.si-notov .vn-rail{display:none}
         .si-js.si-notov .vn-layout{display:block}
         .si-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;border:1px solid var(--vn-line-soft,rgba(128,128,128,.25));background:rgba(10,20,60,.18)}
@@ -468,8 +483,6 @@ $groupHelp = [
             <button type="button" class="si-tab si-on" role="tab" data-pane="overview" aria-selected="true"><i class="bi bi-globe2" aria-hidden="true"></i> Overview</button>
             <button type="button" class="si-tab" role="tab" data-pane="website" aria-selected="false"><i class="bi bi-window-sidebar" aria-hidden="true"></i> Website</button>
             <button type="button" class="si-tab" role="tab" data-pane="admin" aria-selected="false"><i class="bi bi-shield-check" aria-hidden="true"></i> Admin Panel</button>
-            <button type="button" class="si-tab" role="tab" data-pane="categories" aria-selected="false"><i class="bi bi-tags" aria-hidden="true"></i> Categories</button>
-            <button type="button" class="si-tab" role="tab" data-pane="menu" aria-selected="false"><i class="bi bi-grid" aria-hidden="true"></i> Menu &amp; Buttons</button>
           </div>
 
           <div class="vn-layout">
@@ -585,6 +598,8 @@ $groupHelp = [
                       <label class="si-lab">Link<input type="text" name="href" maxlength="300" required class="form-control form-control-sm" placeholder="reports.php or https://..."></label>
                       <label class="si-lab">Section<select name="section" class="form-select form-select-sm"><?php foreach ($acsbChoices as $ck => $cl): ?><option value="<?php echo vs_e((string)$ck); ?>"><?php echo vs_e($cl); ?></option><?php endforeach; ?></select></label>
                       <label class="si-lab">Icon (optional)<input type="file" name="icon" accept="image/png,image/jpeg,image/webp,image/gif" class="form-control form-control-sm"></label>
+                      <label class="si-lab">Only these admins (optional)<input type="text" name="emails" maxlength="500" class="form-control form-control-sm" placeholder="a@site.com, b@site.com (empty = all admins)"></label>
+                      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="newtab" value="1" id="acsbTabNew"><label class="form-check-label" for="acsbTabNew">Open in a new tab</label></div>
                       <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="owner" value="1" id="acsbOwnerNew"><label class="form-check-label" for="acsbOwnerNew">Only the site owner can see this</label></div>
                       <button type="submit" class="si-btn-primary"><i class="bi bi-plus-lg" aria-hidden="true"></i> Add item</button>
                     </form>
@@ -592,27 +607,45 @@ $groupHelp = [
 
                   <?php if ($acsb['sections']): ?>
                     <p class="si-rail-h">Your sections</p>
-                    <ul class="si-rows">
+                    <ul class="si-rows" data-acsb-sort="sections">
                       <?php foreach ($acsb['sections'] as $cs): ?>
-                        <li class="si-row">
+                        <li class="si-row" data-id="<?php echo vs_e((string)$cs['id']); ?>" style="flex-wrap:wrap">
+                          <span class="si-grip" title="Drag to reorder" style="cursor:grab;opacity:.6"><i class="bi bi-grip-vertical" aria-hidden="true"></i></span>
                           <span class="si-row-main"><b><?php echo vs_e($cs['title']); ?></b><small><?php echo vs_e($acsbPlaces[$cs['place']] ?? ''); ?></small></span>
                           <?php vs_si_button_form($csrf, 'acsb_move_section', (string)$cs['id'], 'Move up', 'bi-arrow-up', ['dir' => 'up']); ?>
                           <?php vs_si_button_form($csrf, 'acsb_move_section', (string)$cs['id'], 'Move down', 'bi-arrow-down', ['dir' => 'down']); ?>
                           <?php vs_si_button_form($csrf, 'acsb_delete_section', (string)$cs['id'], 'Delete section and its items', 'bi-trash', [], 'Delete this section and all its menu items?', true); ?>
+                          <details class="si-edit" style="flex:0 0 100%">
+                            <summary class="small" style="cursor:pointer"><i class="bi bi-pencil" aria-hidden="true"></i> Rename</summary>
+                            <form method="post" class="si-formbox mt-2">
+                              <input type="hidden" name="csrf" value="<?php echo vs_e($csrf); ?>">
+                              <input type="hidden" name="action" value="acsb_rename_section">
+                              <input type="hidden" name="name" value="<?php echo vs_e((string)$cs['id']); ?>">
+                              <label class="si-lab">Section name<input type="text" name="title" maxlength="40" required class="form-control form-control-sm" value="<?php echo vs_e($cs['title']); ?>"></label>
+                              <button type="submit" class="si-btn-primary"><i class="bi bi-check-lg" aria-hidden="true"></i> Save name</button>
+                            </form>
+                          </details>
                         </li>
                       <?php endforeach; ?>
                     </ul>
                   <?php endif; ?>
 
+                  <?php if ($acsb['sections'] || $acsb['items']): ?>
+                    <div class="d-flex align-items-center gap-2 mt-3">
+                      <?php vs_si_button_form($csrf, 'acsb_reset_all', 'all', 'Reset all admin menu items', 'bi-arrow-counterclockwise', [], 'Remove ALL your custom admin sections and menu items? This cannot be undone.', true); ?>
+                      <span class="small">Reset all admin menu items</span>
+                    </div>
+                  <?php endif; ?>
                   <p class="si-rail-h">Your admin menu items</p>
                   <?php if (!$acsb['items']): ?>
                     <p class="text-muted mb-0">No custom admin menu items yet.</p>
                   <?php else: ?>
-                    <ul class="si-rows" data-si-limit="4">
+                    <ul class="si-rows" data-si-limit="4" data-acsb-sort="items">
                       <?php foreach ($acsb['items'] as $it): ?>
-                        <li class="si-row" style="flex-wrap:wrap">
+                        <li class="si-row" data-id="<?php echo vs_e((string)$it['id']); ?>" style="flex-wrap:wrap">
+                          <span class="si-grip" title="Drag to reorder" style="cursor:grab;opacity:.6"><i class="bi bi-grip-vertical" aria-hidden="true"></i></span>
                           <span class="vn-pv"><?php if ($it['icon'] !== ''): ?><img src="<?php echo vs_e(vs_acsb_icon_url($it['icon'])); ?>" alt=""><?php else: ?><i class="bi bi-link-45deg" aria-hidden="true"></i><?php endif; ?></span>
-                          <span class="si-row-main"><b><?php echo vs_e($it['label']); ?><?php if (!empty($it['owner'])): ?> <span class="si-pill">Owner only</span><?php endif; ?></b><small><?php echo vs_e($it['href']); ?> &middot; <?php echo vs_e($acsbChoices[$it['section']] ?? $it['section']); ?></small></span>
+                          <span class="si-row-main"><b><?php echo vs_e($it['label']); ?><?php if (!empty($it['owner'])): ?> <span class="si-pill">Owner only</span><?php elseif (!empty($it['emails'])): ?> <span class="si-pill">Limited</span><?php endif; ?></b><small><?php echo vs_e($it['href']); ?> &middot; <?php echo vs_e($acsbChoices[$it['section']] ?? $it['section']); ?></small></span>
                           <?php vs_si_button_form($csrf, 'acsb_move_item', (string)$it['id'], 'Move up', 'bi-arrow-up', ['dir' => 'up']); ?>
                           <?php vs_si_button_form($csrf, 'acsb_move_item', (string)$it['id'], 'Move down', 'bi-arrow-down', ['dir' => 'down']); ?>
                           <?php vs_si_upload_form($csrf, 'acsb_item_icon', (string)$it['id'], $it['icon'] !== '' ? 'Change icon' : 'Add icon', [], 'image/png,image/jpeg,image/webp,image/gif'); ?>
@@ -626,6 +659,8 @@ $groupHelp = [
                               <label class="si-lab">Name<input type="text" name="label" maxlength="40" required class="form-control form-control-sm" value="<?php echo vs_e($it['label']); ?>"></label>
                               <label class="si-lab">Link<input type="text" name="href" maxlength="300" required class="form-control form-control-sm" value="<?php echo vs_e($it['href']); ?>"></label>
                               <label class="si-lab">Section<select name="section" class="form-select form-select-sm"><?php foreach ($acsbChoices as $ck => $cl): ?><option value="<?php echo vs_e((string)$ck); ?>"<?php echo (string)$ck === (string)$it['section'] ? ' selected' : ''; ?>><?php echo vs_e($cl); ?></option><?php endforeach; ?></select></label>
+                              <label class="si-lab">Only these admins (optional)<input type="text" name="emails" maxlength="500" class="form-control form-control-sm" value="<?php echo vs_e(implode(', ', (array)($it['emails'] ?? []))); ?>" placeholder="a@site.com, b@site.com (empty = all admins)"></label>
+                              <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="newtab" value="1" id="acsbTab<?php echo vs_e((string)$it['id']); ?>"<?php echo !empty($it['newtab']) ? ' checked' : ''; ?>><label class="form-check-label" for="acsbTab<?php echo vs_e((string)$it['id']); ?>">Open in a new tab</label></div>
                               <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="owner" value="1" id="acsbOwn<?php echo vs_e((string)$it['id']); ?>"<?php echo !empty($it['owner']) ? ' checked' : ''; ?>><label class="form-check-label" for="acsbOwn<?php echo vs_e((string)$it['id']); ?>">Only the site owner can see this</label></div>
                               <button type="submit" class="si-btn-primary"><i class="bi bi-check-lg" aria-hidden="true"></i> Save changes</button>
                             </form>
@@ -911,6 +946,53 @@ $groupHelp = [
       try { start = sessionStorage.getItem(KEY) || 'overview'; } catch (e) {}
       show(start, false);
       if (location.hash) { goTo(location.hash.slice(1)); }
+    })();
+  </script>
+  <script>
+    /* Drag and drop ordering for the admin sidebar menu (the arrow buttons still work too). */
+    (function () {
+      document.querySelectorAll('ul[data-acsb-sort]').forEach(function (ul) {
+        var kind = ul.getAttribute('data-acsb-sort');
+        var dragEl = null, before = '';
+        function order() {
+          return Array.prototype.map.call(ul.querySelectorAll(':scope > li[data-id]'), function (li) { return li.getAttribute('data-id'); });
+        }
+        function submit(ids) {
+          var tok = document.querySelector('input[name="csrf"]');
+          if (!tok) { return; }
+          var f = document.createElement('form');
+          f.method = 'post';
+          function add(n, v) { var i = document.createElement('input'); i.type = 'hidden'; i.name = n; i.value = v; f.appendChild(i); }
+          add('csrf', tok.value);
+          add('action', kind === 'sections' ? 'acsb_reorder_sections' : 'acsb_reorder_items');
+          ids.forEach(function (id) { add('ids[]', id); });
+          document.body.appendChild(f);
+          f.submit();
+        }
+        ul.querySelectorAll(':scope > li[data-id]').forEach(function (li) {
+          var grip = li.querySelector('.si-grip');
+          if (!grip) { return; }
+          grip.addEventListener('mousedown', function () { li.draggable = true; });
+          grip.addEventListener('mouseup', function () { li.draggable = false; });
+          li.addEventListener('dragstart', function (e) {
+            dragEl = li; before = order().join(',');
+            li.classList.add('si-drag');
+            if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', li.getAttribute('data-id')); } catch (x) {} }
+          });
+          li.addEventListener('dragend', function () {
+            li.draggable = false; li.classList.remove('si-drag');
+            var now = order();
+            dragEl = null;
+            if (now.join(',') !== before) { submit(now); }
+          });
+          li.addEventListener('dragover', function (e) {
+            if (!dragEl || dragEl === li) { return; }
+            e.preventDefault();
+            var r = li.getBoundingClientRect();
+            ul.insertBefore(dragEl, (e.clientY - r.top) > r.height / 2 ? li.nextSibling : li);
+          });
+        });
+      });
     })();
   </script>
   <script>

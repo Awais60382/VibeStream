@@ -74,12 +74,29 @@ function upload_error_text($code) {
     }
 }
 
+function up_save_thumbnail($f, &$error) {
+    $error = '';
+    if (!is_array($f) || ($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) return null;
+    if ($f['error'] !== UPLOAD_ERR_OK) { $error = 'The thumbnail could not be uploaded. ' . upload_error_text($f['error']); return null; }
+    if ((int)$f['size'] > 5 * 1024 * 1024) { $error = 'The thumbnail is bigger than 5 MB.'; return null; }
+    $ext = strtolower(pathinfo((string)$f['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true) || @getimagesize($f['tmp_name']) === false) {
+        $error = 'Thumbnails must be JPG, PNG, WebP or GIF images.';
+        return null;
+    }
+    $dir = __DIR__ . '/uploads/thumbnails';
+    if (!is_dir($dir) && !mkdir($dir, 0777, true)) { $error = 'Could not create the uploads/thumbnails folder.'; return null; }
+    $name = bin2hex(random_bytes(8)) . '.' . ($ext === 'jpeg' ? 'jpg' : $ext);
+    if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) { $error = 'Could not save the thumbnail.'; return null; }
+    return 'uploads/thumbnails/' . $name;
+}
+
 if (empty($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(16));
 
 $username = isset($_SESSION['username']) ? trim((string)$_SESSION['username']) : '';
 $draftKey = 'vibestream-upload-draft:' . ($username !== '' ? $username : 'guest');
 $errors = [];
-$old = ['type' => 'video', 'title' => '', 'description' => '', 'mode' => 'link', 'video_url' => '', 'category' => '', 'live_status' => 'live', 'stream_url' => '', 'thumbnail_url' => '', 'scheduled_at' => ''];
+$old = ['type' => 'video', 'title' => '', 'description' => '', 'mode' => 'file', 'video_url' => '', 'category' => '', 'live_status' => 'live', 'stream_url' => '', 'thumbnail_url' => '', 'scheduled_at' => ''];
 
 $flash = $_SESSION['upload_flash'] ?? null;
 unset($_SESSION['upload_flash']);
@@ -103,6 +120,7 @@ try {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $savedFile = null;
+    $savedThumb = null;
 
     if (!$uploadsOn) {
         $errors[] = 'Uploads are turned off right now. Please try again later.';
@@ -121,6 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $old['stream_url'] = trim((string)($_POST['stream_url'] ?? $old['video_url']));
         $old['thumbnail_url'] = trim((string)($_POST['thumbnail_url'] ?? ''));
         $old['scheduled_at'] = trim((string)($_POST['scheduled_at'] ?? ''));
+        if ($old['type'] === 'live') $old['live_status'] = $old['scheduled_at'] !== '' ? 'scheduled' : 'live';
 
         if ($old['title'] === '') $errors[] = 'Add a title.';
         if ($old['type'] === 'live') {
@@ -156,6 +175,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($old['thumbnail_url'] === '' && $youtubeId !== '') {
                         $old['thumbnail_url'] = 'https://i.ytimg.com/vi/' . rawurlencode($youtubeId) . '/hqdefault.jpg';
                     }
+                    $thumbError = '';
+                    $liveThumb = up_save_thumbnail($_FILES['thumbnail_file'] ?? null, $thumbError);
+                    if ($thumbError !== '') throw new RuntimeException($thumbError);
+                    if ($liveThumb !== null) $old['thumbnail_url'] = $liveThumb;
 
                     $stmt = $pdo->prepare(
                         'INSERT INTO live_streams
@@ -201,6 +224,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($srcCol === null) {
             $errors[] = 'Your videos table has no column to store the video link. Run the SQL shown at the top of this page first.';
+        }
+        $videoScheduledAt = null;
+        if ($old['scheduled_at'] !== '') {
+            $ts = strtotime($old['scheduled_at']);
+            if ($ts === false || $ts <= time()) {
+                $errors[] = 'Choose a publish date and time in the future.';
+            } elseif (!isset($cols['scheduled_at'])) {
+                $errors[] = 'Scheduled publishing needs a scheduled_at DATETIME column on the videos table: ALTER TABLE videos ADD COLUMN scheduled_at DATETIME NULL;';
+            } else {
+                $videoScheduledAt = date('Y-m-d H:i:s', $ts);
+            }
         }
 
         $sourceValue = null;
@@ -291,6 +325,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
+                $thumbError = '';
+                $thumbRel = up_save_thumbnail($_FILES['thumbnail_file'] ?? null, $thumbError);
+                if ($thumbError !== '') throw new RuntimeException($thumbError);
+                if ($thumbRel !== null) $savedThumb = __DIR__ . '/' . $thumbRel;
+
                 $poster = $username !== '' ? $username : 'Guest';
                 $data = [];
                 $put = function ($key, $val) use (&$data, $cols) {
@@ -317,6 +356,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if (isset($cols[$t])) { $put($t, 'https://i.ytimg.com/vi/' . $yt . '/hqdefault.jpg'); break; }
                     }
                 }
+
+                if (!empty($thumbRel)) {
+                    foreach (['thumbnail', 'thumbnail_url', 'thumb', 'thumb_url', 'poster'] as $t) {
+                        if (isset($cols[$t])) { $put($t, $thumbRel); break; }
+                    }
+                }
+                if ($videoScheduledAt !== null) $put('scheduled_at', $videoScheduledAt);
 
                 $put($srcCol, $sourceValue);
 
@@ -368,6 +414,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             } catch (Throwable $e) {
                 if ($savedFile && is_file($savedFile)) @unlink($savedFile);
+                if ($savedThumb && is_file($savedThumb)) @unlink($savedThumb);
                 $errors[] = 'Could not save: ' . $e->getMessage();
             }
         }
@@ -390,72 +437,149 @@ $showCategory = isset($cols['category']);
 $srcRealName = $srcCol !== null ? $cols[$srcCol]['Field'] : '';
 
 $extraCss = <<<'CSS'
-.upload-wrap { max-width: 720px; margin: 0 auto; }
-.upload-wrap h1 { margin: 0 0 6px; font-size: 26px; }
-.upload-wrap .sub { margin: 0 0 22px; color: var(--muted); font-size: 14px; line-height: 1.5; }
-.card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 22px; padding: 24px;
-}
-.notice {
-    border-radius: 14px; padding: 12px 14px; font-size: 14px; line-height: 1.5; margin-bottom: 16px;
-    border: 1px solid var(--border); background: var(--surface-3);
-}
-.notice.error { border-color: rgba(176, 42, 42, 0.6); background: rgba(176, 42, 42, 0.14); color: #ffd0d0; }
-.notice.ok { border-color: rgba(62, 166, 255, 0.5); background: rgba(62, 166, 255, 0.1); }
-.notice.warn { border-color: rgba(230, 170, 60, 0.5); background: rgba(230, 170, 60, 0.1); }
-.notice a { color: var(--blue); text-decoration: underline; }
-.notice ul { margin: 0; padding-left: 18px; }
-.notice code, .notice pre {
-    background: #0d0d0f; border-radius: 8px; padding: 2px 6px; font-size: 13px; color: #f1f1f1;
-}
-.notice pre { display: block; padding: 10px 12px; margin: 8px 0 0; overflow-x: auto; }
-.field { margin-bottom: 18px; }
-.field label, .field .label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
-.field .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
-.field input[type=text], .field input[type=url], .field textarea, .field input[type=file] {
-    width: 100%; background: var(--surface-raised, #0d0d0f); border: 1px solid var(--border-strong, #3d3d46); border-radius: 12px;
-    padding: 12px 14px; color: var(--text-primary, #ffffff); outline: none;
-}
-.field input::placeholder, .field textarea::placeholder { color: var(--text-tertiary, #8a8a94); }
-.field textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
-.field input:focus, .field textarea:focus { border-color: #5b8cff; box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.18); }
-.field input[type=file] { padding: 10px; }
-.field select {
-    width: 100%; background: var(--surface-raised, #0d0d0f); border: 1px solid var(--border-strong, #3d3d46); border-radius: 12px;
-    padding: 12px 14px; color: var(--text-primary, #ffffff); outline: none;
-}
-.field select:focus { border-color: #5b8cff; box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.18); }
-.seg { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 4px; gap: 4px; }
-.seg input { position: absolute; opacity: 0; pointer-events: none; }
-.seg label {
-    margin: 0; padding: 8px 18px; border-radius: 999px; cursor: pointer; font-size: 14px; font-weight: 600;
-    color: var(--muted); transition: background 0.2s ease, color 0.2s ease;
-}
-.seg input:checked + label { background: var(--accent); color: #ffffff; }
-.seg input:focus-visible + label { outline: 2px solid var(--blue); outline-offset: 2px; }
-.submit-btn {
-    background: var(--accent); color: #ffffff; border: none; border-radius: 999px;
-    padding: 13px 26px; font-weight: 700; font-size: 15px; cursor: pointer;
-}
-.submit-btn:hover { background: #c43232; }
-.submit-btn:disabled { opacity: 0.5; cursor: default; }
-.posting-as { font-size: 13px; color: var(--muted); margin-left: 14px; }
-.posting-as a { color: var(--blue); }
-.upload-live-section { margin: 0 0 18px; }
-.upload-live-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
-.upload-live-head h2 { margin:0; font-size:18px; }
-.upload-live-head a { color:var(--blue); text-decoration:none; font-size:13px; }
-.upload-live-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
-.upload-live-card { min-width:0; overflow:hidden; border-radius:14px; border:1px solid var(--border); background:var(--surface); color:inherit; text-decoration:none; }
-.upload-live-thumb { position:relative; aspect-ratio:16/9; background:linear-gradient(135deg,#23205c,#7c3aed); }
-.upload-live-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-.upload-live-status { position:absolute; left:8px; bottom:8px; border-radius:999px; padding:4px 7px; background:#e11d48; color:#fff; font-size:10px; font-weight:900; }
-.upload-live-status.scheduled { background:#7c3aed; }
-.upload-live-copy { padding:9px; }
-.upload-live-copy strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
-.upload-live-copy span { display:block; margin-top:4px; color:var(--muted); font-size:12px; }
-@media(max-width:760px){ .upload-live-grid{grid-template-columns:repeat(2,minmax(0,1fr));} }
-@media(max-width:430px){ .upload-live-grid{grid-template-columns:1fr;} }
+.page.upload-page{max-width:1340px;padding-top:22px}
+.upload-wrap{--pink:#ff2e93;--violet:#8a5cff;--cyan:#00e5ff;--card:linear-gradient(165deg,rgba(14,18,46,.96),rgba(8,10,28,.97));--solid:#0a0d1f;--line:rgba(138,92,255,.34);--line2:rgba(0,229,255,.6);--tx:#f2f5ff;--mut:#9aa6d6;--faint:#7480b4;--inp:rgba(8,11,30,.85);--chip:rgba(255,255,255,.07);--grad:linear-gradient(90deg,#ff2e93,#8a5cff 55%,#00e5ff);--grad-blue:linear-gradient(90deg,#1f6bff,#00c8ff);--glow:rgba(138,92,255,.5);color:var(--tx)}
+html[data-theme="light"] .upload-wrap{--card:linear-gradient(165deg,#fff,#f6f4ff);--solid:#fff;--line:rgba(124,77,255,.28);--line2:rgba(0,184,230,.65);--tx:#0b1030;--mut:#55608f;--faint:#7a84ad;--inp:#fff;--chip:rgba(124,77,255,.1);--glow:rgba(124,77,255,.28)}
+.upload-wrap [hidden]{display:none!important}
+.upload-wrap *{box-sizing:border-box}
+
+/* heading + premium banner */
+.upload-heading{display:flex;align-items:center;gap:18px;margin:0 0 20px}
+.upload-heading-icon{flex:0 0 auto;color:#12b8ff;filter:drop-shadow(0 0 14px rgba(0,200,255,.6))}
+.upload-heading-icon svg{display:block;width:96px;height:80px}
+.upload-heading h1{margin:0;font-size:clamp(34px,3.8vw,50px);font-weight:800;letter-spacing:-.025em;line-height:1.05;color:var(--tx)}
+.upload-wrap .sub{margin:6px 0 0;color:var(--mut);font-size:clamp(15px,1.5vw,19px)}
+.up-premium{margin-left:auto;display:flex;align-items:center;gap:16px;width:min(100%,540px);padding:14px 18px;border:1px solid rgba(255,46,147,.55);border-radius:18px;background:linear-gradient(100deg,rgba(255,46,147,.6),rgba(138,92,255,.6) 55%,rgba(40,28,110,.75));color:#fff;box-shadow:0 0 34px -8px rgba(255,46,147,.65)}
+.up-premium .crown{flex:0 0 auto;width:62px;height:52px;filter:drop-shadow(0 0 10px rgba(255,201,51,.6))}
+.up-premium .t{flex:1;min-width:0;display:grid;gap:3px}
+.up-premium .t strong{font-size:23px;color:#ffc933;line-height:1.1}
+.up-premium .t span{font-size:14px;color:#fff}
+.up-premium .go{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;padding:11px 20px;border-radius:999px;background:var(--grad-blue);color:#fff;font-size:15px;font-weight:700;white-space:nowrap;box-shadow:0 0 18px -2px rgba(0,200,255,.6)}
+.up-premium .go svg{width:17px;height:17px}
+
+/* layout */
+.upload-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,340px);gap:20px;align-items:start}
+.up-card,.upload-side-card{position:relative;overflow:hidden;padding:20px 22px 22px;border:1px solid var(--line);border-radius:20px;background:var(--card)}
+.up-title{margin:0 0 12px;font-size:17px;font-weight:700}
+.up-label{display:block;margin:0 0 9px;font-size:16px;font-weight:700;color:var(--tx)}
+.up-label small{font-weight:500;font-size:13px;color:var(--mut)}
+.up-label svg{width:15px;height:15px;vertical-align:-2px;margin-right:6px}
+.required-mark{color:var(--pink)}
+.up-field{margin-bottom:6px}
+
+/* inputs */
+.upload-wrap .up-input,.upload-wrap .up-textarea,.upload-wrap .up-select{display:block;width:100%;min-height:46px;padding:0 16px;border:1px solid var(--line);border-radius:13px;background:var(--inp);color:var(--tx);font-size:15px;outline:none;transition:border-color .16s,box-shadow .16s}
+.upload-wrap .up-textarea{min-height:92px;padding:12px 16px;resize:vertical;line-height:1.5}
+.upload-wrap .up-input::placeholder,.upload-wrap .up-textarea::placeholder{color:var(--faint)}
+.upload-wrap .up-input:focus,.upload-wrap .up-textarea:focus,.upload-wrap .up-select:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(0,229,255,.18),0 0 18px -4px rgba(0,229,255,.5)}
+.upload-wrap input[type=datetime-local]{color-scheme:dark}
+html[data-theme="light"] .upload-wrap input[type=datetime-local]{color-scheme:light}
+.up-count{margin:5px 0 12px;text-align:right;font-size:12px;color:var(--faint)}
+.up-ic{position:relative}
+.up-ic>svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--mut);pointer-events:none}
+.upload-wrap .up-ic .up-input,.upload-wrap .up-ic .up-select{padding-left:44px}
+.upload-wrap .up-select{appearance:none;-webkit-appearance:none;padding-right:40px;cursor:pointer}
+.upload-wrap .up-select option{background:#0a0d1f;color:#f2f5ff}
+.up-sel::after{content:"";position:absolute;right:17px;top:50%;width:7px;height:7px;margin-top:-6px;border:solid var(--tx);border-width:0 2px 2px 0;transform:rotate(45deg);pointer-events:none}
+
+/* pills (type + mode) */
+.up-pills{position:relative;display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+.up-pills input{position:absolute;opacity:0;pointer-events:none}
+.up-pills label{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:44px;padding:0 26px;border:1px solid transparent;border-radius:999px;background:var(--chip);color:var(--tx);font-size:16px;font-weight:600;cursor:pointer;transition:background .16s,border-color .16s,box-shadow .16s}
+.up-pills label svg{width:20px;height:20px}
+.up-pills label:hover{border-color:var(--line2)}
+.up-pills input:checked+label{border-color:transparent;background:var(--grad-blue);color:#fff;box-shadow:0 0 22px -2px rgba(0,200,255,.65)}
+.up-pills input:focus-visible+label{outline:2px solid #fff;outline-offset:2px}
+.up-pills.wide{margin-bottom:0}
+
+/* single-column form body */
+.up-grid{display:grid;grid-template-columns:1fr;gap:16px}
+.up-span{grid-column:1/-1}
+#categoryField{display:flex;align-items:center;gap:16px}
+#categoryField .up-label{margin:0;flex:0 0 auto}
+#categoryField .up-ic{flex:1;min-width:0}
+
+/* dropzone */
+.upload-dropzone{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:136px;padding:18px;border:2px dashed var(--cyan);border-radius:16px;background:radial-gradient(ellipse at 50% 130%,rgba(138,92,255,.28),transparent 62%),var(--inp);box-shadow:0 0 0 1px rgba(138,92,255,.45),0 0 26px -8px rgba(0,229,255,.55);text-align:center;cursor:pointer}
+.upload-dropzone:hover,.upload-dropzone.is-dragging{border-color:#fff;box-shadow:0 0 0 1px var(--violet),0 0 32px -4px var(--cyan)}
+.upload-dropzone svg{width:46px;height:46px;color:#18b8ff;filter:drop-shadow(0 0 10px rgba(0,200,255,.7))}
+.upload-dropzone strong{font-size:18px;word-break:break-word}
+.upload-dropzone span{font-size:14px;color:var(--mut)}
+.upload-dropzone small{font-size:12.5px;color:var(--mut)}
+.upload-dropzone input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+
+/* thumbnail row */
+.up-thumb{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.up-thumb-box{position:relative;flex:0 0 46px;width:46px;height:42px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--inp);color:var(--mut);cursor:pointer;display:grid;place-items:center}
+.up-thumb-box img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.up-thumb-box>svg{width:24px;height:24px}
+.up-ghost{display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:0 20px;border:1px solid var(--line);border-radius:10px;background:var(--chip);color:var(--tx);font-size:15px;font-weight:600;cursor:pointer}
+.up-ghost:hover{border-color:var(--line2)}
+.up-ghost svg{display:none}
+.up-filename{font-size:15px;color:var(--mut);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.up-hide{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+.up-sched{max-width:340px}
+
+/* live fields */
+.up-livebox{display:grid;gap:10px;padding:16px;border:1px solid var(--line);border-radius:16px;background:rgba(138,92,255,.08)}
+.up-hint{font-size:12.5px;color:var(--mut);line-height:1.45}
+
+/* publish */
+.upload-actions{display:flex;flex-direction:column;align-items:stretch;margin-top:20px}
+.up-submit{display:inline-flex;align-items:center;justify-content:center;gap:14px;width:100%;min-height:56px;padding:0 30px;border:0;border-radius:14px;background:var(--grad);color:#fff;font-size:24px;font-weight:700;cursor:pointer;box-shadow:0 0 30px -4px rgba(138,92,255,.7),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .16s,filter .16s}
+.up-submit svg{width:30px;height:30px}
+.up-submit:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.1)}
+.up-submit:disabled{opacity:.5;cursor:not-allowed}
+.upload-actions .upload-draft-status{margin:12px 0 0;padding:0;border:0;background:transparent;color:var(--mut);font-size:12.5px;text-align:center}
+.upload-actions .upload-draft-status.error{color:#ff8aa6}
+.up-meta{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;margin-top:6px;font-size:13px;color:var(--mut)}
+.up-meta a{color:var(--cyan);text-decoration:underline}
+.up-clear{border:0;background:transparent;color:var(--mut);font-size:13px;text-decoration:underline;cursor:pointer}
+
+/* side column */
+.upload-side{display:grid;gap:16px;min-width:0}
+.upload-side-card{padding:18px}
+.upload-side-card h2{display:flex;align-items:center;gap:10px;margin:0 0 12px;font-size:22px;font-weight:700;color:var(--tx)}
+.upload-side-card h2 svg{width:26px;height:26px}
+.up-live h2 svg{color:#ff3b6b}
+.up-scene{display:block;width:100%;height:auto;margin:0 0 12px;border-radius:12px}
+.up-live p{margin:0 0 14px;text-align:center;color:var(--tx);font-size:15px;line-height:1.5}
+.up-golive{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:50px;border:0;border-radius:14px;background:var(--grad);color:#fff;font-size:20px;font-weight:700;cursor:pointer;box-shadow:0 0 24px -6px rgba(255,46,147,.7)}
+.up-golive svg{width:22px;height:22px}
+.up-golive:hover{filter:brightness(1.1)}
+.up-tips h2 svg{color:#ffd24a}
+.up-tips ul{display:grid;gap:11px;margin:4px 0 0;padding:0;list-style:none}
+.up-tips li{display:flex;align-items:center;gap:12px;font-size:15.5px}
+.up-tips li::before{content:"\2713";display:grid;place-items:center;flex:0 0 24px;height:24px;border-radius:50%;background:#12c8ff;color:#06162e;font-size:14px;font-weight:900}
+.upload-live-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 6px}
+.upload-side-card .upload-live-head h2{margin:0;font-size:21px}
+.upload-live-head a{color:var(--cyan);font-size:14px;font-weight:600}
+.upload-live-indicator{width:14px;height:14px;border-radius:50%;background:#ff3157;box-shadow:0 0 12px rgba(255,49,87,.8)}
+.upload-live-card{display:grid;grid-template-columns:104px minmax(0,1fr);align-items:center;gap:12px;padding:8px 0;color:inherit}
+.upload-live-thumb{position:relative;aspect-ratio:16/10;border-radius:9px;overflow:hidden;background:linear-gradient(135deg,#23205c,#7c3aed)}
+.upload-live-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.upload-live-status{position:absolute;right:4px;bottom:4px;border-radius:5px;padding:2px 6px;background:#e11d48;color:#fff;font-size:10px;font-weight:900}
+.upload-live-status.scheduled{background:#7c3aed}
+.upload-live-copy{min-width:0}
+.upload-live-copy strong,.upload-live-copy span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.upload-live-copy strong{font-size:15px}
+.upload-live-copy span{margin-top:4px;color:var(--mut);font-size:13px}
+
+/* notices */
+.notice{border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.5;margin-bottom:16px;border:1px solid var(--line);background:rgba(138,92,255,.1)}
+.notice.error{border-color:rgba(255,93,122,.6);background:rgba(255,93,122,.12)}
+.notice.ok{border-color:rgba(0,229,255,.5)}
+.notice.warn{border-color:rgba(230,170,60,.5);background:rgba(230,170,60,.1)}
+.notice a{color:var(--cyan);text-decoration:underline}
+.notice ul{margin:0;padding-left:18px}
+.notice code,.notice pre{background:rgba(0,0,0,.3);border-radius:8px;padding:2px 6px;font-size:13px;overflow-wrap:anywhere}
+.notice pre{display:block;padding:10px 12px;margin:8px 0 0;overflow-x:auto}
+
+@media(max-width:1020px){.upload-layout{grid-template-columns:1fr}.upload-side{grid-template-columns:repeat(2,minmax(0,1fr))}.upload-live-section{grid-column:1/-1}}
+@media(max-width:820px){.upload-heading{flex-wrap:wrap}.up-premium{margin-left:0;width:100%}}
+@media(max-width:720px){.upload-side{grid-template-columns:1fr}#categoryField{flex-direction:column;align-items:stretch;gap:9px}}
+@media(max-width:520px){.up-card{padding:16px 14px 18px}.upload-heading-icon svg{width:62px;height:52px}.up-pills label{padding:0 18px;flex:1 1 auto}.up-premium .go{padding:10px 14px}.up-submit{font-size:20px}}
+@media(prefers-reduced-motion:reduce){.up-pills label,.up-submit{transition:none!important}}
 /* ===== NEON THEME (dark + light) ===== */
 html:not([data-theme="light"]) {
             --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
@@ -486,24 +610,6 @@ html:not([data-theme="light"]) {
         html:not([data-theme="light"]) body ::-webkit-scrollbar-track { background: #05060f; }
         html:not([data-theme="light"]) body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
         html:not([data-theme="light"]) body ::selection { background: rgba(255,46,147,.4); color: #fff; }
-
-/* ---- upload page ---- */
-html:not([data-theme="light"]) body .upload-wrap h1 { text-shadow: 0 0 16px rgba(138,92,255,.65); }
-html:not([data-theme="light"]) body .card { background: rgba(10,13,31,.88); border: 1px solid rgba(138,92,255,.5); box-shadow: 0 0 30px -8px rgba(0,229,255,.5), 0 0 70px -24px rgba(138,92,255,.55); }
-html:not([data-theme="light"]) body .notice { box-shadow: 0 0 18px -6px rgba(0,229,255,.5); }
-html:not([data-theme="light"]) body .notice.error { border-color: rgba(255,46,147,.7); background: rgba(255,46,147,.12); box-shadow: 0 0 18px -6px rgba(255,46,147,.6); }
-html:not([data-theme="light"]) body .notice.ok { border-color: rgba(0,229,255,.6); background: rgba(0,229,255,.10); }
-html:not([data-theme="light"]) body .notice a { color: #00e5ff; }
-html:not([data-theme="light"]) body .field label, html:not([data-theme="light"]) body .field .label { color: #eaf0ff; }
-html:not([data-theme="light"]) body .field input[type=text], html:not([data-theme="light"]) body .field input[type=url], html:not([data-theme="light"]) body .field textarea, html:not([data-theme="light"]) body .field input[type=file], html:not([data-theme="light"]) body .field select { background: rgba(10,13,31,.9); color: #eaf0ff; border: 1px solid rgba(138,92,255,.5); transition: box-shadow .18s ease, border-color .18s ease; }
-html:not([data-theme="light"]) body .field input:focus, html:not([data-theme="light"]) body .field textarea:focus, html:not([data-theme="light"]) body .field select:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 18px rgba(0,229,255,.5); }
-html:not([data-theme="light"]) body .field input[type=file]::file-selector-button { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; margin-right: 12px; cursor: pointer; box-shadow: 0 0 12px rgba(255,46,147,.5); }
-html:not([data-theme="light"]) body .seg { background: rgba(23,28,66,.7); border: 1px solid rgba(138,92,255,.45); }
-html:not([data-theme="light"]) body .seg input:checked + label { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; box-shadow: 0 0 16px rgba(255,46,147,.6); }
-html:not([data-theme="light"]) body .submit-btn { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 20px rgba(255,46,147,.55); transition: box-shadow .18s ease, transform .18s ease; }
-html:not([data-theme="light"]) body .submit-btn:hover:not(:disabled) { background: linear-gradient(90deg, #8a5cff, #ff2e93); transform: translateY(-1px); box-shadow: 0 0 30px rgba(255,46,147,.85); }
-html:not([data-theme="light"]) body .posting-as a { color: #00e5ff; }
-
 html[data-theme="light"] {
             --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
             --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
@@ -533,142 +639,26 @@ html[data-theme="light"] {
         html[data-theme="light"] body ::-webkit-scrollbar-track { background: #eceffd; }
         html[data-theme="light"] body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
         html[data-theme="light"] body ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
-
-/* ---- upload page ---- */
-html[data-theme="light"] body .upload-wrap h1 { text-shadow: 0 0 16px rgba(124,77,255,.3); }
-html[data-theme="light"] body .card { background: #ffffff; border: 1px solid rgba(124,77,255,.5); box-shadow: 0 0 30px -8px rgba(0,184,230,.5), 0 0 70px -24px rgba(124,77,255,.55); }
-html[data-theme="light"] body .notice { box-shadow: 0 0 18px -6px rgba(0,184,230,.5); }
-html[data-theme="light"] body .notice.error { border-color: rgba(255,46,147,.7); background: rgba(255,46,147,.12); box-shadow: 0 0 18px -6px rgba(255,46,147,.6); }
-html[data-theme="light"] body .notice.ok { border-color: rgba(0,184,230,.6); background: rgba(0,184,230,.10); }
-html[data-theme="light"] body .notice a { color: #0086b3; }
-html[data-theme="light"] body .field label, html[data-theme="light"] body .field .label { color: #0b1030; }
-html[data-theme="light"] body .field input[type=text], html[data-theme="light"] body .field input[type=url], html[data-theme="light"] body .field textarea, html[data-theme="light"] body .field input[type=file], html[data-theme="light"] body .field select { background: #ffffff; color: #0b1030; border: 1px solid rgba(124,77,255,.5); transition: box-shadow .18s ease, border-color .18s ease; }
-html[data-theme="light"] body .field input:focus, html[data-theme="light"] body .field textarea:focus, html[data-theme="light"] body .field select:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 18px rgba(0,184,230,.5); }
-html[data-theme="light"] body .field input[type=file]::file-selector-button { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; margin-right: 12px; cursor: pointer; box-shadow: 0 0 12px rgba(255,46,147,.5); }
-html[data-theme="light"] body .seg { background: #ffffff; border: 1px solid rgba(124,77,255,.45); }
-html[data-theme="light"] body .seg input:checked + label { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; box-shadow: 0 0 16px rgba(255,46,147,.6); }
-html[data-theme="light"] body .submit-btn { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 20px rgba(255,46,147,.55); transition: box-shadow .18s ease, transform .18s ease; }
-html[data-theme="light"] body .submit-btn:hover:not(:disabled) { background: linear-gradient(90deg, #7c4dff, #ff2e93); transform: translateY(-1px); box-shadow: 0 0 30px rgba(255,46,147,.85); }
-html[data-theme="light"] body .posting-as a { color: #0086b3; }
-
-/* Creator upload workspace */
-.upload-wrap{max-width:1100px}
-.upload-heading{display:flex;align-items:center;gap:18px;margin:0 0 20px}
-.upload-heading-icon{display:grid;place-items:center;flex:0 0 78px;width:78px;height:68px;border-radius:24px;background:linear-gradient(145deg,#8b1cff,#4e12d3);box-shadow:0 8px 26px rgba(128,38,255,.32);color:#fff}
-.upload-heading-icon svg{width:44px;height:44px}
-.upload-heading h1{margin:0;color:#f8f6ff;font-size:clamp(28px,3vw,38px);font-weight:850;letter-spacing:-.04em}
-.upload-heading h1 span{color:#a935ff}
-.upload-wrap .sub{margin:4px 0 0;color:#b9b3d2;font-size:14px}
-.upload-heading-note{display:flex;align-items:center;gap:12px;min-height:60px;margin-left:auto;padding:10px 14px;border:1px solid rgba(139,92,246,.3);border-radius:14px;background:linear-gradient(125deg,rgba(23,18,50,.94),rgba(12,11,28,.94));color:#d8d2eb;font-size:12px;line-height:1.45}
-.upload-heading-note>span:first-child{color:#c6a9ff;font-size:24px}
-.upload-heading-note strong{color:#f6f1ff}
-.upload-layout{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(265px,.95fr);align-items:start;gap:18px}
-.upload-main,.upload-side{min-width:0}
-.upload-form{padding:18px;border-radius:18px}
-.upload-form>.field{margin-bottom:15px}
-.upload-type-label{margin-bottom:9px!important}
-.upload-type-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;width:100%;padding:4px;border-radius:14px}
-.upload-type-tabs input{position:absolute;opacity:0;pointer-events:none}
-.upload-type-tabs label{display:flex;justify-content:center;align-items:center;min-height:39px;padding:7px 10px;border-radius:11px;text-align:center}
-.upload-source-layout{display:grid;gap:10px}
-.upload-source-toggle{display:none}
-.upload-form .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0!important;margin:-1px!important;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.upload-drop-field{margin:0!important}
-.upload-dropzone{position:relative;display:flex!important;min-height:142px;flex-direction:column;justify-content:center;align-items:center;gap:5px;overflow:hidden;padding:15px;border:1px dashed rgba(174,120,255,.8);border-radius:14px;background:radial-gradient(ellipse at 50% 110%,rgba(113,44,221,.15),transparent 60%),rgba(14,14,34,.82);cursor:pointer;text-align:center;transition:border-color .18s ease,background .18s ease}
-.upload-dropzone:hover,.upload-dropzone.is-dragging{border-color:#d1a7ff;background-color:rgba(78,36,137,.16)}
-.upload-dropzone svg{width:46px;height:46px;margin-bottom:2px;color:#a43bff;filter:drop-shadow(0 0 8px rgba(164,59,255,.5))}
-.upload-dropzone strong{color:#f5f2ff;font-size:16px}
-.upload-dropzone>span{color:#b9b3d2;font-size:13px}
-.upload-dropzone small{color:#9e97b8;font-size:11px}
-.upload-dropzone input[type=file]{position:absolute!important;inset:0;width:100%!important;height:100%;padding:0!important;opacity:0;cursor:pointer}
-.upload-or{display:flex;align-items:center;gap:12px;color:#aaa3c1;font-size:12px}
-.upload-or::before,.upload-or::after{content:"";height:1px;flex:1;background:rgba(139,92,246,.25)}
-.upload-link-field{position:relative;margin:0!important}
-.upload-link-field .upload-link-icon{position:absolute;z-index:1;left:13px;top:50%;transform:translateY(-50%);color:#bda2ff;font-size:18px}
-.upload-form .upload-link-field input{min-height:42px;padding:10px 13px 10px 40px;border-radius:11px}
-.upload-form-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.78fr);gap:14px;margin-top:16px}
-.upload-form-grid .field,.upload-description-row .field{min-width:0;margin-bottom:12px}
-.upload-form .field label,.upload-form .field .label{margin-bottom:6px;font-size:13px}
-.upload-form .field input[type=text],.upload-form .field input[type=url],.upload-form .field textarea,.upload-form .field select{min-height:39px;padding:9px 11px;border-radius:9px;font-size:12px}
-.upload-form .field textarea{min-height:62px;resize:vertical}
-.upload-form .field .hint{font-size:10px;margin-top:4px}
-.required-mark{color:#ff758f}
-.upload-description-row{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:14px;align-items:start}
-.upload-type-summary{padding-top:0}
-.upload-type-chip{display:inline-flex;align-items:center;min-height:37px;padding:0 12px;border:1px solid rgba(139,92,246,.3);border-radius:9px;background:rgba(139,92,246,.1);color:#d9c8ff;font-size:12px}
-.upload-form .submit-btn{display:block;width:100%;min-height:47px;margin-top:5px;border-radius:12px;font-size:15px}
-.upload-form .upload-clear-btn{width:auto;min-height:34px;margin:10px auto 0;padding:6px 12px;background:transparent!important;box-shadow:none!important;color:#aaa3c1;font-size:11px;font-weight:600}
-.upload-form .upload-clear-btn:hover{color:#fff;text-decoration:underline}
-.upload-form .posting-as{display:block;margin:10px 0 0;text-align:center;font-size:11px}
-.upload-side{display:grid;gap:13px}
-.upload-side-card{margin:0;padding:14px;border:1px solid rgba(105,100,154,.25);border-radius:15px;background:linear-gradient(155deg,rgba(20,19,43,.98),rgba(12,11,27,.98));box-shadow:0 10px 28px -24px rgba(0,0,0,.8)}
-.upload-live-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 8px;padding:0 0 9px;border-bottom:1px solid rgba(139,92,246,.18)}
-.upload-live-head h2,.upload-tips h2{display:flex;align-items:center;gap:8px;margin:0;color:#f1efff;font-size:15px;font-weight:750}
-.upload-live-head>a{color:#b44aff;font-size:11px;text-decoration:none}
-.upload-live-indicator{width:9px;height:9px;border-radius:50%;background:#ff3157;box-shadow:0 0 10px rgba(255,49,87,.6)}
-.upload-live-grid{display:grid;gap:0}
-.upload-live-card{display:grid;grid-template-columns:82px minmax(0,1fr);align-items:center;gap:10px;padding:7px 0;border:0;border-bottom:1px solid rgba(130,123,176,.12);border-radius:0;background:transparent}
-.upload-live-card:last-child{border-bottom:0}
-.upload-live-thumb{aspect-ratio:16/10;border-radius:8px}
-.upload-live-status{left:auto;right:4px;bottom:4px;padding:3px 5px;font-size:8px}
-.upload-live-copy{min-width:0;padding:0}
-.upload-live-copy strong{color:#eeeafa;font-size:11px}
-.upload-live-copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
-.upload-tips h2>span{color:#ffd74c;font-size:20px}
-.upload-tips ul{display:grid;gap:8px;margin:10px 0 0;padding:0;list-style:none}
-.upload-tips li{position:relative;padding-left:22px;color:#c5bfd9;font-size:11px;line-height:1.4}
-.upload-tips li::before{content:"✓";position:absolute;left:0;top:0;display:grid;place-items:center;width:15px;height:15px;border-radius:50%;background:#00c98b;color:#fff;font-size:10px;font-weight:900}
-.upload-premium-card{position:relative;min-height:104px;overflow:hidden;padding:14px;border:1px solid rgba(151,49,255,.4);border-radius:15px;background:radial-gradient(circle at 90% 90%,rgba(145,34,255,.5),transparent 44%),linear-gradient(125deg,#22104e,#4b0ab4 70%,#6b13db);color:#fff}
-.upload-premium-card h2{margin:0 0 4px;font-size:15px}
-.upload-premium-card p{max-width:75%;margin:0 0 10px;color:#e3d8fb;font-size:11px;line-height:1.4}
-.upload-premium-card>a{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:8px;background:#781cff;color:#fff;font-size:10px;font-weight:750;text-decoration:none}
-.upload-premium-rocket{position:absolute;right:12px;bottom:16px;font-size:42px;transform:rotate(-14deg);filter:drop-shadow(0 3px 8px rgba(0,0,0,.25))}
-.upload-wrap .notice{font-size:12px}
-.upload-wrap .upload-draft-status{margin:0 0 12px;padding:8px 10px;border-radius:9px;font-size:10px;line-height:1.4;box-shadow:none}
-.upload-wrap .notice code,.upload-wrap .notice pre{overflow-wrap:anywhere}
-html:not([data-theme="light"]) body .upload-form{background:linear-gradient(155deg,rgba(20,19,43,.98),rgba(12,11,27,.98));border-color:rgba(105,100,154,.25);box-shadow:0 10px 28px -24px rgba(0,0,0,.8)}
-html:not([data-theme="light"]) body .upload-type-tabs{background:rgba(10,11,27,.6);border:1px solid rgba(105,100,154,.25)}
-html:not([data-theme="light"]) body .upload-type-tabs input:checked+label{background:linear-gradient(105deg,#8318ee,#4a39f5);box-shadow:0 5px 16px rgba(119,28,239,.3);color:#fff}
-html:not([data-theme="light"]) body .upload-form .field input[type=text],html:not([data-theme="light"]) body .upload-form .field input[type=url],html:not([data-theme="light"]) body .upload-form .field textarea,html:not([data-theme="light"]) body .upload-form .field select{background:rgba(13,14,34,.9);border-color:rgba(139,92,246,.32);color:#eeeafa}
-html:not([data-theme="light"]) body .upload-side-card{background:linear-gradient(155deg,rgba(20,19,43,.98),rgba(12,11,27,.98));border-color:rgba(105,100,154,.25)}
-html[data-theme="light"] body .upload-heading h1{color:#211737}
-html[data-theme="light"] body .upload-wrap .sub{color:#656079}
-html[data-theme="light"] body .upload-heading-note,html[data-theme="light"] body .upload-side-card,html[data-theme="light"] body .upload-form{background:linear-gradient(155deg,#fff,#faf9ff);border-color:rgba(110,77,160,.2);box-shadow:0 10px 28px -24px rgba(49,25,91,.38)}
-html[data-theme="light"] body .upload-heading-note,html[data-theme="light"] body .upload-heading-note strong,html[data-theme="light"] body .upload-live-head h2,html[data-theme="light"] body .upload-tips h2,html[data-theme="light"] body .upload-live-copy strong{color:#211737}
-html[data-theme="light"] body .upload-type-tabs{background:#f5f1ff;border:1px solid rgba(110,77,160,.2)}
-html[data-theme="light"] body .upload-type-tabs input:checked+label{background:linear-gradient(105deg,#8318ee,#4a39f5);box-shadow:0 5px 16px rgba(119,28,239,.24);color:#fff}
-html[data-theme="light"] body .upload-form .field input[type=text],html[data-theme="light"] body .upload-form .field input[type=url],html[data-theme="light"] body .upload-form .field textarea,html[data-theme="light"] body .upload-form .field select{background:#fff;border-color:rgba(110,77,160,.27);color:#211737}
-html[data-theme="light"] body .upload-dropzone{background:radial-gradient(ellipse at 50% 110%,rgba(113,44,221,.09),transparent 60%),#faf8ff}
-html[data-theme="light"] body .upload-dropzone strong{color:#211737}
-html[data-theme="light"] body .upload-dropzone>span,html[data-theme="light"] body .upload-dropzone small,html[data-theme="light"] body .upload-tips li,html[data-theme="light"] body .upload-live-copy span{color:#656079}
-html[data-theme="light"] body .upload-type-chip{color:#55329a}
-html[data-theme="light"] body .upload-form .upload-clear-btn{color:#656079}
-@media(max-width:900px){.upload-layout{grid-template-columns:minmax(0,1fr) minmax(240px,.72fr);gap:12px}.upload-heading-note{display:none}.upload-form{padding:15px}}
-@media(max-width:720px){.upload-layout{grid-template-columns:1fr}.upload-side{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.upload-live-section{grid-column:1/-1}.upload-premium-card{min-height:100%}}
-@media(max-width:520px){.upload-heading{gap:12px;margin-bottom:14px}.upload-heading-icon{flex-basis:58px;width:58px;height:56px;border-radius:18px}.upload-heading-icon svg{width:34px;height:34px}.upload-heading h1{font-size:28px}.upload-wrap .sub{font-size:12px}.upload-side{grid-template-columns:1fr}.upload-live-section{grid-column:auto}.upload-form-grid{grid-template-columns:1fr;gap:0}.upload-description-row{grid-template-columns:minmax(0,1fr) 82px;gap:8px}.upload-type-tabs label{padding:7px 5px;font-size:12px}.upload-dropzone{min-height:130px}}
-@media(prefers-reduced-motion:reduce){.upload-dropzone,.upload-type-tabs label,.upload-form .submit-btn{transition:none!important}}
+html:not([data-theme="light"]) body .up-card,html:not([data-theme="light"]) body .upload-side-card{border-color:rgba(138,92,255,.5);box-shadow:0 0 30px -10px rgba(138,92,255,.55)}
 
 CSS;
 
 vs_page_start('Upload', 'upload', $extraCss);
 ?>
-<div class="page">
+<div class="page upload-page">
     <div class="upload-wrap">
         <header class="upload-heading">
-            <span class="upload-heading-icon" aria-hidden="true">
-                <svg viewBox="0 0 48 48" fill="none"><path d="M24 33V10m0 0L14 20m10-10 10 10M10 31v6a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4v-6" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </span>
+            <span class="upload-heading-icon" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 46h-1a11 11 0 0 1-1.6-21.9A15 15 0 0 1 46.6 22 12 12 0 0 1 46 46h-2"/><path d="M32 52V30m0 0-8 8m8-8 8 8"/></svg></span>
             <div>
-                <h1>Upload <span id="uploadHeadingType"><?= $old['type'] === 'live' ? 'Live Stream' : ($old['type'] === 'short' ? 'Short' : 'Video') ?></span></h1>
-                <p class="sub">Share your creativity with the VibeStream community.</p>
+                <h1>Upload</h1>
+                <p class="sub">Share your creativity with the world!</p>
             </div>
-            <div class="upload-heading-note">
-                <span aria-hidden="true">▶</span>
-                <span>You can upload:<br><strong>Videos, Shorts &amp; Live Streams</strong></span>
-            </div>
+            <a class="up-premium" href="premium.php">
+                <svg class="crown" viewBox="0 0 64 54" aria-hidden="true"><defs><linearGradient id="crownGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#f29a0d"/></linearGradient></defs><path d="M6 44 2 14l16 14L32 6l14 22L62 14l-4 30z" fill="url(#crownGold)" stroke="#fff3b0" stroke-width="1.5" stroke-linejoin="round"/><rect x="8" y="46" width="48" height="7" rx="2.5" fill="url(#crownGold)"/><circle cx="2" cy="14" r="3" fill="#ffe27a"/><circle cx="32" cy="6" r="3.5" fill="#ffe27a"/><circle cx="62" cy="14" r="3" fill="#ffe27a"/></svg>
+                <span class="t"><strong>Go Premium</strong><span>Get more features, grow faster!</span></span>
+                <span class="go">Upgrade Now <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></span>
+            </a>
         </header>
-        <div class="upload-layout">
-        <section class="upload-main" aria-label="Upload content">
         <?php if ($flash): ?>
             <div class="notice ok" id="uploadSuccess">
                 <strong>Uploaded:</strong> <?= htmlspecialchars($flash['title']) ?>.
@@ -712,120 +702,149 @@ vs_page_start('Upload', 'upload', $extraCss);
             </div>
         <?php endif; ?>
 
-        <form class="card upload-form" method="post" enctype="multipart/form-data" id="uploadForm" autocomplete="off">
+        <form class="upload-form" method="post" enctype="multipart/form-data" id="uploadForm" autocomplete="off">
             <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['csrf']) ?>">
-
-            <div class="field">
-                <span class="label upload-type-label">What are you uploading?</span>
-                <div class="seg upload-type-tabs" role="radiogroup" aria-label="Upload type">
+            <div class="upload-layout">
+            <section class="up-card upload-main" aria-label="Upload content">
+                <h2 class="up-title">Video Type</h2>
+                <div class="up-pills" role="radiogroup" aria-label="Upload type">
                     <input type="radio" name="type" id="typeVideo" value="video"<?= $old['type'] === 'video' ? ' checked' : '' ?>>
-                    <label for="typeVideo">Video</label>
+                    <label for="typeVideo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12.5-7.5z"/></svg>Video</label>
                     <input type="radio" name="type" id="typeShort" value="short"<?= $old['type'] === 'short' ? ' checked' : '' ?>>
-                    <label for="typeShort">Shorts</label>
+                    <label for="typeShort"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 2 4.5 14H10l-1 8 9.5-12.5H13z"/></svg>Short</label>
                     <input type="radio" name="type" id="typeLive" value="live"<?= $old['type'] === 'live' ? ' checked' : '' ?>>
-                    <label for="typeLive">Live Stream</label>
+                    <label for="typeLive"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8 8a5.7 5.7 0 0 0 0 8m8-8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14"/></svg>Live</label>
                 </div>
-            </div>
 
-            <div class="upload-source-layout">
-                <div class="field upload-source-toggle">
-                    <span class="label">Video source</span>
-                    <div class="seg" role="radiogroup" aria-label="Video source">
-                        <input type="radio" name="mode" id="modeLink" value="link"<?= $old['mode'] === 'link' ? ' checked' : '' ?>>
-                        <label for="modeLink">Paste a link</label>
-                        <input type="radio" name="mode" id="modeFile" value="file"<?= $old['mode'] === 'file' ? ' checked' : '' ?>>
-                        <label for="modeFile">Upload a file</label>
+                <div class="up-field">
+                    <label class="up-label" for="title">Title <span class="required-mark">*</span></label>
+                    <input class="up-input" type="text" id="title" name="title" maxlength="150" required value="<?= htmlspecialchars($old['title']) ?>" placeholder="Enter an awesome title...">
+                    <div class="up-count"><span id="titleCount">0</span> / 150</div>
+                </div>
+                <div class="up-field" id="descriptionField">
+                    <label class="up-label" for="description">Description</label>
+                    <textarea class="up-textarea" id="description" name="description" maxlength="2000" rows="3" placeholder="Tell viewers about your video..."><?= htmlspecialchars($old['description']) ?></textarea>
+                    <div class="up-count"><span id="descCount">0</span> / 2000</div>
+                </div>
+
+                <div class="up-grid">
+                    <div id="modeField">
+                        <span class="up-label">Upload Mode</span>
+                        <div class="up-pills wide" role="radiogroup" aria-label="Video source">
+                            <input type="radio" name="mode" id="modeFile" value="file"<?= $old['mode'] === 'file' ? ' checked' : '' ?>>
+                            <label for="modeFile"><svg viewBox="0 0 48 48" fill="none"><path d="M24 32V10m0 0L14 20m10-10 10 10M9 31v7a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3v-7" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Upload File</label>
+                            <input type="radio" name="mode" id="modeLink" value="link"<?= $old['mode'] === 'link' ? ' checked' : '' ?>>
+                            <label for="modeLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>Add Link</label>
+                        </div>
+                    </div>
+                    <?php if ($showCategory): ?>
+                    <div id="categoryField">
+                        <label class="up-label" for="category">Category</label>
+                        <div class="up-ic up-sel">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z"/></svg>
+                            <select class="up-select" id="category" name="category" required>
+                                <option value="">Select a category</option>
+                                <?php foreach ($categoryChoices as $choice): $cv = strtolower(trim((string)$choice)); ?>
+                                    <option value="<?= htmlspecialchars($cv) ?>"<?= $old['category'] === $cv ? ' selected' : '' ?>><?= htmlspecialchars($choice) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <?php else: ?><div id="categoryField"></div><?php endif; ?>
+
+                    <div id="fileField">
+                        <label class="upload-dropzone" for="video_file">
+                            <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M13 35h-1a8 8 0 0 1-1.2-15.9A11 11 0 0 1 32.4 17 9 9 0 0 1 35 35h-1" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 40V24m0 0-6 6m6-6 6 6" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <strong id="uploadFilePrompt">Drag &amp; Drop your video here</strong>
+                            <span>or click to browse</span>
+                            <small>Supported formats: MP4, WebM, MOV &middot; Max size: <?= htmlspecialchars(vs_format_bytes($maxBytes), ENT_QUOTES, 'UTF-8') ?></small>
+                            <input type="file" id="video_file" name="video_file" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.ogg,.ogv,.m4v,.mov">
+                        </label>
+                    </div>
+                    <div id="linkField">
+                        <label class="up-label" for="video_url">Video URL</label>
+                        <div class="up-ic">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>
+                            <input class="up-input" type="text" id="video_url" name="video_url" placeholder="Paste a YouTube link or a direct video link..." value="<?= htmlspecialchars($old['video_url']) ?>">
+                        </div>
+                    </div>
+
+                    <div class="up-span" id="liveFields"<?= $old['type'] === 'live' ? '' : ' hidden' ?>>
+                        <div class="up-livebox">
+                            <label class="up-label" for="stream_url">Stream or YouTube Live link</label>
+                            <input class="up-input" type="url" id="stream_url" name="stream_url" placeholder="https://www.youtube.com/live/..." value="<?= htmlspecialchars($old['stream_url']) ?>">
+                            <label class="up-label" for="thumbnail_url">Thumbnail URL <small>(Optional)</small></label>
+                            <input class="up-input" type="url" id="thumbnail_url" name="thumbnail_url" placeholder="Or upload a thumbnail below" value="<?= htmlspecialchars($old['thumbnail_url']) ?>">
+                            <div class="up-hint" id="urlTypeHint">Add a YouTube Live, HLS, MP4, WebM, or embed URL.</div>
+                            <div class="up-hint">Leave Scheduled Publish empty to go live right away.</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <span class="up-label">Thumbnail <small>(Optional)</small></span>
+                        <div class="up-thumb">
+                            <label class="up-thumb-box" for="thumbnail_file">
+                                <svg id="thumbPlaceholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 16 5-5 5 5 3-3 5 5"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>
+                                <img id="thumbPreview" alt="" hidden>
+                            </label>
+                            <label class="up-ghost" for="thumbnail_file"><span id="thumbBtnText">Choose Thumbnail</span></label>
+                            <span class="up-filename" id="thumbName">No file chosen</span>
+                            <input class="up-hide" type="file" id="thumbnail_file" name="thumbnail_file" accept="image/jpeg,image/png,image/webp,image/gif">
+                        </div>
+                    </div>
+                    <div class="up-sched">
+                        <label class="up-label" for="scheduled_at"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/></svg>Scheduled Publish <small>(Optional)</small></label>
+                        <input class="up-input" type="datetime-local" id="scheduled_at" name="scheduled_at" value="<?= htmlspecialchars($old['scheduled_at']) ?>">
                     </div>
                 </div>
 
-                <div class="field upload-drop-field" id="fileField">
-                    <label class="upload-dropzone" for="video_file">
-                        <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 32V10m0 0L14 20m10-10 10 10M9 31v7a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3v-7" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        <strong id="uploadFilePrompt">Drag &amp; drop your video here</strong>
-                        <span>or click to browse</span>
-                        <small>MP4, MOV, WebM · Max size: <?= htmlspecialchars(vs_format_bytes($maxBytes), ENT_QUOTES, 'UTF-8') ?></small>
-                        <input type="file" id="video_file" name="video_file" accept="video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.webm,.ogg,.ogv,.m4v,.mov">
-                    </label>
-                </div>
-
-                <div class="upload-or" aria-hidden="true"><span>OR</span></div>
-                <div class="field upload-link-field" id="linkField">
-                    <label class="visually-hidden" for="video_url">Video link</label>
-                    <span class="upload-link-icon" aria-hidden="true">↗</span>
-                    <input type="text" id="video_url" name="video_url" placeholder="Paste a YouTube or video link..." value="<?= htmlspecialchars($old['video_url']) ?>">
-                </div>
-            </div>
-
-            <div class="upload-form-grid">
-                <div class="field">
-                    <label for="title">Title <span class="required-mark">*</span></label>
-                    <input type="text" id="title" name="title" maxlength="150" required value="<?= htmlspecialchars($old['title']) ?>" placeholder="Enter a catchy title...">
-                    <div class="hint">Up to 150 characters</div>
-                </div>
-                <?php if ($showCategory): ?>
-                    <div class="field">
-                        <label for="category">Category</label>
-                        <select id="category" name="category" required>
-                            <option value="">Select category</option>
-                            <?php foreach ($categoryChoices as $choice): $cv = strtolower(trim((string)$choice)); ?>
-                                <option value="<?= htmlspecialchars($cv) ?>"<?= $old['category'] === $cv ? ' selected' : '' ?>><?= htmlspecialchars($choice) ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                <div class="upload-actions">
+                    <button type="submit" class="up-submit" id="submitBtn"<?= ($srcCol === null || !$uploadsOn) ? ' disabled' : '' ?>><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 2.4a1 1 0 0 0-1.05-.2L2.7 9.6a1 1 0 0 0 .08 1.9l6.1 2 2 6.1a1 1 0 0 0 1.9.08l7.4-17.8a1 1 0 0 0-.58-1.48zM10.2 12.4l7.1-4.9-5 6.3z"/></svg><span id="submitLabel">Publish</span></button>
+                    <div class="notice upload-draft-status" id="draftStatus" role="status" aria-live="polite">Unfinished details save in this browser. You may need to reselect a video file if browser storage is unavailable.</div>
+                    <div class="up-meta">
+                        <button type="button" class="up-clear" id="clearDraftBtn">Clear saved draft</button>
+                        <?php if ($username !== ''): ?>
+                            <span>Posting as @<?= htmlspecialchars($username) ?></span>
+                        <?php else: ?>
+                            <span><a href="login.php">Sign in</a> so this upload shows on your profile.</span>
+                        <?php endif; ?>
                     </div>
-                <?php endif; ?>
-            </div>
-            <div class="upload-description-row">
-                <div class="field" id="descriptionField">
-                    <label for="description">Description</label>
-                    <textarea id="description" name="description" maxlength="2000" rows="3" placeholder="Tell viewers about your video..."><?= htmlspecialchars($old['description']) ?></textarea>
-                    <div class="hint">Up to 2,000 characters</div>
                 </div>
-                <div class="field upload-type-summary">
-                    <span class="label">Type</span>
-                    <span class="upload-type-chip" id="uploadTypeChip">Video</span>
-                </div>
-            </div>
+            </section>
 
-            <div class="field" id="liveFields"<?= $old['type'] === 'live' ? '' : ' hidden' ?>>
-                <span class="label">Live status</span>
-                <div class="seg" role="radiogroup" aria-label="Live status">
-                    <input type="radio" name="live_status" id="liveNow" value="live"<?= $old['live_status'] !== 'scheduled' ? ' checked' : '' ?>>
-                    <label for="liveNow">Go live</label>
-                    <input type="radio" name="live_status" id="liveScheduled" value="scheduled"<?= $old['live_status'] === 'scheduled' ? ' checked' : '' ?>>
-                    <label for="liveScheduled">Schedule</label>
-                </div>
-                <div class="field" style="margin-top:14px;margin-bottom:14px">
-                    <label for="stream_url">Stream or YouTube Live link</label>
-                    <input type="url" id="stream_url" name="stream_url" placeholder="https://www.youtube.com/live/..." value="<?= htmlspecialchars($old['stream_url']) ?>">
-                </div>
-                <div class="field" style="margin-bottom:14px">
-                    <label for="thumbnail_url">Thumbnail URL</label>
-                    <input type="url" id="thumbnail_url" name="thumbnail_url" placeholder="Optional image URL" value="<?= htmlspecialchars($old['thumbnail_url']) ?>">
-                </div>
-                <div class="field" id="scheduledField"<?= $old['live_status'] === 'scheduled' ? '' : ' hidden' ?>>
-                    <label for="scheduled_at">Scheduled date and time</label>
-                    <input type="datetime-local" id="scheduled_at" name="scheduled_at" value="<?= htmlspecialchars($old['scheduled_at']) ?>">
-                </div>
-                <div class="hint" id="urlTypeHint">Add a YouTube Live, HLS, MP4, WebM, or embed URL.</div>
-            </div>
-
-            <div class="notice upload-draft-status" id="draftStatus" role="status" aria-live="polite">Unfinished details save in this browser. You may need to reselect a video file if browser storage is unavailable.</div>
-            <div>
-                <button type="submit" class="submit-btn" id="submitBtn"<?= ($srcCol === null || !$uploadsOn) ? ' disabled' : '' ?>>Upload</button>
-                <button type="button" class="submit-btn upload-clear-btn" id="clearDraftBtn">Clear saved draft</button>
-                <?php if ($username !== ''): ?>
-                    <span class="posting-as">Posting as @<?= htmlspecialchars($username) ?></span>
-                <?php else: ?>
-                    <span class="posting-as"><a href="login.php">Sign in</a> so this upload shows on your profile.</span>
-                <?php endif; ?>
-            </div>
-        </form>
-        </section>
-        <aside class="upload-side" aria-label="Upload resources">
+            <aside class="upload-side" aria-label="Upload resources">
+                <section class="upload-side-card up-live">
+                    <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8 8a5.7 5.7 0 0 0 0 8m8-8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14"/></svg>Go Live</h2>
+                    <svg class="up-scene" viewBox="0 0 320 150" aria-hidden="true">
+                        <defs><linearGradient id="sceneBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3a1a8c"/><stop offset="1" stop-color="#0b1a52"/></linearGradient></defs>
+                        <rect width="320" height="150" rx="12" fill="url(#sceneBg)"/>
+                        <path d="M246 24l62-12M258 42l52-6" stroke="#ff2e93" stroke-width="3" stroke-linecap="round" opacity=".85"/>
+                        <rect x="100" y="42" width="130" height="78" rx="8" fill="#101a46" stroke="#00e5ff" stroke-width="2"/>
+                        <path d="M150 62l32 18-32 18z" fill="#6d9cff"/>
+                        <rect x="150" y="28" width="46" height="20" rx="5" fill="#e5173f"/>
+                        <text x="173" y="43" text-anchor="middle" font-size="13" font-weight="800" fill="#fff" font-family="Arial,sans-serif">LIVE</text>
+                        <rect x="160" y="120" width="26" height="8" fill="#1a2260"/><rect x="146" y="128" width="54" height="5" rx="2" fill="#1a2260"/>
+                        <rect x="22" y="58" width="52" height="30" rx="5" fill="#1b1f3c" stroke="#8a5cff" stroke-width="2"/><circle cx="82" cy="73" r="10" fill="#0b0f26" stroke="#00e5ff" stroke-width="2"/>
+                        <path d="M48 88l-14 44M48 88l14 44M48 88v44" stroke="#8a5cff" stroke-width="3" stroke-linecap="round"/>
+                        <circle cx="268" cy="72" r="16" fill="#241a5c"/><path d="M242 132c0-22 12-36 26-36s26 14 26 36z" fill="#241a5c"/><path d="M254 66a14 14 0 0 1 28 0" stroke="#00e5ff" stroke-width="4" fill="none" stroke-linecap="round"/>
+                    </svg>
+                    <p>Start a live stream and connect with your audience!</p>
+                    <button type="button" class="up-golive" id="goLiveBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8 8a5.7 5.7 0 0 0 0 8m8-8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14"/></svg>Go Live</button>
+                </section>
+                <section class="upload-side-card up-tips">
+                    <h2><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2zm-3 17h6v2H9z"/></svg>Upload Tips</h2>
+                    <ul>
+                        <li>Use a catchy title</li>
+                        <li>Add a detailed description</li>
+                        <li>Choose the right category</li>
+                        <li>Use a thumbnail</li>
+                        <li>Follow our community guidelines</li>
+                    </ul>
+                </section>
             <section class="upload-live-section upload-side-card" id="uploadLiveSection" aria-label="Live streams"<?= empty($uploadLiveStreams) ? ' style="display:none"' : '' ?>>
                 <div class="upload-live-head">
-                    <h2><i class="upload-live-indicator"></i>Live Streams</h2>
-                    <a href="live.php">View All <span aria-hidden="true">→</span></a>
+                    <h2><i class="upload-live-indicator"></i>Live now</h2>
+                    <a href="live.php">See all <span aria-hidden="true">→</span></a>
                 </div>
                 <div class="upload-live-grid">
                     <?php foreach (array_slice($uploadLiveStreams, 0, 4) as $uploadLive):
@@ -849,23 +868,9 @@ vs_page_start('Upload', 'upload', $extraCss);
                     <?php endforeach; ?>
                 </div>
             </section>
-            <section class="upload-side-card upload-tips">
-                <h2><span aria-hidden="true">✦</span>Upload Tips</h2>
-                <ul>
-                    <li>Use MP4, MOV or WebM for best compatibility</li>
-                    <li>Add a catchy title and description</li>
-                    <li>Choose the right category</li>
-                    <li>Add a clear thumbnail to scheduled streams</li>
-                </ul>
-            </section>
-            <section class="upload-premium-card">
-                <span class="upload-premium-rocket" aria-hidden="true">🚀</span>
-                <h2>Go Premium</h2>
-                <p>Get larger uploads, advanced analytics and more.</p>
-                <a href="premium.php">Upgrade Now <span aria-hidden="true">→</span></a>
-            </section>
-        </aside>
-        </div>
+            </aside>
+            </div>
+        </form>
     </div>
 </div>
 <?php
@@ -937,19 +942,26 @@ $extraJs = <<<'JS'
 })();
 
 document.addEventListener('DOMContentLoaded', function () {
-    var linkField = document.getElementById('linkField');
-    var fileField = document.getElementById('fileField');
     var liveFields = document.getElementById('liveFields');
-    var scheduledField = document.getElementById('scheduledField');
     var modes = document.querySelectorAll('input[name="mode"]');
     function syncMode() {
-        var type = form ? form.querySelector('input[name="type"]:checked')?.value : 'short';
+        var type = form ? form.querySelector('input[name="type"]:checked')?.value : 'video';
         var isLive = type === 'live';
-        linkField.hidden = isLive;
-        fileField.hidden = isLive;
+        var modeValue = form ? (form.querySelector('input[name="mode"]:checked')?.value || 'file') : 'file';
+        // live: only the live fields; otherwise show the file box OR the link box, depending on the chosen mode
+        var visible = {
+            modeField: !isLive,
+            categoryField: !isLive,
+            fileField: !isLive && modeValue === 'file',
+            linkField: !isLive && modeValue === 'link'
+        };
+        Object.keys(visible).forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.hidden = !visible[id];
+        });
         liveFields.hidden = !isLive;
-        var liveScheduled = document.getElementById('liveScheduled');
-        scheduledField.hidden = !liveScheduled || !liveScheduled.checked;
+        var cat = document.getElementById('category');
+        if (cat) cat.required = !isLive;
     }
     modes.forEach(function (m) { m.addEventListener('change', syncMode); });
     document.querySelectorAll('input[name="type"]').forEach(function (radio) { radio.addEventListener('change', syncMode); });
@@ -957,6 +969,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var form = document.getElementById('uploadForm');
     var btn = document.getElementById('submitBtn');
+    var submitLabel = document.getElementById('submitLabel') || btn;
     var fileInput = document.getElementById('video_file');
     var filePrompt = document.getElementById('uploadFilePrompt');
     var typeHeading = document.getElementById('uploadHeadingType');
@@ -975,7 +988,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var label = type === 'short' ? 'Shorts' : (type === 'live' ? 'Live Stream' : 'Video');
         if (typeHeading) typeHeading.textContent = label;
         if (typeChip) typeChip.textContent = label;
-        btn.textContent = 'Upload ' + (type === 'short' ? 'Short' : (type === 'live' ? 'Live Stream' : 'Video'));
+        submitLabel.textContent = 'Publish';
         syncMode();
     }
     document.querySelectorAll('input[name="type"]').forEach(function (radio) { radio.addEventListener('change', syncUploadType); });
@@ -985,10 +998,11 @@ document.addEventListener('DOMContentLoaded', function () {
     function setUploadMode(mode) {
         var radio = document.getElementById(mode === 'file' ? 'modeFile' : 'modeLink');
         if (radio) radio.checked = true;
+        syncMode();
     }
     fileInput.addEventListener('change', function () {
         setUploadMode('file');
-        filePrompt.textContent = fileInput.files && fileInput.files[0] ? fileInput.files[0].name : 'Drag & drop your video here';
+        filePrompt.textContent = fileInput.files && fileInput.files[0] ? fileInput.files[0].name : 'Drag & Drop your video here';
         scheduleSave();
     });
     urlInput.addEventListener('focus', function () { setUploadMode('link'); });
@@ -1172,7 +1186,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     lastModified: record.lastModified || Date.now()
                 }));
                 fileInput.files = transfer.files;
-                filePrompt.textContent = record.name || 'Drag & drop your video here';
+                filePrompt.textContent = record.name || 'Drag & Drop your video here';
                 setStatus('Draft details and selected video file restored.');
             }).catch(function () {
                 setStatus('Draft details restored, but the video file is unavailable. Select it again to retry.', true);
@@ -1220,11 +1234,48 @@ document.addEventListener('DOMContentLoaded', function () {
         event.preventDefault();
         submitting = true;
         btn.disabled = true;
-        btn.textContent = 'Uploading...';
+        submitLabel.textContent = 'Publishing...';
         window.clearTimeout(saveTimer);
         saveDraft().finally(function () {
             form.submit();
         });
+    });
+
+    var titleInput = document.getElementById('title');
+    var descInput = document.getElementById('description');
+    function updateCounts() {
+        document.getElementById('titleCount').textContent = titleInput.value.length;
+        document.getElementById('descCount').textContent = descInput.value.length;
+    }
+    titleInput.addEventListener('input', updateCounts);
+    descInput.addEventListener('input', updateCounts);
+    updateCounts();
+
+    var thumbInput = document.getElementById('thumbnail_file');
+    var thumbImg = document.getElementById('thumbPreview');
+    var thumbPh = document.getElementById('thumbPlaceholder');
+    var thumbText = document.getElementById('thumbBtnText');
+    var thumbName = document.getElementById('thumbName');
+    var thumbUrl = null;
+    thumbInput.addEventListener('change', function () {
+        if (thumbUrl) { URL.revokeObjectURL(thumbUrl); thumbUrl = null; }
+        var f = thumbInput.files && thumbInput.files[0];
+        var ok = f && /^image\//.test(f.type);
+        if (!ok) thumbInput.value = '';
+        if (ok) { thumbUrl = URL.createObjectURL(f); thumbImg.src = thumbUrl; }
+        thumbImg.hidden = !ok;
+        thumbPh.style.display = ok ? 'none' : '';
+        thumbText.textContent = ok ? 'Change Thumbnail' : 'Choose Thumbnail';
+        if (thumbName) thumbName.textContent = ok ? f.name : 'No file chosen';
+    });
+
+    document.getElementById('modeLink').addEventListener('change', function () { if (this.checked) urlInput.focus(); });
+    document.getElementById('goLiveBtn').addEventListener('click', function () {
+        var radio = document.getElementById('typeLive');
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change', {bubbles: true}));
+        window.scrollTo({top: 0, behavior: 'smooth'});
+        titleInput.focus({preventScroll: true});
     });
 });
 JS;

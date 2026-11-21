@@ -18,6 +18,8 @@ $overviewAdmin = trim((string)($_SESSION['username'] ?? $_SESSION['AdminSession'
 $dashboardOverview = [
     'owner' => $overviewIsOwner,
     'reports' => null,
+    'scheduledVideos' => null,
+    'systemCheck' => null,
     'premium' => null,
     'failedLogins' => null,
     'payroll' => null,
@@ -42,6 +44,53 @@ if (isset($pdo) && $pdo instanceof PDO) {
         }
     } elseif (vs_admin_route_allowed('reported.php')) {
         error_log('Dashboard overview could not load reports: report helpers are missing.');
+    }
+
+    if (vs_admin_route_allowed('videos.php')) {
+        try {
+            $videoColumns = vs_cols($pdo, 'videos');
+            $scheduledAtColumn = $videoColumns ? vs_pick($videoColumns, ['scheduled_at']) : null;
+            if ($scheduledAtColumn) {
+                $scheduledStmt = $pdo->prepare(
+                    'SELECT COUNT(*) FROM `videos` WHERE ' . vs_q($scheduledAtColumn) . ' > :now'
+                );
+                $scheduledStmt->execute([':now' => date('Y-m-d H:i:s')]);
+                $dashboardOverview['scheduledVideos'] = (int)$scheduledStmt->fetchColumn();
+            }
+        } catch (Throwable $error) {
+            error_log('Dashboard overview could not load scheduled videos: ' . $error->getMessage());
+        }
+    }
+
+    if ($overviewIsOwner && function_exists('vs_syscheck_state')) {
+        try {
+            $systemState = vs_syscheck_state();
+            $systemProblems = (array)($systemState['bad'] ?? []);
+            $systemLastRun = (int)($systemState['last_run'] ?? 0);
+            if ($systemProblems) {
+                $dashboardOverview['systemCheck'] = [
+                    'tone' => 'warning',
+                    'message' => count($systemProblems) . (count($systemProblems) === 1 ? ' problem found' : ' problems found'),
+                ];
+            } elseif ($systemLastRun === 0) {
+                $dashboardOverview['systemCheck'] = [
+                    'tone' => 'warning',
+                    'message' => 'System check has not run yet',
+                ];
+            } elseif ((time() - $systemLastRun) > 86400) {
+                $dashboardOverview['systemCheck'] = [
+                    'tone' => 'warning',
+                    'message' => 'System check is over a day old',
+                ];
+            } else {
+                $dashboardOverview['systemCheck'] = [
+                    'tone' => 'ok',
+                    'message' => 'No current system warnings',
+                ];
+            }
+        } catch (Throwable $error) {
+            error_log('Dashboard overview could not load system-check status: ' . $error->getMessage());
+        }
     }
 
     if (vs_admin_route_allowed('premium.php')) {

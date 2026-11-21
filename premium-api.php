@@ -70,13 +70,23 @@ if (!hash_equals((string)($_SESSION['premium_csrf'] ?? ''), (string)($in['csrf']
 try {
     vs_premium_ensure($pdo);
     $action = (string)($in['action'] ?? '');
-    if (vs_premium_is_admin($username) && $action !== 'checkin') {
-        // Admins always have Premium: nothing to buy or cancel.
-        vs_json(200, vs_premium_state($pdo, $username));
-    }
-    if ($action === 'checkin') {
+    $backfillUploads = empty($_SESSION['AdminSession']);
+    if ($action === 'activity') {
+        $filterInput = $in['filters'] ?? [];
+        if (!is_array($filterInput)) {
+            vs_json(400, ['error' => 'Invalid activity filters.']);
+        }
+        $filters = vs_rewards_normalize_activity_filters($filterInput);
+        vs_json(200, ['activityPage' => vs_rewards_activity_page($pdo, $username, $filters)]);
+    } elseif ($action === 'state') {
+        // Return the latest server-side Premium state without changing anything.
+    } elseif ($action === 'rewards') {
+        $state = vs_premium_state($pdo, $username, $backfillUploads);
+        $state['rewards'] = vs_rewards_page_data($pdo, $username);
+        vs_json(200, $state);
+    } elseif ($action === 'checkin') {
         $awarded = vs_rewards_claim_daily_checkin($pdo, $username);
-        $state = vs_premium_state($pdo, $username);
+        $state = vs_premium_state($pdo, $username, $backfillUploads);
         $state['checkinAwarded'] = $awarded;
         vs_json(200, $state);
     } elseif ($action === 'request') {
@@ -103,7 +113,9 @@ try {
     } else {
         vs_json(400, ['error' => 'Unknown action.']);
     }
-    vs_json(200, vs_premium_state($pdo, $username));
+    vs_json(200, vs_premium_state($pdo, $username, $backfillUploads));
+} catch (InvalidArgumentException $e) {
+    vs_json(400, ['error' => $e->getMessage()]);
 } catch (Throwable $e) {
     vs_json(500, ['error' => 'Could not save.' . (VS_API_DEBUG ? ' ' . $e->getMessage() : ' Try again.')]);
 }

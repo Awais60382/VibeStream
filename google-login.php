@@ -19,6 +19,12 @@ function gl_out($ok, $data = [], $code = 200)
     exit;
 }
 
+function gl_auth_reject(PDO $pdo, string $ip, string $message, int $code = 401): void
+{
+    vs_auth_record_login_failure($pdo, '', $ip);
+    gl_out(false, ['message' => $message], $code);
+}
+
 set_error_handler(function ($no, $str, $file, $line) {
     throw new ErrorException($str, 0, $no, $file, $line);
 });
@@ -33,9 +39,16 @@ try {
         gl_out(false, ['message' => 'Google sign-in is turned off.'], 403);
     }
 
+    require_once __DIR__ . '/auth-security.php';
+    include __DIR__ . '/connection.php';
+    $loginIp = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    if (vs_auth_login_limited($pdo, '', $loginIp)) {
+        gl_out(false, ['message' => 'Too many sign-in attempts. Please wait a few minutes and try again.'], 429);
+    }
+
     $credential = trim((string)($_POST['credential'] ?? ''));
     if ($credential === '') {
-        gl_out(false, ['message' => 'Missing Google credential.'], 400);
+        gl_auth_reject($pdo, $loginIp, 'Missing Google credential.', 400);
     }
 
     // 1) Ask Google to validate the token (no client secret needed).
@@ -57,25 +70,25 @@ try {
     }
     $claims = json_decode($raw, true);
     if (!is_array($claims) || isset($claims['error']) || empty($claims['email'])) {
-        gl_out(false, ['message' => 'Google could not verify this sign-in.'], 401);
+        gl_auth_reject($pdo, $loginIp, 'Google could not verify this sign-in.');
     }
 
     // 2) Check the claims.
     if (($claims['aud'] ?? '') !== GOOGLE_OAUTH_CLIENT_ID) {
-        gl_out(false, ['message' => 'This token was issued for a different app.'], 401);
+        gl_auth_reject($pdo, $loginIp, 'This token was issued for a different app.');
     }
     if (!in_array($claims['iss'] ?? '', ['accounts.google.com', 'https://accounts.google.com'], true)) {
-        gl_out(false, ['message' => 'Invalid token issuer.'], 401);
+        gl_auth_reject($pdo, $loginIp, 'Invalid token issuer.');
     }
     if ((int)($claims['exp'] ?? 0) < time()) {
-        gl_out(false, ['message' => 'Sign-in expired. Please try again.'], 401);
+        gl_auth_reject($pdo, $loginIp, 'Sign-in expired. Please try again.');
     }
     if (!in_array((string)($claims['email_verified'] ?? ''), ['true', '1'], true)) {
-        gl_out(false, ['message' => 'Your Google email is not verified.'], 401);
+        gl_auth_reject($pdo, $loginIp, 'Your Google email is not verified.');
     }
     $expectedNonce = (string)($_SESSION['google_oauth_nonce'] ?? '');
     if ($expectedNonce === '' || !hash_equals($expectedNonce, (string)($claims['nonce'] ?? ''))) {
-        gl_out(false, ['message' => 'Sign-in session expired. Reload the page and try again.'], 401);
+        gl_auth_reject($pdo, $loginIp, 'Sign-in session expired. Reload the page and try again.');
     }
     unset($_SESSION['google_oauth_nonce']);
 
@@ -83,7 +96,6 @@ try {
     $name  = trim((string)($claims['name'] ?? ''));
 
     // 3) Database.
-    include __DIR__ . '/connection.php'; // gives $conn (mysqli)
     $cols = [];
     $res = $conn->query('SHOW COLUMNS FROM `users`');
     while ($r = $res->fetch_assoc()) {
@@ -145,6 +157,9 @@ try {
     }
 
     // 4) Log in.
+    $googleRole = strtolower(trim((string)($user['role'] ?? 'user')));
+    $isAdmin = preg_match('/(^|[^a-z])(admin|owner|ceo|founder)([^a-z]|$)/i', $googleRole) === 1;
+    vs_auth_clear_login_failures($pdo, (string)$user['username']);
     session_regenerate_id(true);
     $_SESSION['username'] = $user['username'];
     $_SESSION['email']    = $user['email'];
@@ -154,10 +169,7 @@ try {
         $_SESSION['id'] = $user['id'];
     }
 
-    $googleRole = strtolower(trim((string)$_SESSION['role']));
-    $isAdmin = preg_match('/(^|[^a-z])(admin|owner|ceo|founder)([^a-z]|$)/i', $googleRole) === 1;
     if ($isAdmin) {
-        // The admin panel (adminpanel/header.php) only lets you in when these are set.
         $_SESSION['AdminSession'] = $user['username'];
         if (isset($user['id'])) {
             $_SESSION['AdminID'] = $user['id'];

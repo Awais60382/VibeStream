@@ -2,6 +2,16 @@
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/premium-perks.php';
 require_once __DIR__ . '/avatar.php';
+require_once __DIR__ . '/creator-analytics-events.php';
+if (is_file(__DIR__ . '/creator-ui.php')) {
+    require_once __DIR__ . '/creator-ui.php';
+}
+if (is_file(__DIR__ . '/creator-rank.php')) {
+    require_once __DIR__ . '/creator-rank.php';
+}
+if (is_file(__DIR__ . '/creator-confetti.php')) {
+    require_once __DIR__ . '/creator-confetti.php';
+}
 include __DIR__ . '/connection.php';
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -22,13 +32,23 @@ $chartMetrics = [
     'views' => ['label' => 'Views', 'color' => '#f5b942', 'available' => false, 'values' => []],
     'likes' => ['label' => 'Likes', 'color' => '#ef6b8a', 'available' => false, 'values' => []],
     'comments' => ['label' => 'Comments', 'color' => '#60a5fa', 'available' => false, 'values' => []],
-    'subscribers' => ['label' => 'New subscribers', 'color' => '#34d399', 'available' => false, 'values' => []],
+    'subscribers' => ['label' => 'Subscribers', 'color' => '#34d399', 'available' => false, 'values' => []],
 ];
 $videos = [];
-$totals = ['views' => 0, 'likes' => 0, 'comments' => 0, 'video_count' => 0, 'subscribers' => null, 'new_subscribers' => null, 'views_30d' => null, 'live_viewers' => 0];
-$creatorRanking = ['rank' => null, 'total_creators' => 0, 'views' => 0, 'top_three' => false];
+$totals = ['views' => 0, 'likes' => 0, 'comments' => 0, 'video_count' => 0, 'subscribers' => null, 'new_subscribers' => null, 'views_30d' => null, 'live_viewers' => 0, 'watch_time_seconds' => 0, 'shares' => 0];
+$creatorRanking = ['rank' => null, 'total_creators' => 0, 'views' => 0, 'top_three' => false, 'change' => null, 'became_first' => false];
+$span = (int)($_GET['range'] ?? 30);
+if (!in_array($span, [7, 30, 90], true)) {
+    $span = 30;
+}
+$watchByDay = [];
+$sharesByDay = [];
+$eventsDaily = false;
+$rankHistory = [];
 
-for ($offset = 29; $offset >= 0; $offset--) {
+for ($offset = $span - 1; $offset >= 0; $offset--) {
+    $watchByDay[date('Y-m-d', strtotime('-' . $offset . ' days'))] = 0;
+    $sharesByDay[date('Y-m-d', strtotime('-' . $offset . ' days'))] = 0;
     $day = date('Y-m-d', strtotime('-' . $offset . ' days'));
     $days[] = $day;
     $viewsByDay[$day] = 0;
@@ -113,33 +133,16 @@ if ($isPremium) {
         });
         $videos = array_slice($videos, 0, 3);
 
-        if (isset($columns['views'])) {
-            $ownerSqlColumn = '`' . str_replace('`', '``', $ownerColumn) . '`';
-            $viewSqlColumn = '`' . str_replace('`', '``', $columns['views']) . '`';
-            $rankingResult = $conn->query(
-                'SELECT LOWER(TRIM(CAST(' . $ownerSqlColumn . ' AS CHAR))) AS creator_key, '
-                . 'COALESCE(SUM(COALESCE(' . $viewSqlColumn . ', 0)), 0) AS total_views '
-                . 'FROM `videos` WHERE NULLIF(TRIM(CAST(' . $ownerSqlColumn . ' AS CHAR)), \'\') IS NOT NULL '
-                . 'GROUP BY LOWER(TRIM(CAST(' . $ownerSqlColumn . ' AS CHAR))) '
-                . 'ORDER BY total_views DESC, creator_key ASC'
-            );
-            $rankingRows = $rankingResult->fetch_all(MYSQLI_ASSOC);
-            $rankingResult->close();
-            $creatorRanking['total_creators'] = count($rankingRows);
-            $previousViews = null;
-            $competitionRank = 0;
-            foreach ($rankingRows as $index => $rankingRow) {
-                $rankingViews = (int)$rankingRow['total_views'];
-                if ($previousViews === null || $rankingViews !== $previousViews) {
-                    $competitionRank = $index + 1;
-                }
-                $previousViews = $rankingViews;
-                if ((string)$rankingRow['creator_key'] === mb_strtolower($username, 'UTF-8')) {
-                    $creatorRanking['rank'] = $competitionRank;
-                    $creatorRanking['views'] = $rankingViews;
-                    $creatorRanking['top_three'] = $competitionRank <= 3;
-                    break;
-                }
+        if (function_exists('vs_creator_rank_info')) {
+            $rankData = vs_creator_rank_info($conn, $username, (string)($_GET['live'] ?? '') !== '1');
+            $creatorRanking['rank'] = $rankData['rank'];
+            $creatorRanking['total_creators'] = $rankData['total'];
+            $creatorRanking['views'] = $rankData['views'];
+            $creatorRanking['top_three'] = $rankData['rank'] !== null && $rankData['rank'] <= 3;
+            $creatorRanking['change'] = $rankData['change'];
+            $creatorRanking['became_first'] = $rankData['became_first'];
+            if ((string)($_GET['live'] ?? '') !== '1' && function_exists('vs_creator_rank_history')) {
+                $rankHistory = vs_creator_rank_history($conn, $username, $span);
             }
         }
 
@@ -160,7 +163,7 @@ if ($isPremium) {
                 "SELECT DATE(`viewed_at`) AS view_day, COUNT(*) AS total
                  FROM `video_view_events`
                  WHERE LOWER(`creator`) = LOWER(?) AND `content_type` IN ('video', 'short')
-                   AND `viewed_at` >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                   AND `viewed_at` >= DATE_SUB(CURDATE(), INTERVAL " . ($span - 1) . " DAY)
                  GROUP BY DATE(`viewed_at`)"
             );
             $viewStmt->bind_param('s', $username);
@@ -177,6 +180,61 @@ if ($isPremium) {
             $totals['views_30d'] = array_sum($viewsByDay);
         } catch (Throwable $viewError) {
             error_log('Creator daily view events are unavailable: ' . $viewError->getMessage());
+        }
+
+        try {
+            vs_creator_analytics_ensure_events_table($conn);
+            $analyticsStmt = $conn->prepare(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN `event_type` = 'watch_time' THEN `watched_seconds` ELSE 0 END), 0) AS watch_time_seconds,
+                    COALESCE(SUM(CASE WHEN `event_type` = 'share' THEN 1 ELSE 0 END), 0) AS shares
+                 FROM `creator_analytics_events`
+                 WHERE LOWER(`creator`) = LOWER(?)"
+            );
+            $analyticsStmt->bind_param('s', $username);
+            $analyticsStmt->execute();
+            $analyticsTotals = $analyticsStmt->get_result()->fetch_assoc();
+            $analyticsStmt->close();
+            $totals['watch_time_seconds'] = (int)($analyticsTotals['watch_time_seconds'] ?? 0);
+            $totals['shares'] = (int)($analyticsTotals['shares'] ?? 0);
+            try {
+                $eventCols = [];
+                $eventColResult = $conn->query('SHOW COLUMNS FROM `creator_analytics_events`');
+                while ($eventCol = $eventColResult->fetch_assoc()) {
+                    $eventCols[strtolower((string)$eventCol['Field'])] = (string)$eventCol['Field'];
+                }
+                $eventColResult->free();
+                $eventDate = '';
+                foreach (['created_at', 'event_at', 'occurred_at', 'recorded_at', 'created_on', 'created', 'date'] as $eventCandidate) {
+                    if (isset($eventCols[$eventCandidate])) { $eventDate = $eventCols[$eventCandidate]; break; }
+                }
+                if ($eventDate !== '') {
+                    $eventDateSql = '`' . str_replace('`', '``', $eventDate) . '`';
+                    $dailyStmt = $conn->prepare(
+                        "SELECT DATE($eventDateSql) AS d,
+                            COALESCE(SUM(CASE WHEN `event_type` = 'watch_time' THEN `watched_seconds` ELSE 0 END), 0) AS watch,
+                            COALESCE(SUM(CASE WHEN `event_type` = 'share' THEN 1 ELSE 0 END), 0) AS shares
+                         FROM `creator_analytics_events`
+                         WHERE LOWER(`creator`) = LOWER(?) AND $eventDateSql >= DATE_SUB(CURDATE(), INTERVAL " . ($span - 1) . " DAY)
+                         GROUP BY DATE($eventDateSql)"
+                    );
+                    $dailyStmt->bind_param('s', $username);
+                    $dailyStmt->execute();
+                    foreach ($dailyStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $dailyRow) {
+                        $dayKey = (string)$dailyRow['d'];
+                        if (array_key_exists($dayKey, $watchByDay)) {
+                            $watchByDay[$dayKey] = (int)$dailyRow['watch'];
+                            $sharesByDay[$dayKey] = (int)$dailyRow['shares'];
+                        }
+                    }
+                    $dailyStmt->close();
+                    $eventsDaily = true;
+                }
+            } catch (Throwable $dailyError) {
+                error_log('Creator watch time and share trends are unavailable: ' . $dailyError->getMessage());
+            }
+        } catch (Throwable $analyticsError) {
+            error_log('Creator watch time and share analytics are unavailable: ' . $analyticsError->getMessage());
         }
 
         try {
@@ -219,7 +277,7 @@ if ($isPremium) {
                         'SELECT DATE(' . $subscriptionDate . ') AS activity_day, COUNT(*) AS total
                          FROM `user_subscriptions`
                          WHERE LOWER(`' . str_replace('`', '``', $subColumns['channel_username']) . '`) = LOWER(?)
-                           AND ' . $subscriptionDate . ' >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                           AND ' . $subscriptionDate . ' >= DATE_SUB(CURDATE(), INTERVAL ' . ($span - 1) . ' DAY)
                          GROUP BY DATE(' . $subscriptionDate . ')'
                     );
                     $growthStmt->bind_param('s', $username);
@@ -273,12 +331,30 @@ if ($isPremium) {
                 $commentCountStmt->execute();
                 $totals['comments'] = (int)$commentCountStmt->get_result()->fetch_row()[0];
                 $commentCountStmt->close();
+                $perVideoStmt = $conn->prepare(
+                    'SELECT CAST(c.' . $commentVideo . ' AS CHAR) AS vid, COUNT(*) AS total
+                     FROM `comments` c
+                     INNER JOIN `videos` v ON CAST(v.`' . str_replace('`', '``', $columns['id']) . '` AS CHAR) = CAST(c.' . $commentVideo . ' AS CHAR)
+                     WHERE LOWER(' . $quotedOwner . ') = LOWER(?)
+                     GROUP BY vid'
+                );
+                $perVideoStmt->bind_param('s', $username);
+                $perVideoStmt->execute();
+                $commentMap = [];
+                foreach ($perVideoStmt->get_result()->fetch_all(MYSQLI_ASSOC) as $perVideoRow) {
+                    $commentMap[(string)$perVideoRow['vid']] = (int)$perVideoRow['total'];
+                }
+                $perVideoStmt->close();
+                foreach ($videos as &$topVideo) {
+                    $topVideo['comments'] = $commentMap[(string)$topVideo['video_id']] ?? 0;
+                }
+                unset($topVideo);
                 $commentStmt = $conn->prepare(
                     'SELECT DATE(c.' . $commentDate . ') AS activity_day, COUNT(*) AS total
                      FROM `comments` c
                      INNER JOIN `videos` v ON CAST(v.`' . str_replace('`', '``', $columns['id']) . '` AS CHAR) = CAST(c.' . $commentVideo . ' AS CHAR)
                      WHERE LOWER(' . $quotedOwner . ') = LOWER(?)
-                       AND c.' . $commentDate . ' >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                       AND c.' . $commentDate . ' >= DATE_SUB(CURDATE(), INTERVAL ' . ($span - 1) . ' DAY)
                      GROUP BY DATE(c.' . $commentDate . ')'
                 );
                 $commentStmt->bind_param('s', $username);
@@ -304,7 +380,7 @@ if ($isPremium) {
                      FROM `video_likes` l
                      INNER JOIN `videos` v ON CAST(v.`' . str_replace('`', '``', $columns['id']) . '` AS CHAR) = CAST(l.' . $likeVideo . ' AS CHAR)
                      WHERE LOWER(' . $quotedOwner . ') = LOWER(?)
-                       AND l.' . $likeDate . ' >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                       AND l.' . $likeDate . ' >= DATE_SUB(CURDATE(), INTERVAL ' . ($span - 1) . ' DAY)
                      GROUP BY DATE(l.' . $likeDate . ')'
                 );
                 $likeStmt->bind_param('s', $username);
@@ -383,6 +459,8 @@ if ((string)($_GET['live'] ?? '') === '1') {
             'is_short' => $isShort,
             'thumbnail' => $thumbnail,
             'age' => $ageLabel,
+            'likes' => (int)$video['likes'],
+            'comments' => (int)($video['comments'] ?? 0),
         ];
     }
     echo json_encode([
@@ -391,6 +469,7 @@ if ((string)($_GET['live'] ?? '') === '1') {
         'labels' => $chartLabels,
         'live_viewers' => $totals['live_viewers'],
         'creator_rank' => $creatorRanking['rank'],
+        'rank_change' => $creatorRanking['change'],
         'total_creators' => $creatorRanking['total_creators'],
         'top_content' => $liveTopContent,
         'totals' => [
@@ -417,12 +496,26 @@ $compact = static function ($n): string {
     if ($abs >= 1000) { return rtrim(rtrim(number_format($n / 1000, 1), '0'), '.') . 'K'; }
     return number_format($n);
 };
-// Change in the last 15 days vs the 15 days before (real data only; null when there is nothing to compare)
+$watchTime = static function (int $seconds): string {
+    $minutes = intdiv(max(0, $seconds), 60);
+    if ($seconds > 0 && $minutes === 0) {
+        return '<1m';
+    }
+    $hours = intdiv($minutes, 60);
+    $minutes %= 60;
+    if ($hours > 0) {
+        return $hours . 'h' . ($minutes > 0 ? ' ' . $minutes . 'm' : '');
+    }
+    return $minutes . 'm';
+};
+// Change in the latest half of the chosen range vs the half before (real data only; null when there is nothing to compare)
 $trendOf = static function (array $metric): ?float {
     if (empty($metric['available'])) { return null; }
     $v = array_values($metric['values']);
-    $prev = array_sum(array_slice($v, 0, 15));
-    $curr = array_sum(array_slice($v, 15));
+    $half = intdiv(count($v), 2);
+    if ($half < 1) { return null; }
+    $curr = array_sum(array_slice($v, -$half));
+    $prev = array_sum(array_slice($v, -2 * $half, $half));
     if ($prev <= 0) { return null; }
     return ($curr - $prev) / $prev * 100;
 };
@@ -434,6 +527,14 @@ $sparkOf = static function (array $metric): array {
     foreach ($v as $x) { $out[] = $max > 0 ? max(14, (int)round($x / $max * 100)) : 14; }
     return $out;
 };
+$halfSpan = max(1, intdiv($span, 2));
+$rankNow = $creatorRanking['rank'];
+$rankTotal = (int)$creatorRanking['total_creators'];
+$topPercent = ($rankNow !== null && $rankTotal > 0) ? max(1, (int)ceil($rankNow / $rankTotal * 100)) : null;
+$bannerTop = $rankNow !== null && ($rankNow <= 3 || ($topPercent !== null && $topPercent <= 10));
+$bannerText = $rankNow === 1 ? 'You are the #1 creator! 🎉'
+    : ($rankNow !== null && $rankNow <= 3 ? 'Top 3 creator!'
+    : ($topPercent !== null && $topPercent <= 10 ? 'Top ' . $topPercent . '%' : 'Reach the top 3 to earn this badge'));
 $ago = static function ($value): string {
     $t = $value ? strtotime((string)$value) : false;
     if (!$t) { return ''; }
@@ -462,9 +563,11 @@ $iconSet = [
     'up'       => ['s', '<path d="M12 19V5M5 12l7-7 7 7"/>'],
     'down'     => ['s', '<path d="M12 5v14M19 12l-7 7-7-7"/>'],
     'arrow'    => ['s', '<path d="M5 12h14M13 6l6 6-6 6"/>'],
-    'analytics'=> ['s', '<path d="M3 20h18M6 16v-4M12 16V8M18 16V4"/><path d="M4 9l5-4 4 2 6-5"/>'],
-    'trophy'   => ['s', '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4"/>'],
-    'rocket'   => ['s', '<path d="M5 15c-1.5 0-2.5 1-3 4 3-.5 4-1.5 4-3M8 13l-3 3M11 16c5-2 8-7 9-14-7 1-12 4-14 9l5 5z"/><circle cx="15.5" cy="8.5" r="1.5"/>'],
+    'barchart' => ['f', '<rect x="3" y="12" width="5" height="9" rx="1.4"/><rect x="9.5" y="7" width="5" height="14" rx="1.4"/><rect x="16" y="2.5" width="5" height="18.5" rx="1.4"/>'],
+    'trophy'   => ['f', '<path d="M7 3h10v5a5 5 0 0 1-10 0V3z"/><path d="M4 4h3v2.2C7 7.6 5.8 8.6 4.6 8.2 3.6 7.9 3 6.8 3 5.6V4.8zM20 4h-3v2.2c0 1.4 1.2 2.4 2.4 2 1-.3 1.6-1.4 1.6-2.6V4.8z" opacity=".75"/><path d="M11 13h2v4h3v2.5H8V17h3z"/>'],
+    'bolt'     => ['f', '<path d="M13.5 2L4.5 14H10l-1 8 9.5-12.5H13z"/>'],
+    'share'    => ['s', '<path d="M14 5l6 6-6 6M20 11H10a6 6 0 0 0-6 6v1"/>'],
+    'broadcast'=> ['s', '<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19.2 4.8a10 10 0 0 1 0 14.4M4.8 19.2a10 10 0 0 1 0-14.4"/>'],
     'verified' => ['r', '<circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M7.5 12.5l3 3 6-6.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'],
 ];
 $ic = static function (string $name) use ($iconSet): string {
@@ -476,54 +579,68 @@ $ic = static function (string $name) use ($iconSet): string {
 };
 
 $extraCss = <<<'CSS'
-.ca-page{--ca-line:rgba(124,92,255,.30);--ca-card:linear-gradient(180deg,rgba(26,20,66,.88),rgba(12,10,34,.92));--ca-muted:#a9a6d6;--ca-track:rgba(139,92,246,.22);--ca-pt:#0d0b2b;max-width:1400px;margin:0 auto;padding:14px clamp(16px,1.8vw,26px) 60px;color:var(--text,#eaf0ff)}
+.ca-page{--ca-line:rgba(124,92,255,.30);--ca-card:linear-gradient(180deg,rgba(26,20,66,.88),rgba(12,10,34,.92));--ca-muted:#a9a6d6;--ca-track:rgba(139,92,246,.22);--ca-pt:#0d0b2b;max-width:1240px;margin:0 auto;padding:28px clamp(16px,3vw,32px) 90px;color:var(--text,#eaf0ff)}
 .ca-page *{box-sizing:border-box}
 .ca-ico{width:1em;height:1em;flex:0 0 auto;display:inline-block;vertical-align:-.125em}
 
 /* header */
-.ca-profile{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:96px;overflow:hidden;padding:15px 20px;margin-bottom:14px;border:1px solid rgba(139,92,246,.22);border-radius:20px;background:linear-gradient(105deg,rgba(22,13,51,.98),rgba(12,11,30,.97) 56%,rgba(31,9,71,.94));}
-.ca-profile::after{content:"";position:absolute;top:-95px;right:9%;width:310px;height:245px;pointer-events:none;transform:rotate(-25deg);background:linear-gradient(115deg,transparent 35%,rgba(124,0,255,.05) 36%,rgba(124,0,255,.23) 53%,rgba(124,0,255,.05) 69%,transparent 70%);filter:blur(1px)}
-.ca-profile-user{position:relative;z-index:1;display:flex;align-items:center;gap:20px;min-width:0}
-.ca-avatar{width:78px;height:78px;flex:0 0 78px;display:grid;place-items:center;border:1px solid rgba(176,87,255,.6);border-radius:18px;object-fit:cover;background:linear-gradient(145deg,#8a00ff,#4211a0);box-shadow:0 0 22px rgba(124,0,255,.38);color:#fff;font-size:38px;font-weight:800}
-.ca-profile-user h1{display:flex;align-items:center;gap:10px;margin:0;color:#fff;font-size:clamp(26px,3.3vw,38px);line-height:1.1;font-weight:800;letter-spacing:-.02em}
+.ca-profile{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.ca-profile-user{display:flex;align-items:center;gap:20px;min-width:0}
+.ca-avatar{width:84px;height:84px;flex:0 0 84px;border-radius:50%;object-fit:cover;background:linear-gradient(135deg,#8b5cf6,#5b21b6);box-shadow:0 0 0 3px rgba(139,92,246,.35),0 14px 34px -8px rgba(139,92,246,.75)}
+.ca-profile-user h1{display:flex;align-items:center;gap:10px;margin:0;font-size:clamp(26px,4vw,38px);line-height:1.1;font-weight:800;letter-spacing:-.02em}
 .ca-verified{display:inline-flex;font-size:.62em;color:#8b5cf6}
-.ca-profile-user p{margin:5px 0 0;color:#c5bedf;font-size:15px}
+.ca-profile-user p{margin:6px 0 0;color:var(--ca-muted);font-size:17px}
 .ca-profile-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.ca-period{position:relative;z-index:1;display:inline-flex;align-items:center;gap:10px;height:44px;padding:0 16px;border-radius:13px;border:1px solid rgba(139,92,246,.52);background:rgba(15,12,35,.76);font-weight:600;font-size:14px;box-shadow:0 0 18px -6px rgba(139,92,246,.5)}
+.ca-period{display:inline-flex;align-items:center;gap:10px;height:46px;padding:0 18px;border-radius:14px;border:1px solid rgba(139,92,246,.6);background:rgba(20,15,52,.7);font-weight:600;font-size:15px;box-shadow:0 0 18px -6px rgba(139,92,246,.6)}
 .ca-period .ca-ico{font-size:18px}
+.ca-rank-pill{height:46px;display:inline-flex;align-items:center;padding:0 16px;border-radius:999px;border:1px solid rgba(245,185,66,.5);background:rgba(245,185,66,.12);font-size:14px;font-weight:800;color:#f5c84c}
+
 /* stat cards */
-.ca-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:0 0 14px}
-.ca-kpi{--k:#8b5cf6;display:grid;grid-template-columns:48px minmax(0,1fr) auto;grid-template-rows:auto auto auto;grid-template-areas:"icon label spark" "icon value spark" "icon trend spark";align-items:center;column-gap:10px;min-height:104px;padding:12px;border-radius:17px;overflow:hidden;border:1px solid color-mix(in srgb,var(--k) 38%,rgba(70,74,130,.35));background:linear-gradient(145deg,color-mix(in srgb,var(--k) 13%,#0b0a24),rgba(14,14,34,.96));box-shadow:0 12px 30px -24px var(--k);transition:transform .15s ease,box-shadow .15s ease}
+.ca-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:0 0 18px}
+.ca-kpi{--k:#8b5cf6;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"icon label spark" "icon value spark" "icon trend spark";align-items:center;column-gap:14px;padding:18px 20px;border-radius:20px;overflow:hidden;border:1px solid color-mix(in srgb,var(--k) 55%,transparent);background:linear-gradient(145deg,color-mix(in srgb,var(--k) 30%,#0b0a24),color-mix(in srgb,var(--k) 8%,#0b0a24));box-shadow:0 18px 40px -26px var(--k);transition:transform .15s ease,box-shadow .15s ease}
 .ca-kpi:hover{transform:translateY(-2px);box-shadow:0 18px 44px -18px var(--k)}
 .k-views{--k:#8b5cf6}.k-likes{--k:#ec4899}.k-comments{--k:#3b82f6}.k-subs{--k:#10b981}
-.ca-kpi-icon{grid-area:icon;width:44px;height:44px;display:grid;place-items:center;border-radius:13px;background:color-mix(in srgb,var(--k) 32%,#100d2b);color:color-mix(in srgb,var(--k) 72%,#fff);font-size:23px}
-.ca-kpi-label{grid-area:label;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#e5e2f5}
-.ca-kpi-value{grid-area:value;margin-top:2px;font-size:clamp(25px,2.4vw,32px);font-weight:800;line-height:1.05;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.ca-trend{grid-area:trend;display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:2px;font-size:12px;font-weight:700}
+.ca-kpi-label{grid-area:label;display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;color:#fff}
+.ca-kpi-icon{grid-area:icon;align-self:center;display:grid;place-items:center;width:64px;height:64px;border-radius:18px;font-size:32px;color:#fff;background:linear-gradient(145deg,color-mix(in srgb,var(--k) 85%,#fff),color-mix(in srgb,var(--k) 70%,#000));box-shadow:0 10px 24px -8px var(--k)}
+.ca-kpi-label{align-self:end}
+.ca-kpi-value{grid-area:value;margin-top:8px;font-size:clamp(30px,3.2vw,40px);font-weight:800;line-height:1.1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.ca-trend{grid-area:trend;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;font-size:14px;font-weight:700}
 .ca-trend.is-up{color:#34d399}.ca-trend.is-down{color:#fb7185}.ca-trend.is-flat{color:var(--ca-muted)}
-.ca-trend small{font-size:10px;font-weight:500;color:var(--ca-muted)}
-.ca-spark{grid-area:spark;display:flex;align-items:flex-end;gap:3px;height:48px}
-.ca-spark i{display:block;width:5px;border-radius:3px 3px 1px 1px;background:linear-gradient(180deg,color-mix(in srgb,var(--k) 55%,#fff),var(--k));opacity:.9}
+.ca-trend small{display:none}
+.ca-spark{grid-area:spark;display:flex;align-items:flex-end;gap:5px;height:56px}
+.ca-spark i{display:block;width:8px;border-radius:4px 4px 2px 2px;background:linear-gradient(180deg,color-mix(in srgb,var(--k) 55%,#fff),var(--k));opacity:.9}
+
+/* header icon */
+.ca-head-icon{display:grid;place-items:center;flex:0 0 84px;width:84px;height:84px;border-radius:22px;font-size:44px;color:#fff;background:linear-gradient(145deg,#7c3aed,#4c1d95);border:1px solid rgba(167,139,250,.55);box-shadow:0 0 0 3px rgba(139,92,246,.2),0 14px 34px -8px rgba(139,92,246,.75)}
+
+/* analytics overview + ranking */
+.ca-chart-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;margin-top:18px}
+.ca-chart-grid .ca-panel{margin-top:0}
+.ca-rank-card{display:flex;flex-direction:column;gap:14px}
+.ca-gold{display:inline-flex;color:#fbbf24}
+.ca-rank-body{display:flex;align-items:center;justify-content:space-between;gap:10px;flex:1}
+.ca-rank-num{font-size:clamp(46px,5vw,62px);font-weight:800;line-height:1;letter-spacing:-.03em;background:linear-gradient(180deg,#a78bfa,#6d28d9);-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums}
+.ca-rank-sub{margin-top:8px;color:var(--ca-muted);font-size:14px}
+.ca-crown{width:132px;height:118px;flex:0 0 132px;filter:drop-shadow(0 0 18px rgba(251,191,36,.35))}
+.ca-rank-banner{display:flex;align-items:center;justify-content:center;gap:10px;padding:13px 14px;border-radius:12px;font-weight:700;font-size:15px;color:var(--ca-muted);background:rgba(139,92,246,.14);border:1px solid var(--ca-line)}
+.ca-rank-banner.is-top{color:#fff;background:linear-gradient(90deg,#5b21b6,#6d28d9);border-color:rgba(167,139,250,.6)}
+.ca-rank-banner .ca-ico{color:#fbbf24;font-size:20px}
+
+/* quick stats */
+.ca-qs-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.ca-qs{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:14px;border:1px solid var(--ca-line);background:rgba(139,92,246,.08);min-width:0}
+.ca-qs-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;font-size:21px;color:#fff;background:color-mix(in srgb,var(--ic) 65%,#000);box-shadow:0 8px 18px -8px var(--ic)}
+.ca-qs-name{font-size:12px;color:var(--ca-muted)}
+.ca-qs-value{margin-top:2px;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.ca-qs-value.is-off{font-size:14px;font-weight:600;color:var(--ca-muted)}
 
 /* panels */
-.ca-panel{margin-top:14px;padding:17px 18px;border-radius:18px;border:1px solid var(--ca-line);background:var(--ca-card);box-shadow:0 0 30px -16px rgba(139,92,246,.6)}
+.ca-panel{margin-top:18px;padding:20px 22px;border-radius:20px;border:1px solid var(--ca-line);background:var(--ca-card);box-shadow:0 0 30px -16px rgba(139,92,246,.6)}
 .ca-panel-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
-.ca-panel h2{display:flex;align-items:center;gap:10px;margin:0;font-size:17px;font-weight:700}
-.ca-panel h2 .ca-ico{font-size:22px;color:#a78bfa}
+.ca-panel h2{display:flex;align-items:center;gap:12px;margin:0;font-size:19px;font-weight:700}
+.ca-panel h2 .ca-ico{font-size:24px;color:#a78bfa}
 .ca-view-all{display:inline-flex;align-items:center;gap:6px;font-size:15px;font-weight:700;color:#a78bfa;text-decoration:none}
 .ca-view-all:hover{color:#c4b5fd}
-.ca-overview-grid{display:grid;grid-template-columns:minmax(0,2.7fr) minmax(250px,1fr);align-items:stretch;gap:16px}
-.ca-overview-grid>.ca-panel{min-width:0;margin-top:0}
-.ca-rank-panel{display:flex;flex-direction:column;justify-content:space-between;min-height:270px;background:radial-gradient(circle at 85% 55%,rgba(245,185,66,.11),transparent 40%),linear-gradient(160deg,rgba(27,24,47,.97),rgba(12,10,29,.97))}
-.ca-rank-heading{display:flex;align-items:center;gap:10px}
-.ca-rank-heading .ca-ico{color:#f5c84c!important}
-.ca-rank-display{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0}
-.ca-rank-number{display:block;color:#b454ff;font-size:clamp(42px,5vw,58px);font-weight:900;line-height:1;letter-spacing:-.05em;text-shadow:0 0 25px rgba(160,60,255,.25)}
-.ca-rank-caption{display:block;margin-top:8px;color:var(--ca-muted);font-size:12px}
-.ca-rank-emblem{display:grid;place-items:center;width:86px;height:86px;color:#f7ce52;font-size:57px;filter:drop-shadow(0 5px 13px rgba(245,185,66,.42))}
-.ca-rank-emblem .ca-ico{font-size:70px}
-.ca-rank-badge{display:flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px;border-radius:12px;background:linear-gradient(100deg,#4a0da1,#351078);color:#f4eaff;font-size:12px;font-weight:700;text-align:center}
-.ca-rank-badge .ca-ico{color:#ffdc58}
 
 /* chart */
 .ca-legend{display:flex;flex-wrap:wrap;gap:6px 18px}
@@ -552,7 +669,7 @@ $extraCss = <<<'CSS'
 @keyframes caPulse{70%{box-shadow:0 0 0 8px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
 
 /* top videos + stats overview */
-.ca-bottom-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr);gap:16px;margin-top:16px}
+.ca-bottom-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px;margin-top:18px}
 .ca-bottom-grid .ca-panel{margin-top:0}
 .ca-content-list{display:grid}
 .ca-content-row{display:grid;grid-template-columns:30px 112px minmax(0,1fr) minmax(120px,190px);align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--ca-line)}
@@ -572,18 +689,11 @@ $extraCss = <<<'CSS'
 .ca-views-num{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:16px}
 .ca-bar{width:100%;height:8px;border-radius:99px;background:var(--ca-track);overflow:hidden}
 .ca-bar span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6d3cff,#a78bfa)}
-.ca-stats-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.ca-stat-row{display:flex;align-items:center;gap:9px;min-width:0;padding:10px;border:1px solid rgba(124,92,255,.19);border-radius:12px;background:rgba(124,92,255,.07);font-size:12px}
-.ca-stat-icon{width:24px;font-size:19px;display:grid;place-items:center;color:var(--ic,#a78bfa)}
+.ca-stats-list{display:grid}
+.ca-stat-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-top:1px solid var(--ca-line);font-size:16px}
+.ca-stat-icon{width:28px;font-size:24px;display:grid;place-items:center;color:var(--ic,#a78bfa)}
 .ca-stat-name{flex:1;min-width:0}
 .ca-stat-value{font-weight:700;font-variant-numeric:tabular-nums}
-.ca-promo{display:flex;align-items:center;gap:12px;margin-top:12px;padding:13px;border:1px solid rgba(145,38,255,.55);border-radius:15px;background:linear-gradient(105deg,#4412a1,#24104e 78%);box-shadow:0 0 22px rgba(113,28,234,.18)}
-.ca-promo-icon{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:13px;background:rgba(255,255,255,.12);color:#fff;font-size:27px}
-.ca-promo-copy{flex:1;min-width:0}
-.ca-promo-copy strong{display:block;font-size:13px}
-.ca-promo-copy span{display:block;margin-top:3px;color:#d4c6f5;font-size:11px;line-height:1.35}
-.ca-promo-link{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;padding:8px 11px;border-radius:10px;background:#8100ff;color:#fff;font-size:11px;font-weight:700;text-decoration:none}
-.ca-promo-link:hover{background:#9e3aff;color:#fff}
 
 /* states */
 .ca-empty{padding:16px;border-radius:12px;border:1px dashed var(--ca-line);color:var(--ca-muted);margin:12px 0}
@@ -591,25 +701,21 @@ $extraCss = <<<'CSS'
 .ca-upgrade{display:inline-flex;margin-top:14px;padding:11px 20px;border-radius:999px;font-weight:700;text-decoration:none;color:#fff;background:linear-gradient(90deg,#7c3aed,#ec4899);box-shadow:0 0 20px rgba(236,72,153,.45);transition:transform .15s,box-shadow .15s}
 .ca-upgrade:hover{transform:translateY(-1px);box-shadow:0 0 30px rgba(236,72,153,.7)}
 
-@media (max-width:1180px){
+@media (max-width:1000px){
   .ca-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .ca-overview-grid{grid-template-columns:1fr}
-  .ca-bottom-grid{grid-template-columns:1fr}
+  .ca-bottom-grid,.ca-chart-grid{grid-template-columns:1fr}
+  .ca-qs-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:560px){
   .ca-grid{grid-template-columns:1fr}
-  .ca-panel{padding:15px}
+  .ca-panel{padding:16px}
   .ca-avatar{width:64px;height:64px;flex-basis:64px}
-  .ca-profile{padding:13px;gap:10px}
-  .ca-profile-actions{width:100%}
-  .ca-overview-grid{grid-template-columns:1fr}
-  .ca-rank-panel{min-height:220px}
+  .ca-head-icon{width:60px;height:60px;flex-basis:60px;font-size:30px;border-radius:16px}
+  .ca-kpi-icon{width:52px;height:52px;font-size:26px}
   .ca-content-row{grid-template-columns:24px 78px minmax(0,1fr)}
   .ca-content-thumb{width:78px;height:48px}
   .ca-content-play{width:78px;height:48px}
   .ca-content-view{grid-column:2 / -1;justify-items:start}
-  .ca-promo{flex-wrap:wrap}
-  .ca-promo-link{margin-left:auto}
 }
 @media (prefers-reduced-motion:reduce){.ca-live-status::before{animation:none}.ca-kpi,.ca-upgrade{transition:none}}
 /* ===== NEON THEME (dark + light) ===== */
@@ -676,32 +782,81 @@ html[data-theme="light"] {
 
 /* ---- creator analytics (light) ---- */
 html[data-theme="light"] .ca-page{--ca-line:rgba(124,77,255,.25);--ca-card:#ffffff;--ca-muted:#55608f;--ca-track:rgba(124,77,255,.15);--ca-pt:#ffffff}
+html[data-theme="light"] .ca-qs{background:#f4f1ff}
+html[data-theme="light"] .ca-rank-banner{background:#f1ecff}
+html[data-theme="light"] .ca-rank-banner.is-top{color:#fff}
 html[data-theme="light"] .ca-kpi{background:linear-gradient(145deg,color-mix(in srgb,var(--k) 16%,#fff),#fff)}
 html[data-theme="light"] .ca-kpi-label{color:#0b1030}
-html[data-theme="light"] .ca-kpi-icon{background:color-mix(in srgb,var(--k) 15%,#fff);color:var(--k)}
+html[data-theme="light"] .ca-kpi-label .ca-ico{color:var(--k)}
 html[data-theme="light"] .ca-period{background:#fff}
-html[data-theme="light"] .ca-rank-panel{background:radial-gradient(circle at 85% 55%,rgba(245,185,66,.14),transparent 40%),linear-gradient(160deg,#fff,#f8f7ff)}
-html[data-theme="light"] .ca-rank-badge{color:#fff}
-html[data-theme="light"] .ca-promo{color:#fff}
 html[data-theme="light"] .ca-tip{background:#fff}
 html[data-theme="light"] .ca-chart .grid{stroke:rgba(124,77,255,.2)}
 html[data-theme="light"] .ca-chip:hover{color:#0b1030}
 html[data-theme="light"] .ca-content-info a:hover,html[data-theme="light"] .ca-view-all:hover{color:#6d28d9}
 html[data-theme="light"] .ca-view-all{color:#7c4dff}
 html[data-theme="light"] .ca-content-thumb{background:#e3e8fc}
+/* ---- mockup alignment (Creator Analytics Dashboard) ---- */
+.ca-period select{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:0 4px 0 0;outline:none}
+.ca-period select option{color:#0b1030;background:#fff}
+.ca-period{margin:0}
+.ca-period:focus-within{border-color:#a78bfa;box-shadow:0 0 0 2px rgba(167,139,250,.3)}
+.ca-rank-line{display:flex;align-items:baseline;gap:12px}
+.ca-rank-change{font-size:20px;font-weight:800;color:#9a96b5}
+.ca-rank-change.is-up{color:#34d399}
+.ca-rank-change.is-down{color:#fb7185}
+.ca-rank-bars{width:96px;height:80px;flex:0 0 96px;filter:drop-shadow(0 0 14px rgba(139,92,246,.45))}
+.ca-content-row{grid-template-columns:112px minmax(0,1fr) auto}
+.ca-content-stats{display:flex;align-items:center;gap:20px}
+.ca-content-stat{display:inline-flex;align-items:center;gap:7px;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.ca-content-stat .ca-ico{font-size:18px}
+.ca-content-stat.is-views .ca-ico{color:#a78bfa}
+.ca-content-stat.is-likes .ca-ico{color:#ec4899}
+.ca-content-stat.is-comments .ca-ico{color:#60a5fa}
+.ca-qs-main{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:14px}
+.ca-qs-big{padding:4px 0}
+.ca-qs-big+.ca-qs-big{padding-left:18px;border-left:1px solid var(--ca-line)}
+.ca-qs-bigvalue{margin:6px 0;font-size:clamp(24px,2.6vw,32px);font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.ca-qs-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.ca-qs-big .ca-trend{display:inline-flex;align-items:center;gap:4px;font-size:14px;font-weight:700}
+@media(max-width:560px){
+  .ca-content-row{grid-template-columns:78px minmax(0,1fr)}
+  .ca-content-stats{grid-column:1 / -1;gap:16px}
+}
 
-/* Match the dashboard's purple-on-charcoal navigation palette. */
-html:not([data-theme="light"]) body .app-navbar{background:rgba(5,5,16,.91);border-bottom-color:rgba(124,0,255,.28);box-shadow:0 1px 22px -8px rgba(124,0,255,.4)}
-html:not([data-theme="light"]) body .brand{background:linear-gradient(90deg,#fff,#fff 55%,#9b37ff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;filter:drop-shadow(0 0 8px rgba(124,0,255,.45))}
-html:not([data-theme="light"]) body #search-input{border-color:rgba(139,92,246,.42);box-shadow:0 0 10px -2px rgba(124,0,255,.25)}
-html:not([data-theme="light"]) body #search-input:focus{border-color:#9b37ff;box-shadow:0 0 0 1px #9b37ff,0 0 18px rgba(124,0,255,.4)}
-html:not([data-theme="light"]) body .app-sidebar{border-right-color:rgba(139,92,246,.28);box-shadow:4px 0 24px -12px rgba(124,0,255,.35)}
-html:not([data-theme="light"]) body .sidebar-link:hover{background:rgba(124,0,255,.12);box-shadow:inset 3px 0 0 #8b00ff,0 0 14px -5px rgba(124,0,255,.35)}
-html:not([data-theme="light"]) body .sidebar-link.active{background:linear-gradient(90deg,rgba(124,0,255,.76),rgba(96,0,212,.72));box-shadow:inset 3px 0 0 #c58aff,0 0 18px -5px rgba(124,0,255,.5)}
-html:not([data-theme="light"]) body .sidebar-heading{color:#b48aff;text-shadow:0 0 8px rgba(124,0,255,.35)}
-html:not([data-theme="light"]) body{background:radial-gradient(850px 460px at 62% -12%,rgba(91,0,177,.13),transparent 70%),#05040e;background-attachment:fixed}
-.ca-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+/* ---- rank history chart ---- */
+.vs-rank-chart{display:block;width:100%;height:auto;color:#a855f7;filter:drop-shadow(0 0 8px rgba(168,85,247,.45))}
+.vs-rank-note{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;margin-top:6px;color:#9a96b5;font-size:11px}
+html[data-theme="light"] .vs-rank-note{color:#656079}
+
+.ca-rank-history{margin-top:2px}
+/* ---- mobile / tablet polish ---- */
+.ca-chart-grid>*,.ca-bottom-grid>*{min-width:0}
+.ca-profile-actions{max-width:100%}
+@media(max-width:700px){
+  .ca-profile{align-items:flex-start}
+  .ca-profile-user h1{font-size:26px}
+  .ca-profile-user p{font-size:14px}
+  .ca-head-icon{width:60px;height:60px;flex-basis:60px;font-size:30px;border-radius:16px}
+  .ca-period{height:40px;padding:0 14px;font-size:14px}
+  .ca-panel-head{gap:8px}
+  .ca-legend{gap:4px 14px}
+  .ca-rank-bars{width:76px;height:64px;flex-basis:76px}
+  .ca-qs-bigvalue{font-size:24px}
+}
+@media(max-width:560px){
+  .ca-kpi{padding:14px}
+  .ca-kpi-icon{width:48px;height:48px;font-size:24px;border-radius:14px}
+  .ca-spark{height:44px;gap:4px}
+  .ca-spark i{width:7px}
+  .ca-content-thumb,.ca-content-play{width:78px;height:48px}
+  .ca-content-stat{font-size:14px}
+}
+@media(hover:none){.ca-kpi:hover,.ca-content-play:hover{transform:none}}
+
 CSS;
+if (function_exists('vs_creator_ui_css')) {
+    $extraCss .= vs_creator_ui_css();
+}
 vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
 ?>
 <div class="ca-page">
@@ -712,6 +867,7 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
         <div class="ca-alert" role="alert"><?= $h($error) ?></div>
     <?php else: ?>
         <?php
+        $profileAvatar = avatar_url($username);
         $kpis = [
             ['views',       'k-views',    'Total Views',     'eye',     $totals['views']],
             ['likes',       'k-likes',    'Total Likes',     'thumb',   $totals['likes']],
@@ -721,14 +877,23 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
         ?>
         <section class="ca-profile" id="caCreatorRanking" data-rank="<?= $creatorRanking['rank'] === null ? '' : (int)$creatorRanking['rank'] ?>">
             <div class="ca-profile-user">
-                <span class="ca-avatar" aria-hidden="true"><?= $ic('analytics') ?></span>
+                <span class="ca-head-icon" aria-hidden="true"><?= $ic('barchart') ?></span>
                 <div>
-                    <h1>Creator Analytics <span class="ca-sr-only">for <?= $h($username) ?></span></h1>
-                    <p>Track your growth, understand your audience and achieve more!</p>
+                    <h1>Creator Analytics</h1>
+                    <p>Track your channel performance and grow faster!</p>
                 </div>
             </div>
             <div class="ca-profile-actions">
-                <span class="ca-period"><?= $ic('calendar') ?> Last 30 Days <?= $ic('chevron') ?></span>
+                <form class="ca-period" method="get" action="creator-analytics.php">
+                    <?= $ic('calendar') ?>
+                    <select name="range" aria-label="Date range" onchange="this.form.submit()">
+                        <?php foreach ([7 => 'Last 7 Days', 30 => 'Last 30 Days', 90 => 'Last 90 Days'] as $rangeValue => $rangeLabel): ?>
+                            <option value="<?= $rangeValue ?>"<?= $span === $rangeValue ? ' selected' : '' ?>><?= $h($rangeLabel) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?= $ic('chevron') ?>
+                    <noscript><button type="submit">Go</button></noscript>
+                </form>
             </div>
         </section>
 
@@ -739,16 +904,16 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                 $trend = $trendOf($chartMetrics[$key]);
                 ?>
                 <article class="ca-kpi <?= $cls ?>" data-kpi="<?= $key ?>">
-                    <span class="ca-kpi-icon"><?= $ic($icon) ?></span>
+                    <span class="ca-kpi-icon" aria-hidden="true"><?= $ic($icon) ?></span>
                     <div class="ca-kpi-label"><?= $h($label) ?></div>
                     <div class="ca-kpi-value" <?= $value === null ? '' : 'title="' . $h(number_format((int)$value)) . '"' ?>><?= $value === null ? '—' : $h($compact($value)) ?></div>
-                    <div class="ca-trend <?= $trend === null ? 'is-flat' : ($trend >= 0 ? 'is-up' : 'is-down') ?>">
+                    <div class="ca-trend <?= $trend === null ? 'is-flat' : ($trend >= 0 ? 'is-up' : 'is-down') ?>" title="Last <?= (int)$halfSpan ?> days vs the <?= (int)$halfSpan ?> days before">
                         <?php if ($trend === null): ?>
                             <span>No trend yet</span>
                         <?php else: ?>
                             <?= $ic($trend >= 0 ? 'up' : 'down') ?><span><?= $trend >= 0 ? '+' : '−' ?><?= number_format(abs($trend), 1) ?>%</span>
                         <?php endif; ?>
-                        <small>vs previous 15 days</small>
+                        <small>vs previous <?= (int)$halfSpan ?> days</small>
                     </div>
                     <div class="ca-spark" aria-hidden="true">
                         <?php foreach ($sparkOf($chartMetrics[$key]) as $pct): ?><i style="height:<?= (int)$pct ?>%"></i><?php endforeach; ?>
@@ -757,14 +922,14 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
             <?php endforeach; ?>
         </section>
 
-        <div class="ca-overview-grid">
+        <div class="ca-chart-grid">
         <section class="ca-panel">
             <div class="ca-panel-head">
-                <h2><?= $ic('trend') ?> Your Channel Performance</h2>
+                <h2><?= $ic('barchart') ?> Performance Overview</h2>
                 <div class="ca-legend" id="caActivityLegend" aria-label="Chart metrics"></div>
             </div>
             <div class="ca-chart-wrap" id="caChartWrap">
-                <svg class="ca-chart" id="caActivityChart" role="img" aria-label="Daily views, likes, comments, and new subscribers during the last 30 days"></svg>
+                <svg class="ca-chart" id="caActivityChart" role="img" aria-label="Daily views, likes, comments, and new subscribers during the last <?= (int)$span ?> days"></svg>
                 <div class="ca-tip" id="caTip" role="presentation"></div>
             </div>
             <p class="ca-live-status" id="caLiveStatus" role="status">LIVE · real data · refreshes every 5 seconds</p>
@@ -825,7 +990,7 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
 
                     function geometry() {
                         var W = Math.max(280, wrap.clientWidth || 600);
-                        var H = W < 520 ? 220 : 250;
+                        var H = W < 520 ? 240 : 310;
                         return { W: W, H: H, iw: W - PAD.l - PAD.r, ih: H - PAD.t - PAD.b };
                     }
 
@@ -858,7 +1023,7 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                         }
 
                         // vertical grid + x labels
-                        var step = g.W < 520 ? 10 : 5;
+                        var step = n <= 7 ? 1 : (n <= 30 ? (g.W < 520 ? 10 : 5) : (g.W < 520 ? 30 : 15));
                         for (var j = 0; j < n; j += 1) {
                             if (j % step !== 0 && j !== n - 1) { continue; }
                             if (j !== n - 1 && n - 1 - j < step - 1) { continue; }
@@ -1024,7 +1189,7 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                     function refresh() {
                         if (document.hidden || updating) { return; }
                         updating = true;
-                        fetch('creator-analytics.php?live=1', { cache: 'no-store', credentials: 'same-origin' })
+                        fetch('creator-analytics.php?live=1&range=<?= (int)$span ?>', { cache: 'no-store', credentials: 'same-origin' })
                             .then(function (response) {
                                 if (!response.ok) { throw new Error('Analytics refresh failed with status ' + response.status); }
                                 return response.json();
@@ -1041,6 +1206,7 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                             })
                             .then(function () { updating = false; });
                     }
+                    var ROW_ICONS = <?= json_encode(['eye' => $ic('eye'), 'heart' => $ic('heart'), 'message' => $ic('message')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>;
                     function compactLive(n) {
                         n = Number(n) || 0;
                         if (n >= 1000000) { return (Math.round(n / 100000) / 10).toFixed(1).replace(/\.0$/, '') + 'M'; }
@@ -1055,13 +1221,10 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                             } else {
                                 var maxViews = data.top_content.reduce(function (max, item) { return Math.max(max, Number(item.views) || 0); }, 0) || 1;
                                 var fragment = document.createDocumentFragment();
-                                data.top_content.forEach(function (item, index) {
+                                data.top_content.forEach(function (item) {
                                     var row = document.createElement('article');
                                     row.className = 'ca-content-row';
                                     row.dataset.contentId = String(item.id);
-                                    var rank = document.createElement('span');
-                                    rank.className = 'ca-content-rank';
-                                    rank.textContent = String(index + 1);
                                     var link = document.createElement('a');
                                     link.className = 'ca-content-play';
                                     link.href = (item.is_short ? 'shorts.php?id=' : 'watch.php?id=') + encodeURIComponent(String(item.id));
@@ -1085,25 +1248,54 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                                     meta.textContent = compactLive(item.views) + ' views · ' + item.type + (item.age ? ' · ' + item.age : '');
                                     info.appendChild(title);
                                     info.appendChild(meta);
-                                    var view = document.createElement('div');
-                                    view.className = 'ca-content-view';
-                                    var views = document.createElement('span');
-                                    views.className = 'ca-views-num';
-                                    views.textContent = '◉ ' + compactLive(item.views);
-                                    var bar = document.createElement('div');
-                                    bar.className = 'ca-bar';
-                                    var fill = document.createElement('span');
-                                    fill.style.width = Math.max(4, Math.round(Number(item.views) / maxViews * 100)) + '%';
-                                    bar.appendChild(fill);
-                                    view.appendChild(views);
-                                    view.appendChild(bar);
-                                    row.appendChild(rank);
+                                    var stats = document.createElement('div');
+                                    stats.className = 'ca-content-stats';
+                                    [['is-views', 'eye', item.views], ['is-likes', 'heart', item.likes], ['is-comments', 'message', item.comments]].forEach(function (s) {
+                                        var stat = document.createElement('span');
+                                        stat.className = 'ca-content-stat ' + s[0];
+                                        stat.innerHTML = ROW_ICONS[s[1]] || '';
+                                        stat.appendChild(document.createTextNode(' ' + compactLive(s[2])));
+                                        stats.appendChild(stat);
+                                    });
                                     row.appendChild(link);
                                     row.appendChild(info);
-                                    row.appendChild(view);
+                                    row.appendChild(stats);
                                     fragment.appendChild(row);
                                 });
                                 list.replaceChildren(fragment);
+                            }
+                        }
+                        var live = document.querySelector('[data-stat="live_viewers"] .ca-stat-value');
+                        if (live && data.live_viewers !== undefined && data.live_viewers !== null) { live.textContent = compactLive(data.live_viewers); }
+                        var rankNum = document.getElementById('caRankNum');
+                        if (rankNum && data.creator_rank !== undefined) {
+                            var rank = Number(data.creator_rank) || 0;
+                            var totalCreators = Number(data.total_creators) || 0;
+                            rankNum.textContent = rank ? '#' + rank : '\u2014';
+                            var rankSub = document.getElementById('caRankSub');
+                            if (rankSub) { rankSub.textContent = totalCreators > 0 ? 'out of ' + totalCreators.toLocaleString() + ' creators' : 'No ranking yet'; }
+                            var rankChange = document.getElementById('caRankChange');
+                            if (rankChange) {
+                                var change = Number(data.rank_change) || 0;
+                                rankChange.textContent = change === 0 ? '' : (change > 0 ? '\u2191 +' : '\u2193 ') + Math.abs(change);
+                                rankChange.className = 'ca-rank-change' + (change > 0 ? ' is-up' : (change < 0 ? ' is-down' : ''));
+                            }
+                            var rankRoot = document.getElementById('caCreatorRanking');
+                            var prevRank = rankRoot ? Number(rankRoot.dataset.rank) || 0 : 0;
+                            if (rankRoot) { rankRoot.dataset.rank = rank ? String(rank) : ''; }
+                            if (rank === 1 && prevRank !== 1 && typeof window.vsConfetti === 'function') { window.vsConfetti(); }
+                            var pct = rank && totalCreators ? Math.max(1, Math.ceil(rank / totalCreators * 100)) : null;
+                            var banner = document.getElementById('caRankBanner');
+                            if (banner) {
+                                var top = rank > 0 && (rank <= 3 || (pct !== null && pct <= 10));
+                                banner.classList.toggle('is-top', top);
+                                if (rank === 1) { banner.setAttribute('data-confetti-replay', ''); banner.style.cursor = 'pointer'; }
+                                var label = banner.querySelector('span:last-child');
+                                if (label) {
+                                    label.textContent = rank === 1 ? 'You are the #1 creator! \uD83C\uDF89'
+                                        : (rank > 0 && rank <= 3 ? 'Top 3 creator!'
+                                        : (pct !== null && pct <= 10 ? 'Top ' + pct + '%' : 'Reach the top 3 to earn this badge'));
+                                }
                             }
                         }
                         var totals = data.totals || {};
@@ -1114,7 +1306,7 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                                 kpi.title = Number(totals[pair[1]]).toLocaleString();
                             }
                         });
-                        [['video_count','video_count'], ['likes','likes'], ['comments','comments'], ['new_subscribers','new_subscribers']].forEach(function (pair) {
+                        [['video_count','video_count']].forEach(function (pair) {
                             var stat = document.querySelector('[data-stat="' + pair[0] + '"] .ca-stat-value');
                             if (stat && totals[pair[1]] !== undefined && totals[pair[1]] !== null) {
                                 stat.textContent = pair[1] === 'video_count'
@@ -1122,64 +1314,42 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                                     : compactLive(totals[pair[1]]);
                             }
                         });
-                        var rankNode = document.querySelector('[data-rank-number]');
-                        var rankCaption = document.querySelector('[data-rank-caption]');
-                        var rankBadge = document.querySelector('[data-rank-badge-text]');
-                        var rank = Number(data.creator_rank) || 0;
-                        var creatorCount = Number(data.total_creators) || 0;
-                        if (rankNode) { rankNode.textContent = rank > 0 ? '#' + rank.toLocaleString() : '—'; }
-                        if (rankCaption) {
-                            rankCaption.textContent = creatorCount > 0
-                                ? 'Among ' + creatorCount.toLocaleString() + ' Creators'
-                                : 'Ranking appears as creators earn views';
-                        }
-                        if (rankBadge) {
-                            rankBadge.textContent = rank > 0 && rank <= 3
-                                ? 'Top 3 creators by views!'
-                                : rank > 0 ? 'Keep growing your audience' : 'Publish to start your ranking';
-                        }
-                        var liveViewers = document.querySelector('[data-stat="live_viewers"] .ca-stat-value');
-                        if (liveViewers && data.live_viewers !== undefined && data.live_viewers !== null) {
-                            liveViewers.textContent = Number(data.live_viewers).toLocaleString();
-                        }
                     }
                     window.setInterval(refresh, 5000);
                 })();
             </script>
         </section>
-            <aside class="ca-panel ca-rank-panel" aria-label="Creator ranking">
-                <div class="ca-rank-heading">
-                    <h2><?= $ic('trophy') ?> Your Ranking</h2>
-                </div>
-                <div class="ca-rank-display">
-                    <div>
-                        <strong class="ca-rank-number" data-rank-number><?= $creatorRanking['rank'] === null ? '—' : '#' . number_format((int)$creatorRanking['rank']) ?></strong>
-                        <span class="ca-rank-caption" data-rank-caption>
-                            <?= $creatorRanking['total_creators'] > 0
-                                ? 'Among ' . number_format((int)$creatorRanking['total_creators']) . ' Creators'
-                                : 'Ranking appears as creators earn views' ?>
-                        </span>
+
+        <aside class="ca-panel ca-rank-card<?= $rankNow === 1 ? ' is-champion' : '' ?>" aria-label="Creator ranking">
+            <div class="ca-panel-head"><h2><span class="ca-gold"><?= $ic('trophy') ?></span> Creator Ranking</h2></div>
+            <div class="ca-rank-body">
+                <div>
+                    <div class="ca-rank-line">
+                        <span class="ca-rank-num" id="caRankNum"><?= $rankNow === null ? '—' : '#' . (int)$rankNow ?></span>
+                        <?php $rankChange = (int)($creatorRanking['change'] ?? 0); ?>
+                        <span id="caRankChange" class="ca-rank-change<?= $rankChange > 0 ? ' is-up' : ($rankChange < 0 ? ' is-down' : '') ?>"><?= $rankChange === 0 ? '' : ($rankChange > 0 ? '&uarr; +' : '&darr; ') . abs($rankChange) ?></span>
                     </div>
-                    <span class="ca-rank-emblem" aria-hidden="true"><?= $ic('trophy') ?></span>
+                    <div class="ca-rank-sub" id="caRankSub"><?= $rankTotal > 0 ? 'out of ' . $h(number_format($rankTotal)) . ' creators' : 'No ranking yet' ?></div>
                 </div>
-                <div class="ca-rank-badge">
-                    <span class="ca-rank-badge-icon" aria-hidden="true"><?= $creatorRanking['top_three'] ? $ic('star') : $ic('trend') ?></span>
-                    <span data-rank-badge-text>
-                    <?php if ($creatorRanking['top_three']): ?>
-                        Top 3 creators by views!
-                    <?php elseif ($creatorRanking['rank'] !== null): ?>
-                        Keep growing your audience
-                    <?php else: ?>
-                        Publish to start your ranking
-                    <?php endif; ?>
-                    </span>
-                </div>
-            </aside>
+                <svg class="ca-rank-bars" viewBox="0 0 120 100" aria-hidden="true">
+                    <defs><linearGradient id="caBarG" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#c084fc"/></linearGradient></defs>
+                    <rect x="0" y="64" width="22" height="36" rx="5" fill="url(#caBarG)"/>
+                    <rect x="32" y="46" width="22" height="54" rx="5" fill="url(#caBarG)"/>
+                    <rect x="64" y="26" width="22" height="74" rx="5" fill="url(#caBarG)"/>
+                    <rect x="96" y="4" width="22" height="96" rx="5" fill="url(#caBarG)"/>
+                </svg>
+            </div>
+            <?php $rankChartHtml = ($rankNow !== null && function_exists('vs_creator_rank_chart')) ? vs_creator_rank_chart($rankHistory, $span, 'caRankG') : ''; ?>
+            <?php if ($rankChartHtml !== ''): ?><div class="ca-rank-history"><?= $rankChartHtml ?></div><?php endif; ?>
+            <div class="ca-rank-banner<?= $bannerTop ? ' is-top' : '' ?>" id="caRankBanner"<?= $rankNow === 1 ? ' data-confetti-replay style="cursor:pointer" title="Celebrate again"' : '' ?>>
+                <?= $ic('star') ?> <span><?= $h($bannerText) ?></span>
+            </div>
+        </aside>
         </div>
 
         <div class="ca-bottom-grid">
             <section class="ca-panel">
-                <div class="ca-panel-head"><h2><?= $ic('play') ?> Your Top Videos &amp; Shorts</h2><a class="ca-view-all" href="studio.php">View All <?= $ic('arrow') ?></a></div>
+                <div class="ca-panel-head"><h2><?= $ic('play') ?> Your Videos</h2><a class="ca-view-all" href="studio.php">View All <?= $ic('arrow') ?></a></div>
                 <?php if (!$videos): ?>
                     <p class="ca-empty">Your published videos and Shorts will appear here.</p>
                 <?php else: ?>
@@ -1231,7 +1401,6 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                             $barWidth = max(4, (int)round((int)$video['views'] / $maxContentViews * 100));
                             ?>
                             <article class="ca-content-row" data-content-id="<?= $h((string)$video['video_id']) ?>">
-                                <span class="ca-content-rank"><?= (int)$rank + 1 ?></span>
                                 <a class="ca-content-play"
                                     href="<?= ($isShort ? 'shorts.php?id=' : 'watch.php?id=') . rawurlencode((string)$video['video_id']) ?>"
                                     target="_blank" rel="noopener"
@@ -1245,9 +1414,10 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                                     <a class="ca-play-title" href="<?= ($isShort ? 'shorts.php?id=' : 'watch.php?id=') . rawurlencode((string)$video['video_id']) ?>" target="_blank" rel="noopener"><?= $h($video['title'] !== '' ? $video['title'] : 'Untitled') ?></a>
                                     <small><?= $h($compact($video['views'])) ?> views · <?= $isShort ? 'Short' : 'Video' ?><?= $age !== '' ? ' · ' . $h($age) : '' ?></small>
                                 </div>
-                                <div class="ca-content-view">
-                                    <span class="ca-views-num"><?= $ic('eye') ?> <?= $h($compact($video['views'])) ?></span>
-                                    <div class="ca-bar"><span style="width:<?= $barWidth ?>%"></span></div>
+                                <div class="ca-content-stats">
+                                    <span class="ca-content-stat is-views"><?= $ic('eye') ?> <?= $h($compact($video['views'])) ?></span>
+                                    <span class="ca-content-stat is-likes"><?= $ic('heart') ?> <?= $h($compact($video['likes'])) ?></span>
+                                    <span class="ca-content-stat is-comments"><?= $ic('message') ?> <?= $h($compact($video['comments'] ?? 0)) ?></span>
                                 </div>
                             </article>
                         <?php endforeach; ?>
@@ -1255,21 +1425,46 @@ vs_page_start('Creator Analytics', 'creator-analytics', $extraCss);
                 <?php endif; ?>
             </section>
             <aside class="ca-panel">
-                <div class="ca-panel-head"><h2 style="--ic:#a78bfa"><?= $ic('trend') ?> Quick Stats</h2><a class="ca-view-all" href="studio.php">View Details <?= $ic('arrow') ?></a></div>
-                <div class="ca-stats-list">
-                    <div class="ca-stat-row" data-stat="video_count" style="--ic:#a78bfa"><span class="ca-stat-icon"><?= $ic('play') ?></span><span class="ca-stat-name">Total Videos</span><strong class="ca-stat-value"><?= number_format($totals['video_count']) ?></strong></div>
-                    <div class="ca-stat-row" data-stat="new_subscribers" style="--ic:#a78bfa"><span class="ca-stat-icon"><?= $ic('user') ?></span><span class="ca-stat-name">New Subscribers</span><strong class="ca-stat-value"><?= $totals['new_subscribers'] === null ? '—' : $h($compact($totals['new_subscribers'])) ?></strong></div>
-                    <div class="ca-stat-row" data-stat="comments" style="--ic:#60a5fa"><span class="ca-stat-icon"><?= $ic('message') ?></span><span class="ca-stat-name">Comments</span><strong class="ca-stat-value"><?= $h($compact($totals['comments'])) ?></strong></div>
-                    <div class="ca-stat-row" data-stat="live_viewers" style="--ic:#22c55e"><span class="ca-stat-icon"><?= $ic('users') ?></span><span class="ca-stat-name">Live Viewers</span><strong class="ca-stat-value"><?= number_format((int)$totals['live_viewers']) ?></strong></div>
+                <div class="ca-panel-head"><h2><?= $ic('bolt') ?> Quick Stats</h2></div>
+                <?php
+                $watchTrend = $trendOf(['available' => $eventsDaily, 'values' => $watchByDay]);
+                $shareTrend = $trendOf(['available' => $eventsDaily, 'values' => $sharesByDay]);
+                $qsTrend = static function (?float $t) use ($ic): string {
+                    if ($t === null) { return ''; }
+                    return '<span class="ca-trend ' . ($t >= 0 ? 'is-up' : 'is-down') . '">' . $ic($t >= 0 ? 'up' : 'down') . ($t >= 0 ? '+' : '−') . number_format(abs($t), 1) . '%</span>';
+                };
+                ?>
+                <div class="ca-qs-main">
+                    <div class="ca-qs-big">
+                        <div class="ca-qs-name">Watch Time</div>
+                        <div class="ca-qs-bigvalue"><?= $h($watchTime($totals['watch_time_seconds'])) ?></div>
+                        <?= $qsTrend($watchTrend) ?>
+                    </div>
+                    <div class="ca-qs-big">
+                        <div class="ca-qs-name">Shares</div>
+                        <div class="ca-qs-bigvalue"><?= $h($compact($totals['shares'])) ?></div>
+                        <?= $qsTrend($shareTrend) ?>
+                    </div>
                 </div>
-                <div class="ca-promo">
-                    <span class="ca-promo-icon" aria-hidden="true"><?= $ic('rocket') ?></span>
-                    <div class="ca-promo-copy"><strong>Keep your momentum going!</strong><span>Your audience is ready for what comes next.</span></div>
-                    <a class="ca-promo-link" href="studio.php">Open Studio <?= $ic('arrow') ?></a>
+                <div class="ca-qs-grid ca-qs-grid-2">
+                    <div class="ca-qs" data-stat="video_count" style="--ic:#8b5cf6">
+                        <span class="ca-qs-icon"><?= $ic('play') ?></span>
+                        <div><div class="ca-qs-name">Videos</div><div class="ca-qs-value ca-stat-value"><?= number_format($totals['video_count']) ?></div></div>
+                    </div>
+                    <div class="ca-qs" data-stat="live_viewers" style="--ic:#3b82f6">
+                        <span class="ca-qs-icon"><?= $ic('broadcast') ?></span>
+                        <div><div class="ca-qs-name">Live Viewers</div><div class="ca-qs-value ca-stat-value"><?= $h($compact($totals['live_viewers'])) ?></div></div>
+                    </div>
                 </div>
             </aside>
         </div>
     <?php endif; ?>
 </div>
 <?php
+if (function_exists('vs_creator_ui_script')) {
+    vs_creator_ui_script();
+}
+if (function_exists('vs_creator_confetti')) {
+    vs_creator_confetti($creatorRanking['rank'], $totals['views'], !empty($creatorRanking['became_first']));
+}
 vs_page_end();

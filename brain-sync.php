@@ -5,7 +5,10 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-$name = trim((string)($_SESSION['username'] ?? $_SESSION['AdminSession'] ?? ''));
+$name = trim((string)($_SESSION['username'] ?? ''));
+if ($name === '') {
+    $name = trim((string)($_SESSION['AdminSession'] ?? ''));
+}
 $csrf = (string)($_SESSION['vs_brain_sync_csrf'] ?? '');
 if ($csrf === '') {
     $csrf = bin2hex(random_bytes(32));

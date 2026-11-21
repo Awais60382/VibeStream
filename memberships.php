@@ -2,7 +2,7 @@
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/connection.php';
 require_once __DIR__ . '/membership-store.php';
-require_once __DIR__ . '/header.php';
+require_once __DIR__ . '/vip-badge.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -15,6 +15,7 @@ $tiers = [];
 $membership = null;
 $tierCounts = [];
 $totalMembers = 0;
+$hasPremium = false;
 
 if (empty($_SESSION['membership_csrf'])) {
     $_SESSION['membership_csrf'] = bin2hex(random_bytes(32));
@@ -24,6 +25,13 @@ $csrf = $_SESSION['membership_csrf'];
 try {
     vs_membership_ensure($pdo);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    if ($username !== '') {
+        $hasPremium = vs_premium_is_admin($username);
+        if (!$hasPremium) {
+            vs_premium_ensure($pdo);
+            $hasPremium = vs_premium_is_active(vs_premium_get($pdo, $username));
+        }
+    }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($username === '') {
@@ -36,6 +44,9 @@ try {
 
         if ($action === 'save_tier' && strcasecmp($creator, $username) === 0) {
             $id = (int)($_POST['id'] ?? 0);
+            if ($id <= 0 && !$hasPremium) {
+                throw new RuntimeException('VibeStream Premium is required to create channel membership tiers.');
+            }
             $name = mb_substr(trim((string)($_POST['name'] ?? '')), 0, 60);
             $price = max(0, min(999999.99, (float)($_POST['price'] ?? 0)));
             $benefits = mb_substr(trim((string)($_POST['benefits'] ?? '')), 0, 1000);
@@ -43,6 +54,15 @@ try {
                 throw new RuntimeException('Tier name is required.');
             }
             if ($id > 0) {
+                $existing = $pdo->prepare('SELECT active FROM channel_membership_tiers WHERE id = ? AND creator = ? LIMIT 1');
+                $existing->execute([$id, $username]);
+                $wasActive = $existing->fetchColumn();
+                if ($wasActive === false) {
+                    throw new RuntimeException('Membership tier is invalid.');
+                }
+                if (!(bool)$wasActive && !$hasPremium) {
+                    throw new RuntimeException('VibeStream Premium is required to publish channel membership tiers.');
+                }
                 $pdo->prepare('UPDATE channel_membership_tiers SET name = ?, price = ?, benefits = ?, active = 1 WHERE id = ? AND creator = ?')
                     ->execute([$name, $price, $benefits, $id, $username]);
             } else {
@@ -51,6 +71,7 @@ try {
             }
             $message = 'Membership tier saved.';
         } elseif ($action === 'delete_tier' && strcasecmp($creator, $username) === 0) {
+            // "Delete" only unpublishes the tier: it disappears from the page, existing members keep their row.
             $id = (int)($_POST['id'] ?? 0);
             if ($id <= 0) {
                 throw new RuntimeException('Membership tier is invalid.');
@@ -59,6 +80,9 @@ try {
                 ->execute([$id, $username]);
             $message = 'Membership tier unpublished.';
         } elseif ($action === 'join' && $creator !== '' && strcasecmp($creator, $username) !== 0) {
+            if (!$hasPremium) {
+                throw new RuntimeException('VibeStream Premium is required to join channel memberships.');
+            }
             $tierId = (int)($_POST['tier_id'] ?? 0);
             $check = $pdo->prepare('SELECT 1 FROM channel_membership_tiers WHERE id = ? AND creator = ? AND active = 1 LIMIT 1');
             $check->execute([$tierId, $creator]);
@@ -84,7 +108,8 @@ try {
     $tierStmt->execute([$creator]);
     $tiers = $tierStmt->fetchAll(PDO::FETCH_ASSOC);
     try {
-        $cnt = $pdo->prepare('SELECT tier_id, COUNT(*) AS c FROM channel_memberships WHERE creator = ? AND status = "active" GROUP BY tier_id');
+        // only memberships that are active AND not past their expiry date count as members
+        $cnt = $pdo->prepare('SELECT tier_id, COUNT(*) AS c FROM channel_memberships WHERE creator = ? AND status = "active" AND (expires_at IS NULL OR expires_at > NOW()) GROUP BY tier_id');
         $cnt->execute([$creator]);
         foreach ($cnt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $tierCounts[(int)$row['tier_id']] = (int)$row['c'];
@@ -128,9 +153,21 @@ $avatarSrc = '';
 if ($creator !== '' && function_exists('avatar_url')) {
     try { $avatarSrc = (string)avatar_url($creator, ''); } catch (Throwable $e) { $avatarSrc = ''; }
 }
+
+// The viewer's membership: active only while its status is "active" and it has not expired.
 $myTierName = '';
-$myActive = !empty($membership) && ($membership['status'] ?? '') === 'active';
-if ($myActive) { $myTierName = (string)$membership['name']; }
+$myActive = false;
+$myExpired = false;
+if (!empty($membership) && ($membership['status'] ?? '') === 'active') {
+    $expTs = !empty($membership['expires_at']) ? strtotime((string)$membership['expires_at']) : false;
+    if ($expTs !== false && $expTs <= time()) {
+        $myExpired = true;      // was a member, the period ended: offer "Renew"
+    } else {
+        $myActive = true;
+    }
+    $myTierName = (string)$membership['name'];
+}
+$starPath = 'M12 2l3 6.5 7 .9-5.1 4.9 1.3 7-6.2-3.5L5.8 21.3l1.3-7L2 9.4l7-.9L12 2z';
 
 $extraCss = <<<'CSS'
 .memberships{--mb-text:#f1f0ff;--mb-muted:#a7a9d6;--mb-line:rgba(139,92,246,.32);--mb-line-soft:rgba(139,92,246,.18);--mb-card:linear-gradient(160deg,rgba(24,22,60,.95),rgba(12,12,34,.98));--mb-field:rgba(10,10,32,.8);--mb-accent:#7c3aed;--mb-accent2:#a855f7;--mb-glow:rgba(124,58,237,.4);max-width:1240px;margin:0 auto;padding:24px 24px 80px;color:var(--mb-text)}
@@ -209,6 +246,7 @@ textarea.mb-input{min-height:120px;resize:vertical}
 CSS;
 vs_page_start('Channel memberships', 'membership', $extraCss);
 $check = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
+$loginUrl = 'login.php?redirect=' . rawurlencode('memberships.php?creator=' . $creator);
 ?>
 <div class="memberships">
 
@@ -228,17 +266,20 @@ $check = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L1
   <div class="mb-title"><?= $crown('#f5b83d') ?><h2>Memberships</h2></div>
   <p class="mb-sub"><?= $isOwner ? 'Manage the tiers your fans can join.' : 'Support your favourite creator and unlock exclusive benefits!' ?></p>
 
+  <?php echo vs_ads_html(); ?>
+
   <div class="mb-grid">
     <?php foreach ($tiers as $idx => $tier):
         $tid = (int)$tier['id'];
         $isPopular = $tid === $popularId;
         $isMine = $myActive && (int)$membership['tier_id'] === $tid;
+        $isExpiredTier = $myExpired && (int)$membership['tier_id'] === $tid;
         $perks = array_values(array_filter(array_map('trim', preg_split('/\R/', (string)$tier['benefits'])), static fn($l) => $l !== ''));
         if (!$perks) { $perks = ['Member-only access and recognition.']; }
         $members = $tierCounts[$tid] ?? 0;
     ?>
       <article class="mb-card<?= $isPopular ? ' popular' : '' ?><?= $isMine ? ' mine' : '' ?>">
-        <?php if ($isPopular): ?><span class="mb-pop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 6.5 7 .9-5.1 4.9 1.3 7-6.2-3.500L5.8 21.300l1.3-7L2 9.400l7-.9L12 2z"/></svg>Most Popular</span><?php endif; ?>
+        <?php if ($isPopular): ?><span class="mb-pop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="<?= $starPath ?>"/></svg>Most Popular</span><?php endif; ?>
         <?= $crown($crownColors[$idx % count($crownColors)]) ?>
         <h3><?= $h($tier['name']) ?></h3>
         <p class="mb-price">$<?= $h(number_format((float)$tier['price'], 2)) ?><small>/ month</small></p>
@@ -250,24 +291,28 @@ $check = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L1
             <button type="button" class="mb-btn<?= $isPopular ? ' primary' : '' ?> js-edit-tier"
                     data-id="<?= $tid ?>" data-name="<?= $h($tier['name']) ?>"
                     data-price="<?= $h(number_format((float)$tier['price'], 2, '.', '')) ?>" data-benefits="<?= $h($tier['benefits']) ?>">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.500a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.500z"/></svg>Edit
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>Edit
             </button>
             <form method="post">
               <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
               <input type="hidden" name="id" value="<?= $tid ?>">
-              <button type="submit" name="action" value="delete_tier" class="mb-btn danger" onclick="return confirm('Unpublish this membership tier?')">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0l1 14h8l1-14"/></svg>Delete
+              <button type="submit" name="action" value="delete_tier" class="mb-btn danger" onclick="return confirm('Unpublish this membership tier? It will no longer be shown on your page.')">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0l1 14h8l1-14"/></svg>Unpublish
               </button>
             </form>
           </div>
         <?php elseif ($username === ''): ?>
-          <a class="mb-btn primary" href="login.php?redirect=memberships.php?creator=<?= urlencode($creator) ?>">Sign in to join</a>
+          <a class="mb-btn primary" href="<?= $h($loginUrl) ?>">Sign in to join</a>
+        <?php elseif (!$hasPremium && !$isMine): ?>
+        <a class="mb-btn primary" href="premium.php">Get Premium to join</a>
         <?php else: ?>
           <form method="post" class="mb-actions">
             <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
             <input type="hidden" name="tier_id" value="<?= $tid ?>">
             <?php if ($isMine): ?>
               <button type="submit" class="mb-btn cancel" name="action" value="cancel">Cancel membership</button>
+            <?php elseif ($isExpiredTier): ?>
+              <button type="submit" class="mb-btn primary" name="action" value="join">Renew membership</button>
             <?php else: ?>
               <button type="submit" class="mb-btn primary" name="action" value="join">Join tier</button>
             <?php endif; ?>
@@ -281,16 +326,23 @@ $check = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L1
         <span class="mb-plus">+</span>
         <h3>Add New Tier</h3>
         <p>Create a new membership tier for your fans.</p>
-        <button type="button" class="mb-btn primary js-new-tier">Create Tier</button>
+        <?php if ($hasPremium): ?>
+          <button type="button" class="mb-btn primary js-new-tier">Create Tier</button>
+        <?php else: ?>
+          <p>VibeStream Premium is required to create channel membership tiers.</p>
+          <a class="mb-btn primary" href="premium.php">Upgrade to Premium</a>
+        <?php endif; ?>
       </article>
     <?php elseif (!$tiers): ?>
       <div class="mb-empty">No membership tiers have been published yet.</div>
     <?php endif; ?>
   </div>
 
+  <?php echo vs_ads_html(); ?>
+
   <?php if (!$isOwner && $myActive): ?>
     <section class="mb-mine">
-      <span class="mb-star"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 6.5 7 .9-5.1 4.9 1.3 7-6.2-3.500L5.8 21.300l1.3-7L2 9.400l7-.9L12 2z"/></svg></span>
+      <span class="mb-star"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="<?= $starPath ?>"/></svg></span>
       <div class="mb-mine-copy">
         <h3>Your Membership</h3>
         <p>You are currently a <b><?= $h($myTierName) ?></b>!</p>
@@ -303,6 +355,15 @@ $check = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L1
         <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
         <button type="submit" class="mb-btn cancel" name="action" value="cancel" onclick="return confirm('Cancel your membership?')">&#10005; Cancel Membership</button>
       </form>
+    </section>
+  <?php elseif (!$isOwner && $myExpired): ?>
+    <section class="mb-mine">
+      <span class="mb-star"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="<?= $starPath ?>"/></svg></span>
+      <div class="mb-mine-copy">
+        <h3>Your membership has ended</h3>
+        <p>Your <b><?= $h($myTierName) ?></b> membership expired on <?= $h(date('M j, Y', strtotime((string)$membership['expires_at']))) ?>.</p>
+        <p class="when">Use &ldquo;Renew membership&rdquo; on the tier above to join again.</p>
+      </div>
     </section>
   <?php endif; ?>
 

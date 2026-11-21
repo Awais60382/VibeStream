@@ -720,7 +720,7 @@ function vs_notifications_list(?mysqli $conn, int $userId, int $limit = 6, int $
         vs_notifications_ensure_table($conn);
         $limit = max(1, min($limit, 100));
         $offset = max(0, $offset);
-        $stmt = $conn->prepare('SELECT id, type, channel_name, actor, video_id, title, message, link, is_read, created_at FROM user_notifications WHERE user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?');
+        $stmt = $conn->prepare('SELECT id, type, channel_name, actor, video_id, title, message, link, is_read, created_at FROM user_notifications WHERE user_id = ? AND is_read = 0 ORDER BY id DESC LIMIT ? OFFSET ?');
         $stmt->bind_param('iii', $userId, $limit, $offset);
         $stmt->execute();
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);

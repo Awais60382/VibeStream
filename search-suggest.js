@@ -1,327 +1,422 @@
-/*
- * VibeStream - search suggestions.
- * Works on header.php pages (#vs-search-input) and on index.php (#search-input inside .search-form).
- * Extra bars: put data-vs-suggest-input="videos" (or "history" for watch history) on the <input>.
- * Shows your recent searches first, then ONLY your own videos and shorts (from search-suggest.php).
- * Searching opens index.php?q=... (your main results page).
- */
 (function () {
-  var KEY0 = 'vs-search-history', MAX_HIST = 20, MAX_ITEMS = 10, RESULTS = 'index.php';
-  var ICON = {
-    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
-    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>',
-    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'
-  };
+  'use strict';
 
-  // Base folder of this script (so it also works from /adminpanel/ pages).
-  var SCRIPT = document.currentScript;
-  var BASE = SCRIPT && SCRIPT.src ? SCRIPT.src.replace(/[?#].*$/, '').replace(/[^\/]*$/, '') : '';
+  var sequence = 0;
+  var invalidMessage = 'Choose an option from the list.';
 
-  function readHist(key) {
-    try { var a = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
-  }
-  function writeHist(key, a) { try { localStorage.setItem(key, JSON.stringify(a.slice(0, MAX_HIST))); } catch (e) {} }
-  function saveHist(key, q) {
-    q = (q || '').trim(); if (!q) { return; }
-    var low = q.toLowerCase();
-    var a = readHist(key).filter(function (h) { return h.toLowerCase() !== low; });
-    a.unshift(q); writeHist(key, a);
-  }
-  function delHist(key, q) {
-    var low = q.toLowerCase();
-    writeHist(key, readHist(key).filter(function (h) { return h.toLowerCase() !== low; }));
+  function optionLabel(option) {
+    return (option.label || option.textContent || '').trim();
   }
 
-  function fetchSuggestions(q, scope, cb) {
-    var done = false;
-    function finish(list) { if (!done) { done = true; cb(list); } }
-    try {
-      fetch(BASE + 'search-suggest.php?q=' + encodeURIComponent(q) + (scope ? '&scope=' + encodeURIComponent(scope) : ''), { credentials: 'same-origin' })
-        .then(function (r) { return r.ok ? r.json() : []; })
-        .then(function (d) { finish(Array.isArray(d) ? d : []); })
-        .catch(function () { finish([]); });
-    } catch (e) { finish([]); }
-    setTimeout(function () { finish([]); }, 4000);
-  }
-
-
-  // ---- Voice search (microphone) ----
-  var MIC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></svg>';
-
-  function wireMic(btn, input, onDone) {
-    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    var rec = null, listening = false, t = null, ph = input.getAttribute('placeholder') || '';
-    function note(m) {
-      input.placeholder = m; clearTimeout(t);
-      t = setTimeout(function () { if (!listening) { input.placeholder = ph; } }, 3500);
-    }
-    function stop() { listening = false; btn.classList.remove('is-listening'); input.placeholder = ph; }
-    btn.addEventListener('click', function () {
-      if (!SR) { note('Voice search needs Chrome, Edge or Safari'); return; }
-      if (listening && rec) { rec.stop(); return; }
-      rec = new SR();
-      rec.lang = document.documentElement.lang || 'en-US';
-      rec.interimResults = true; rec.maxAlternatives = 1;
-      rec.onstart = function () { listening = true; btn.classList.add('is-listening'); input.placeholder = 'Listening...'; };
-      rec.onresult = function (e) {
-        var s = '';
-        for (var i = 0; i < e.results.length; i++) { s += e.results[i][0].transcript; }
-        input.value = s;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      };
-      rec.onerror = function (e) {
-        stop();
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { note('Allow microphone access (needs HTTPS)'); }
-        else if (e.error === 'no-speech') { note('No speech heard, try again'); }
-        else { note('Voice search unavailable'); }
-      };
-      rec.onend = function () { var had = input.value.trim(); stop(); if (had && onDone) { onDone(had); } };
-      try { rec.start(); } catch (err) { stop(); }
+  function getOptions(select) {
+    return Array.prototype.slice.call(select.options).filter(function (option) {
+      return optionLabel(option) !== '';
     });
   }
 
-  // Adds a small mic inside any search input that has none (admin lists, history, index.php ...).
-  function addMic(input) {
-    if (input.getAttribute('data-vs-mic') || input.hasAttribute('data-vs-no-mic')) { return; }
-    if (input.id === 'vs-search-input' || input.disabled || input.readOnly) { return; }
-    if (input.closest('.vs-searchable-select')) { return; }
-    if (input.closest('.vs-search-box') || input.closest('.input-group') || input.parentNode.classList.contains('vs-mic-field')) { return; }
-    input.setAttribute('data-vs-mic', '1');
+  function getAccessibleLabel(select) {
+    var label = select.getAttribute('aria-label');
+    if (label) return label;
 
-    var par = input.parentNode, pw = par.clientWidth, iw = input.offsetWidth;
-    var cs = getComputedStyle(input), parentFlex = /flex/.test(getComputedStyle(par).display);
-    var wide = !iw || (pw && iw >= pw * 0.9);
+    if (select.labels && select.labels.length) {
+      label = Array.prototype.map.call(select.labels, function (item) {
+        return item.textContent.trim();
+      }).filter(Boolean).join(' ');
+      if (label) return label;
+    }
 
-    var w = document.createElement('span');
-    w.className = 'vs-mic-field';
-    w.style.margin = cs.margin;
-    if (parentFlex) {
-      w.style.display = 'block';
-      if (wide) { w.style.flex = '1 1 auto'; w.style.width = '100%'; w.style.minWidth = '0'; }
-      else { w.style.flex = cs.flex; w.style.width = iw + 'px'; w.style.maxWidth = '100%'; }
-    } else if (wide || cs.display === 'block') {
-      w.style.display = 'block'; w.style.width = wide ? '100%' : iw + 'px'; w.style.maxWidth = '100%';
+    return select.name ? select.name.replace(/[_-]+/g, ' ') : 'select';
+  }
+
+  function dispatchChange(select) {
+    var event;
+    if (typeof Event === 'function') {
+      event = new Event('change', { bubbles: true });
     } else {
-      w.style.display = 'inline-block'; w.style.width = iw + 'px'; w.style.maxWidth = '100%'; w.style.verticalAlign = 'middle';
+      event = document.createEvent('HTMLEvents');
+      event.initEvent('change', true, false);
     }
-    input.style.margin = '0'; input.style.width = '100%'; input.style.maxWidth = 'none';
-
-    var btn = document.createElement('button');
-    btn.type = 'button'; btn.className = 'vs-mic-inline';
-    btn.setAttribute('aria-label', 'Search with your voice'); btn.title = 'Search with your voice';
-    btn.innerHTML = MIC_SVG;
-
-    par.insertBefore(w, input); w.appendChild(input); w.appendChild(btn);
-    wireMic(btn, input, function () {
-      var f = input.form;
-      if (f && (f.method || 'get').toLowerCase() === 'get') { f.requestSubmit ? f.requestSubmit() : f.submit(); }
-    });
+    select.dispatchEvent(event);
   }
 
-  function isLight(color) {
-    var m = (color || '').match(/\d+(\.\d+)?/g);
-    if (!m || m.length < 3) { return false; }
-    return (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) > 140;
-  }
-
-  function init() {
-    // Voice search mic for every other search bar on the page
-    var all = document.querySelectorAll('input[type="search"], input[name="q"], input#search-input, input[data-vs-suggest-input], form[role="search"] input[type="text"], input[type="text"][placeholder*="earch"], input:not([type])[placeholder*="earch"]');
-    for (var k = 0; k < all.length; k++) {
-      var t = (all[k].type || 'text').toLowerCase();
-      if (t === 'text' || t === 'search') { addMic(all[k]); }
+  function enhance(select) {
+    if (select.dataset.vsSearchableSelect === 'ready'
+      || select.multiple
+      || select.size > 1
+      || select.hasAttribute('data-vs-no-search')) {
+      return;
     }
-    // Mode A: header.php (main site) search box.
-    var a = document.getElementById('vs-search-input');
-    if (a) { setup(a, true, ''); }
-    // Mode B: index.php search form.
-    var b = document.getElementById('search-input');
-    if (b && b !== a) { setup(b, false, ''); }
-    // Mode C: any other search bar - add data-vs-suggest-input="videos" (or "history") to the <input>.
-    var c = document.querySelectorAll('input[data-vs-suggest-input]');
-    for (var i = 0; i < c.length; i++) {
-      if (c[i] === a || c[i] === b) { continue; }
-      setup(c[i], false, c[i].getAttribute('data-vs-suggest-input') === 'history' ? 'history' : '');
-    }
-  }
 
-  function setup(input, modeA, scope) {
-    var KEYX = scope ? KEY0 + '-' + scope : KEY0;
-    var box, wrap, goBtn = null, form = null;
-    if (modeA) {
-      box = input.closest('.vs-search-box'); wrap = box && box.closest('.vs-search-wrap');
-      goBtn = document.getElementById('vs-search-btn');
-    } else {
-      form = input.closest('form'); box = form; wrap = form;
-    }
-    if (!box || !wrap || wrap.getAttribute('data-vs-suggest')) { return; }
-    wrap.setAttribute('data-vs-suggest', '1');
-    if (!modeA && getComputedStyle(wrap).position === 'static') { wrap.style.position = 'relative'; }
+    select.dataset.vsSearchableSelect = 'ready';
+    sequence += 1;
 
+    var wrapper = document.createElement('div');
+    var input = document.createElement('input');
+    var list = document.createElement('div');
+    var listId = 'vs-select-options-' + sequence;
+    var inputId = select.id ? select.id + '-search' : 'vs-select-search-' + sequence;
+    var wantRequired = select.required;
+    var label = getAccessibleLabel(select);
+    var activeIndex = -1;
+    var isOpen = false;
+
+    wrapper.className = 'vs-searchable-select';
+    wrapper.style.width = select.style.width || window.getComputedStyle(select).width;
+    wrapper.style.maxWidth = '100%';
+    input.type = 'text';
+    input.id = inputId;
+    input.className = select.className;
+    input.classList.add('vs-searchable-select-input');
+    input.style.cssText = select.style.cssText;
+    input.placeholder = 'Search options...';
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-label', 'Search ' + label + ' options');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-expanded', 'false');
+    input.setAttribute('aria-controls', listId);
     input.setAttribute('autocomplete', 'off');
     input.setAttribute('autocapitalize', 'off');
-    input.setAttribute('spellcheck', 'false');
-    input.setAttribute('role', 'combobox');
-    input.setAttribute('aria-expanded', 'false');
+    input.spellcheck = false;
+    if (select.hasAttribute('form')) input.setAttribute('form', select.getAttribute('form'));
+    if (select.hasAttribute('aria-describedby')) {
+      input.setAttribute('aria-describedby', select.getAttribute('aria-describedby'));
+    }
+    input.required = wantRequired;
 
-    if (modeA && !document.getElementById('vs-mic-btn') && !wrap.querySelector('.vs-mic-btn')) {
-      var mb = document.createElement('button');
-      mb.type = 'button'; mb.className = 'vs-mic-btn'; mb.innerHTML = MIC_SVG;
-      mb.setAttribute('aria-label', 'Search with your voice'); mb.title = 'Search with your voice';
-      wrap.appendChild(mb);
-      wireMic(mb, input, function (t) { go(t); });
+    list.id = listId;
+    list.className = 'vs-searchable-select-menu';
+    list.setAttribute('role', 'listbox');
+    list.hidden = true;
+
+    select.parentNode.insertBefore(wrapper, select);
+    wrapper.appendChild(input);
+    wrapper.appendChild(list);
+    wrapper.appendChild(select);
+    select.classList.add('vs-searchable-select-native');
+    select.hidden = true;
+    select.setAttribute('aria-hidden', 'true');
+    select.tabIndex = -1;
+    // The native select stays non-required (it is hidden and cannot show errors).
+    // Code that sets select.required = true/false now controls the search box instead.
+    select.removeAttribute('required');
+    Object.defineProperty(select, 'required', {
+      configurable: true,
+      get: function () { return wantRequired; },
+      set: function (value) { wantRequired = !!value; syncRequired(); }
+    });
+
+    // A field that is hidden (display:none / [hidden] parent) is never enforced,
+    // otherwise the browser blocks the form on a control the person cannot see.
+    function isVisible() {
+      return input.getClientRects().length > 0;
     }
 
-    var clear = null;
-    if (modeA) {
-      var lead = document.createElement('span');
-      lead.className = 'vs-lead-icon'; lead.innerHTML = ICON.search;
-      box.insertBefore(lead, input);
-      clear = document.createElement('button');
-      clear.type = 'button'; clear.className = 'vs-clear-btn'; clear.hidden = true;
-      clear.setAttribute('aria-label', 'Clear search'); clear.title = 'Clear'; clear.innerHTML = ICON.x;
-      box.insertBefore(clear, goBtn || null);
+    function isRequired() {
+      return wantRequired && isVisible();
     }
 
-    var list = document.createElement('ul');
-    list.className = 'vs-suggest'; list.hidden = true; list.setAttribute('role', 'listbox');
-    wrap.appendChild(list);
+    function syncRequired() {
+      var required = isRequired();
+      input.required = required;
+      if (!required) input.setCustomValidity('');
+    }
 
-    var items = [], active = -1, typedValue = '', lastQuery = null, timer = null;
+    function setOpen(open) {
+      isOpen = open;
+      list.hidden = !open;
+      input.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (!open) {
+        activeIndex = -1;
+        input.removeAttribute('aria-activedescendant');
+      }
+    }
 
-    function isOpen() { return !list.hidden; }
-    function close() { list.hidden = true; active = -1; input.setAttribute('aria-expanded', 'false'); }
-    function toggleClear() { if (clear) { clear.hidden = !input.value.length; } }
-    function setActive(i) {
-      var lis = list.children;
-      if (active >= 0 && lis[active]) { lis[active].classList.remove('is-active'); }
-      active = i;
-      if (active >= 0 && lis[active]) {
-        lis[active].classList.add('is-active');
-        lis[active].scrollIntoView({ block: 'nearest' });
-        input.value = items[active].text;
+    function currentOption() {
+      return select.options[select.selectedIndex] || null;
+    }
+
+    function syncInput() {
+      var selected = currentOption();
+      input.value = selected ? optionLabel(selected) : '';
+      input.disabled = select.disabled;
+      syncRequired();
+      input.setCustomValidity('');
+      if (isOpen) renderOptions();
+    }
+
+    function updateValidity(value) {
+      var match = findMatch(value);
+      if (value.trim() && !match) {
+        input.setCustomValidity(invalidMessage);
+      } else if (isRequired() && match && match.value === '') {
+        input.setCustomValidity('Choose a non-empty option.');
       } else {
-        input.value = typedValue;
+        input.setCustomValidity('');
       }
-      toggleClear();
+      return match;
     }
 
-    // Open the results page for this text.
-    function go(text) {
-      text = (text || '').trim();
-      if (!text) { input.focus(); return; }
-      input.value = text; saveHist(KEYX, text); close();
-      if (modeA) { location.href = BASE + RESULTS + '?q=' + encodeURIComponent(text); }
-      else if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
-    }
+    function findMatch(value) {
+      var normalized = value.trim().toLocaleLowerCase();
+      if (!normalized) return null;
 
-    function draw() {
-      list.innerHTML = '';
-      if (!items.length) { close(); return; }
-      var low = typedValue.trim().toLowerCase();
-      list.classList.toggle('is-dark', isLight(getComputedStyle(input).color));
-      list.style.width = box.offsetWidth + 'px';
-      items.forEach(function (it) {
-        var li = document.createElement('li');
-        li.setAttribute('role', 'option');
-        var ic = document.createElement('span'); ic.className = 'vs-s-icon'; ic.innerHTML = it.hist ? ICON.clock : ICON.search;
-        var tx = document.createElement('span'); tx.className = 'vs-s-text';
-        if (low && it.text.toLowerCase().indexOf(low) === 0) {
-          tx.appendChild(document.createTextNode(it.text.slice(0, low.length)));
-          var b = document.createElement('b'); b.textContent = it.text.slice(low.length); tx.appendChild(b);
-        } else if (low) {
-          var b2 = document.createElement('b'); b2.textContent = it.text; tx.appendChild(b2);
-        } else {
-          tx.textContent = it.text;
+      var selected = currentOption();
+      if (selected && optionLabel(selected).toLocaleLowerCase() === normalized) {
+        return selected;
+      }
+
+      var options = getOptions(select);
+      for (var index = 0; index < options.length; index += 1) {
+        if (!options[index].disabled
+          && optionLabel(options[index]).toLocaleLowerCase() === normalized) {
+          return options[index];
         }
-        li.appendChild(ic); li.appendChild(tx);
-        if (it.hist) {
-          var del = document.createElement('button');
-          del.type = 'button'; del.className = 'vs-s-del'; del.textContent = 'Delete';
-          del.setAttribute('aria-label', 'Remove from search history');
-          del.addEventListener('mousedown', function (e) { e.preventDefault(); e.stopPropagation(); });
-          del.addEventListener('click', function (e) { e.stopPropagation(); delHist(KEYX, it.text); build(typedValue); });
-          li.appendChild(del);
-        } else {
-          if (it.type === 'short') {
-            var tag = document.createElement('span'); tag.className = 'vs-s-tag'; tag.textContent = 'Short'; li.appendChild(tag);
-          }
-          if (it.thumb) {
-            var im = document.createElement('img'); im.className = 'vs-s-thumb'; im.alt = ''; im.loading = 'lazy'; im.src = it.thumb;
-            im.onerror = function () { im.style.display = 'none'; };
-            li.appendChild(im);
-          }
-        }
-        li.addEventListener('mousedown', function (e) { e.preventDefault(); });
-        li.addEventListener('click', function () { go(it.text); });
-        list.appendChild(li);
-      });
-      list.hidden = false; input.setAttribute('aria-expanded', 'true');
+      }
+      return null;
     }
 
-    function merge(hist, sugs) {
-      var seen = {}, out = [];
-      hist.forEach(function (t) { var k = t.toLowerCase(); if (!seen[k]) { seen[k] = 1; out.push({ text: t, hist: true }); } });
-      sugs.forEach(function (s) {
-        var k = (s.title || '').toLowerCase();
-        if (k && !seen[k]) { seen[k] = 1; out.push({ text: s.title, hist: false, type: s.type, thumb: s.thumb }); }
-      });
-      return out.slice(0, MAX_ITEMS);
-    }
-
-    function build(q) {
-      typedValue = q; var typed = q.trim(), low = typed.toLowerCase();
-      var hist = readHist(KEYX).filter(function (h) { return !low || h.toLowerCase().indexOf(low) === 0; }).slice(0, low ? 3 : 8);
-      lastQuery = typed;
-      items = merge(hist, []); active = -1; draw();
-      if (!typed) { return; }
-      fetchSuggestions(typed, scope, function (sugs) {
-        if (lastQuery !== typed || document.activeElement !== input) { return; }
-        items = merge(hist, sugs); active = -1; draw();
+    function filteredOptions() {
+      var query = input.value.trim().toLocaleLowerCase();
+      return getOptions(select).filter(function (option) {
+        return optionLabel(option).toLocaleLowerCase().indexOf(query) !== -1;
       });
     }
 
+    function setActive(index, items) {
+      var enabled = [];
+      items.forEach(function (item, itemIndex) {
+        if (!item.disabled) enabled.push(itemIndex);
+      });
+      Array.prototype.forEach.call(list.children, function (child) {
+        child.classList.remove('is-active');
+      });
+      if (!enabled.length) {
+        activeIndex = -1;
+        input.removeAttribute('aria-activedescendant');
+        return;
+      }
+
+      var position = enabled.indexOf(index);
+      if (position === -1) position = 0;
+      activeIndex = enabled[position];
+      input.setAttribute('aria-activedescendant', listId + '-option-' + activeIndex);
+
+      var activeItem = list.children[activeIndex];
+      if (activeItem) {
+        activeItem.classList.add('is-active');
+        activeItem.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    function choose(option) {
+      if (!option || option.disabled) return;
+
+      var changed = select.value !== option.value;
+      select.selectedIndex = option.index;
+      input.value = optionLabel(option);
+      input.setCustomValidity('');
+      setOpen(false);
+      if (changed) dispatchChange(select);
+    }
+
+    function renderOptions() {
+      while (list.firstChild) list.removeChild(list.firstChild);
+      var items = filteredOptions();
+
+      if (!items.length) {
+        var empty = document.createElement('div');
+        empty.className = 'vs-searchable-select-empty';
+        empty.textContent = 'No matching options';
+        empty.setAttribute('role', 'status');
+        list.appendChild(empty);
+        activeIndex = -1;
+        input.removeAttribute('aria-activedescendant');
+        return;
+      }
+
+      items.forEach(function (option, index) {
+        var item = document.createElement('div');
+        item.id = listId + '-option-' + index;
+        item.className = 'vs-searchable-select-option';
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', option.selected ? 'true' : 'false');
+        item.setAttribute('aria-disabled', option.disabled ? 'true' : 'false');
+        item.textContent = optionLabel(option);
+        if (option.disabled) item.classList.add('is-disabled');
+        if (option.selected) item.classList.add('is-selected');
+        item.addEventListener('mouseenter', function () {
+          if (!option.disabled) setActive(index, items);
+        });
+        item.addEventListener('mousedown', function (event) {
+          event.preventDefault();
+        });
+        item.addEventListener('click', function () {
+          choose(option);
+        });
+        list.appendChild(item);
+      });
+
+      activeIndex = -1;
+      input.removeAttribute('aria-activedescendant');
+    }
+
+    function commitInput(emitChange) {
+      if (!isVisible()) {
+        input.setCustomValidity('');
+        return true;
+      }
+      var match = updateValidity(input.value);
+      if (input.value.trim() && !match) return false;
+      if (isRequired() && (!match || match.value === '')) {
+        input.setCustomValidity('Choose a non-empty option.');
+        return false;
+      }
+
+      var previousValue = select.value;
+      select.selectedIndex = match ? match.index : -1;
+      if (emitChange && previousValue !== select.value) dispatchChange(select);
+      return true;
+    }
+
+    input.addEventListener('focus', function () {
+      setOpen(true);
+      renderOptions();
+    });
+    input.addEventListener('click', function () {
+      if (!isOpen) {
+        setOpen(true);
+        renderOptions();
+      }
+    });
     input.addEventListener('input', function () {
-      toggleClear(); clearTimeout(timer);
-      var v = input.value; typedValue = v;
-      timer = setTimeout(function () { build(v); }, 120);
+      activeIndex = -1;
+      input.removeAttribute('aria-activedescendant');
+      updateValidity(input.value);
+      renderOptions();
+      setOpen(true);
     });
-    input.addEventListener('focus', function () { toggleClear(); build(input.value); });
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        if (!isOpen()) { build(input.value); return; }
-        e.preventDefault();
-        var n = items.length; if (!n) { return; }
-        var next = e.key === 'ArrowDown' ? active + 1 : active - 1;
-        if (next >= n) { next = -1; } if (next < -1) { next = n - 1; }
-        setActive(next);
-      } else if (e.key === 'Escape') {
-        if (isOpen()) { close(); } else { input.blur(); }
-      } else if (e.key === 'Enter' && e.isTrusted) {
-        if (modeA) { e.preventDefault(); go(input.value); }
-        else { saveHist(KEYX, input.value); close(); }
+    input.addEventListener('keydown', function (event) {
+      var items = filteredOptions();
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (!isOpen) {
+          setOpen(true);
+          renderOptions();
+          items = filteredOptions();
+        }
+        var direction = event.key === 'ArrowDown' ? 1 : -1;
+        var start = activeIndex;
+        for (var step = 0; step < items.length; step += 1) {
+          start = (start + direction + items.length) % items.length;
+          if (!items[start].disabled) {
+            setActive(start, items);
+            break;
+          }
+        }
+      } else if (event.key === 'Enter' && isOpen && activeIndex >= 0) {
+        event.preventDefault();
+        choose(items[activeIndex]);
+      } else if (event.key === 'Escape' && isOpen) {
+        event.preventDefault();
+        syncInput();
+        setOpen(false);
+      } else if (event.key === 'Tab') {
+        if (!commitInput(true)) {
+          event.preventDefault();
+          input.reportValidity();
+        } else {
+          setOpen(false);
+        }
       }
     });
-    if (goBtn) { goBtn.addEventListener('click', function () { go(input.value); }); }
-    if (clear) {
-      clear.addEventListener('click', function () { input.value = ''; toggleClear(); input.focus(); build(''); });
+    input.addEventListener('change', function () {
+      commitInput(true);
+      setOpen(false);
+    });
+    input.addEventListener('blur', function () {
+      window.setTimeout(function () {
+        if (!wrapper.contains(document.activeElement)) {
+          commitInput(true);
+          setOpen(false);
+        }
+      }, 0);
+    });
+    select.addEventListener('change', syncInput);
+
+    Array.prototype.forEach.call(select.labels || [], function (associatedLabel) {
+      associatedLabel.htmlFor = inputId;
+      associatedLabel.addEventListener('click', function () {
+        window.setTimeout(function () { input.focus(); }, 0);
+      });
+    });
+
+    document.addEventListener('mousedown', function (event) {
+      if (isOpen && !wrapper.contains(event.target)) {
+        commitInput(true);
+        setOpen(false);
+      }
+    });
+
+    var form = select.form;
+    if (form) {
+      form.addEventListener('reset', function () {
+        window.setTimeout(function () {
+          syncInput();
+          setOpen(false);
+        }, 0);
+      });
+      // Re-check visibility right before the browser validates the form.
+      form.addEventListener('click', syncRequired, true);
+      form.addEventListener('keydown', syncRequired, true);
+      form.addEventListener('submit', function (event) {
+        if (!commitInput(false)) {
+          event.preventDefault();
+          input.reportValidity();
+          input.focus();
+        }
+      }, true);
     }
-    document.addEventListener('mousedown', function (e) { if (!wrap.contains(e.target)) { close(); } });
-    window.addEventListener('resize', function () { if (isOpen()) { list.style.width = box.offsetWidth + 'px'; } });
-    toggleClear();
+
+    if (typeof MutationObserver === 'function') {
+      var observer = new MutationObserver(function () {
+        if (isOpen) renderOptions();
+        if (document.activeElement !== input) syncInput();
+      });
+      observer.observe(select, {
+        attributes: true,
+        attributeFilter: ['disabled', 'label', 'selected', 'value'],
+        childList: true,
+        subtree: true
+      });
+    }
+
+    syncInput();
   }
 
-  // Load the stylesheet automatically when the page did not include it.
-  (function () {
-    var has = false, ls = document.querySelectorAll('link[rel="stylesheet"]');
-    for (var i = 0; i < ls.length; i++) { if ((ls[i].getAttribute('href') || '').indexOf('search-suggest.css') !== -1) { has = true; } }
-    if (!has && BASE) {
-      var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = BASE + 'search-suggest.css';
-      document.head.appendChild(l);
-    }
-  })();
+  function initialize(root) {
+    var selector = 'select:not([multiple])';
+    if (root.nodeType === 1 && root.matches(selector)) enhance(root);
+    var selects = root.querySelectorAll(selector);
+    Array.prototype.forEach.call(selects, enhance);
+  }
 
-  if (window.__vsSuggestLoaded) { return; }
-  window.__vsSuggestLoaded = true;
-  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); } else { init(); }
+  function start() {
+    initialize(document);
+    if (typeof MutationObserver === 'function' && document.documentElement) {
+      var observer = new MutationObserver(function (records) {
+        records.forEach(function (record) {
+          Array.prototype.forEach.call(record.addedNodes, function (node) {
+            if (node.nodeType === 1) initialize(node);
+          });
+        });
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
 })();

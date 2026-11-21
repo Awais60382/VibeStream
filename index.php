@@ -18,6 +18,7 @@ require_once __DIR__ . '/notifications-store.php';
 require_once __DIR__ . '/user-menu.php';
 require_once __DIR__ . '/sidebar-navigation.php';
 require_once __DIR__ . '/vip-badge.php';
+require_once __DIR__ . '/premium-popup.php';
 require_once __DIR__ . '/live-store.php';
 $siteName = vs_branding_app_name();
 $defaultTheme = vs_branding_default_theme();
@@ -163,6 +164,14 @@ if (!function_exists('render_navbar')) {
                 </form>
             </div>
 
+            <nav class="nav-links" aria-label="Main">
+                <a class="nav-link<?php echo $active === 'home' ? ' active' : ''; ?>" href="index.php" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 2.5 11.5H5V20h5v-5.5h4V20h5v-8.5h2.5z"/></svg><span>Home</span></a>
+                <a class="nav-link<?php echo $active === 'watch' ? ' active' : ''; ?>" href="watch.php" aria-label="Explore" title="Explore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15.8 8.2-2.1 5.5-5.5 2.1 2.1-5.5z"/></svg><span>Explore</span></a>
+                <a class="nav-link<?php echo $active === 'shorts' ? ' active' : ''; ?>" href="shorts.php" aria-label="Shorts" title="Shorts"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 2 4.5 14H10l-1 8 9.5-12.5H13z"/></svg><span>Shorts</span></a>
+                <a class="nav-link<?php echo $active === 'live' ? ' active' : ''; ?>" href="live.php" aria-label="Live" title="Live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8 8a5.7 5.7 0 0 0 0 8m8-8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14"/></svg><span>Live</span></a>
+                <a class="nav-link nav-premium<?php echo $active === 'premium' ? ' active' : ''; ?>" href="premium.php" aria-label="Premium" title="Premium"><svg viewBox="0 0 24 20" fill="currentColor" aria-hidden="true"><path d="M2 17 0 5l6.5 5L12 1l5.5 9L24 5l-2 12zM3 19h18v1.5H3z"/></svg><span>Premium</span></a>
+            </nav>
+
             <div class="nav-right">
                 <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
@@ -172,7 +181,7 @@ if (!function_exists('render_navbar')) {
                     <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                 </button>
                 <?php echo vs_notification_bell_html(); ?>
-                <a href="upload.php" class="create-btn">+ Create</a>
+                <a href="upload.php" class="create-btn" aria-label="Create video" title="Create video"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10 5-3v10l-5-3M9.5 10v4M7.5 12h4"/></svg><span class="create-label">Create</span></a>
                 <?php if ($isLoggedIn): ?>
                     <?php echo vs_user_menu_html($username, $navAvatar); ?>
                 <?php else: ?>
@@ -238,6 +247,17 @@ $types = '';
 $shortWhere = $hasTypeColumn ? "type = 'short'" : "1=0";
 $shortParams = [];
 $shortTypes = '';
+$hasScheduledAtColumn = column_exists($conn, 'videos', 'scheduled_at');
+if ($hasScheduledAtColumn) {
+    $publishCutoff = date('Y-m-d H:i:s');
+    $scheduleFilter = ' AND (scheduled_at IS NULL OR scheduled_at <= ?)';
+    $where .= $scheduleFilter;
+    $params[] = $publishCutoff;
+    $types .= 's';
+    $shortWhere .= $scheduleFilter;
+    $shortParams[] = $publishCutoff;
+    $shortTypes .= 's';
+}
 
 if ($selectedCategory !== '' && $hasCategoryColumn) {
     $where .= " AND LOWER(TRIM(category)) = ?";
@@ -495,7 +515,7 @@ $categories = array_values(array_unique($categories));
             right: 0;
             height: var(--navbar-height);
             display: grid;
-            grid-template-columns: auto minmax(280px, 560px) auto;
+            grid-template-columns: auto minmax(240px, 420px) 1fr auto;
             align-items: center;
             gap: 18px;
             padding: 0 20px;
@@ -516,6 +536,20 @@ $categories = array_values(array_unique($categories));
             display: flex;
             justify-content: center;
         }
+
+        .nav-links { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; }
+        .nav-link {
+            display: inline-flex; align-items: center; gap: 8px; background: transparent; border-radius: 999px; padding: 9px 14px;
+            font-size: 15px; font-weight: 500; color: var(--text); border: 1px solid transparent; white-space: nowrap;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+        .nav-link svg { width: 20px; height: 20px; flex: 0 0 auto; }
+        .nav-link:hover { background: var(--surface-2); }
+        .nav-link.nav-premium { color: #ffc933; }
+        .nav-link.nav-premium svg { width: 22px; height: 18px; }
+        .nav-links .nav-link { width: 42px; height: 42px; justify-content: center; padding: 9px; }
+        .nav-links .nav-link span { display: none; }
+        .nav-link.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
         .brand {
             font-size: 22px;
@@ -585,6 +619,9 @@ $categories = array_values(array_unique($categories));
         .sign-in-btn:hover {
             filter: brightness(1.05);
         }
+        .nav-right .create-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
+        .nav-right .create-btn svg { width: 20px; height: 20px; }
+        .nav-right .create-label { display: none; }
 
         .user-badge-pill {
             display: inline-flex;
@@ -1005,15 +1042,20 @@ $categories = array_values(array_unique($categories));
             border-radius: 18px;
         }
 
+        @media (max-width: 1400px) {
+            .nav-link span { display: none; }
+            .nav-link { padding: 9px 11px; }
+        }
+
         @media (max-width: 1250px) {
             .app-navbar {
-                grid-template-columns: auto minmax(220px, 1fr) auto;
+                grid-template-columns: auto minmax(200px, 1fr) auto auto;
             }
         }
 
         @media (max-width: 1000px) {
             .app-navbar {
-                grid-template-columns: auto 1fr auto;
+                grid-template-columns: auto 1fr auto auto;
                 gap: 12px;
             }
 
@@ -1026,26 +1068,43 @@ $categories = array_values(array_unique($categories));
         }
 
         @media (max-width: 760px) {
+            body { padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
             .app-navbar {
                 grid-template-columns: minmax(0, 1fr) auto;
-                grid-template-rows: 48px 44px;
-                height: 112px;
+                grid-template-rows: 64px;
+                height: 64px;
                 align-content: center;
-                gap: 4px 8px;
+                gap: 8px;
                 padding: 0 12px;
+                backdrop-filter: none;
             }
 
-            :root { --navbar-height: 112px; }
+            :root { --navbar-height: 64px; }
 
             .nav-left { grid-column: 1; grid-row: 1; min-width: 0; }
-            .nav-center { grid-column: 1 / -1; grid-row: 2; width: 100%; min-width: 0; }
+            .nav-center { display: none; }
+            .nav-links {
+                position: fixed; left: 0; right: 0; bottom: 0; z-index: 1100;
+                display: flex !important; justify-content: space-around; gap: 2px;
+                width: auto; min-width: 0; height: calc(58px + env(safe-area-inset-bottom, 0px));
+                padding: 4px 6px env(safe-area-inset-bottom, 0px);
+                background: var(--surface); border-top: 1px solid var(--border);
+                box-shadow: 0 -8px 24px rgba(0, 0, 0, .24);
+            }
+            .nav-links .nav-link {
+                display: flex; flex: 1 1 0; flex-direction: column; justify-content: center;
+                width: auto; height: 48px; min-width: 0; gap: 3px; padding: 3px 2px;
+                border: 0; border-radius: 10px;
+            }
+            .nav-links .nav-link span { display: block !important; font-size: 10px; line-height: 1; }
+            .nav-links .nav-link svg { width: 20px; height: 20px; }
             .nav-right { grid-column: 2; grid-row: 1; gap: 6px; min-width: 0; }
             .search-form { max-width: none; }
             .brand { font-size: 20px; }
 
             .nav-right { justify-content: flex-end; }
 
-            .create-btn {
+            .nav-right .create-btn {
                 display: none;
             }
 
@@ -1073,12 +1132,8 @@ $categories = array_values(array_unique($categories));
 
         @media (max-width: 540px) {
             .app-navbar {
-                height: 112px;
+                height: 64px;
                 padding: 0 10px;
-            }
-
-            :root {
-                --navbar-height: 112px;
             }
 
             .brand { font-size: 18px; }
@@ -1596,6 +1651,10 @@ $categories = array_values(array_unique($categories));
 </head>
 <body>
     <?php render_navbar('home'); ?>
+    <?php
+    $vsPromptUser = trim((string)($_SESSION['username'] ?? ''));
+    echo vs_premium_popup_html($vsPromptUser, vs_premium_popup_eligible($vsPromptUser));
+    ?>
 
     <div class="admin-shell">
         <div class="sidebar-backdrop" data-sidebar-close></div>
@@ -1927,6 +1986,7 @@ $categories = array_values(array_unique($categories));
     </div>
 
     <?php /* The Report popup loads on demand from video-menu.js (report-widget.php), so the cards' three dots never depend on it. */ ?>
+    <script src="creator-analytics-tracking.js?v=1"></script>
     <script src="video-menu.js?v=4"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 /**
  * Premium download. Put this file in the SITE ROOT (next to watch.php).
  *   download.php?id=<video id>
- * Only Premium members and admins can use it. Everyone else gets a 403 message.
+ * Only Premium members can use it. Everyone else gets a 403 message.
  */
 session_start();
 include_once __DIR__ . '/connection.php';
@@ -53,8 +53,19 @@ $id = trim((string)($_GET['id'] ?? ''));
 if ($id === '' || strlen($id) > 191) {
     vs_dl_fail(400, 'Missing video.');
 }
-$stmt = $conn->prepare('SELECT * FROM videos WHERE id = ? LIMIT 1');
-$stmt->bind_param('s', $id);
+$scheduleColumn = $conn->query("SHOW COLUMNS FROM `videos` LIKE 'scheduled_at'");
+if (!$scheduleColumn) {
+    vs_dl_fail(500, 'Could not verify video publication status.');
+}
+$hasScheduledAtColumn = $scheduleColumn->num_rows > 0;
+$publishCutoff = date('Y-m-d H:i:s');
+$scheduleFilter = $hasScheduledAtColumn ? ' AND (scheduled_at IS NULL OR scheduled_at <= ?)' : '';
+$stmt = $conn->prepare('SELECT * FROM videos WHERE id = ?' . $scheduleFilter . ' LIMIT 1');
+if ($hasScheduledAtColumn) {
+    $stmt->bind_param('ss', $id, $publishCutoff);
+} else {
+    $stmt->bind_param('s', $id);
+}
 $stmt->execute();
 $video = $stmt->get_result()->fetch_assoc();
 $stmt->close();

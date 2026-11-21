@@ -104,7 +104,7 @@ try {
         );
         $stmt->execute([$streamId]);
         $messages = array_reverse($stmt->fetchAll(PDO::FETCH_ASSOC));
-        // Premium members and admins get a VIP flag so the chat can show their badge.
+        // Premium members get a VIP flag so the chat can show their badge.
         foreach ($messages as &$chatRow) {
             $chatRow['vip'] = function_exists('vs_vip_is') ? vs_vip_is((string)$chatRow['username'], $pdo) : false;
         }

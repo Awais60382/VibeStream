@@ -53,10 +53,4 @@ try {
 } catch (Throwable $e) {
     error_log('insights-people: ' . $e->getMessage());
 }
-// People listed as Premium admins always have Premium.
-foreach ($names as $n) {
-    if (defined('VS_PREMIUM_ADMINS') && in_array(strtolower($n), array_map('strtolower', VS_PREMIUM_ADMINS), true)) {
-        $people[mb_strtolower($n)]['tier'] = 'plus';
-    }
-}
 echo json_encode(['ok' => true, 'people' => $people], JSON_UNESCAPED_SLASHES);

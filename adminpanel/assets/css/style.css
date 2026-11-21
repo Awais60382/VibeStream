@@ -52,9 +52,8 @@ a {
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
-  overflow-y: auto;
-  /* Reserve scrollbar gutter to keep inner content width stable so header/footer dividers align with scrollbar */
-  scrollbar-gutter: stable;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
   background: var(--admin-sidebar);
   color: #ffffff;
   box-shadow: 18px 0 42px rgba(15, 23, 42, 0.18);
@@ -1144,6 +1143,25 @@ html[data-theme="dark"] .profile-button .avatar-sm {
   }
 }
 
+@media (max-height: 520px) {
+  .admin-sidebar .vs-side-card {
+    display: none;
+  }
+
+  .admin-sidebar .sidebar-header {
+    padding-block: 0.65rem;
+  }
+
+  .admin-sidebar .sidebar-user {
+    margin-bottom: 0.35rem;
+    padding: 0.45rem;
+  }
+
+  .admin-sidebar .sidebar-footer {
+    padding-block: 0.45rem 0.25rem;
+  }
+}
+
 @media (max-width: 575.98px) {
   .page-heading,
   .panel-header {
@@ -2121,8 +2139,13 @@ html[data-theme="dark"] body {
 .admin-sidebar .brand-subtitle { color: #9ba8bb; }
 .admin-sidebar .sidebar-nav {
   display: flex;
-  flex: 1 0 auto;
+  flex: 1 1 auto;
   flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
   gap: 3px;
   padding: 0.75rem 0.8rem 0.25rem;
 }

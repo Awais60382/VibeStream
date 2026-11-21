@@ -9,12 +9,14 @@
  * The first time each day the brain reaches a new stage, a small notice pops up.
  * The popup also shows the last 7 days and a healthy streak, and a "Hide for today" link.
  * Click the pill for details.
+ * On every page the pill sits just BELOW the navbar (top centre), never on it.
  * Replays count too (video ended then played again, or a looping short starting over).
  * Add <script src="brain.js" defer></script> to every page you want it on.
  * The count is kept in localStorage, one separate copy per signed-in account (brain-user.php says who is signed in),
  * so two people using the same browser each get their own number.
  * Signed-in accounts are also saved on the server (brain-sync.php), so the same account shows the same
  * count on every device. The newest change wins.
+ * Signed-in owners and administrators can use the brain just like other accounts.
  */
 (function () {
   'use strict';
@@ -35,6 +37,7 @@
   var DAILY_RESET = true;  // true = count starts again each day, false = lifetime count
   var RESET_HOUR = 7;      // the new day starts at this hour (7 = 7:00 am, in the visitor's own time)
   var IN_ADMIN = /\/adminpanel\//i.test(location.pathname); // the admin panel has its own shorts.php / watch.php pages: managing is not watching
+  var IN_PLAYER = /\/(?:shorts|watch)\.php$/i.test(location.pathname) && !IN_ADMIN;
   var KEY_CFG = 'vsBrain:cfg';       // site-wide settings from the admin panel (same for everyone)
   var KEY, KEY_SEEN, KEY_HIST, KEY_SNOOZE; // per-account keys, filled in by setWho()
   var SELF = (document.currentScript && document.currentScript.src) ? document.currentScript.src : '';
@@ -61,6 +64,7 @@
       .then(function (j) { cb(j && typeof j.who === 'string' ? j.who : null); })
       .catch(function () { cb(null); });
   }
+  var mounted = false;
   var known = (typeof window.VS_BRAIN_USER === 'string' && window.VS_BRAIN_USER) ? window.VS_BRAIN_USER : '';
   if (!known) { try { known = sessionStorage.getItem('vsBrain:who') || ''; } catch (e) {} }
   setWho(known || 'guest');
@@ -323,9 +327,12 @@
   '@keyframes vsb-steam{0%{opacity:0;transform:translateY(2px)}40%{opacity:.8}100%{opacity:0;transform:translateY(-3px)}}' +
   '@keyframes vsb-crumb{0%{opacity:1;transform:translateY(0)}75%{opacity:1}100%{opacity:0;transform:translateY(4px)}}' +
   '@keyframes vsb-pop{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}' +
+  /* Watch / Shorts pages: sit just BELOW the navbar (--vsb-top is measured from the real navbar in place()) */
+  '.vsb.float.vsb-player{top:var(--vsb-top,calc(var(--navbar-height,72px) + 8px))}' +
   /* phones: tuck it into the bottom-right corner so it does not cover the top bar */
   '@media (max-width:760px){' +
     '.vsb.float{top:auto;bottom:14px;left:auto;right:14px;transform:none}' +
+    '.vsb.float.vsb-player{top:var(--vsb-top,calc(var(--navbar-height,72px) + 8px));bottom:auto;left:50%;right:auto;transform:translateX(-50%)}' +
     '.vsb.float .vsb-pop,.vsb.float .vsb-toast{top:auto;bottom:calc(100% + 10px);left:auto;right:0;transform:none!important}' +
     '.vsb button.vsb-pill{height:46px;padding-right:16px!important}.vsb-num{font-size:21px}.vsb-face{width:38px;height:35px}' +
   '}' +
@@ -531,6 +538,9 @@
     if (IN_ADMIN) return null;
     var file = location.pathname.split('/').pop().toLowerCase();
     var id = new URLSearchParams(location.search).get('id') || '';
+    // no video id in the address, or the page shows its "no videos / no shorts available" message: nothing was watched
+    if (!id || id === '0') return null;
+    if (document.querySelector('.watch-empty-card, .empty-shorts')) return null;
     if (file === 'watch.php') return { kind: 'video', key: 'watch:' + id };
     if (file === 'shorts.php') return { kind: 'short', key: 'shorts:' + id };
     return null;
@@ -624,19 +634,19 @@
     else if (st === 1 && f.__vsbEnded) { f.__vsbEnded = false; if (isMainBox(f)) addReplay(); } // playing again
   }, false);
 
-  // ---------- where the pill goes: top centre ----------
+  // ---------- where the pill goes ----------
   function place() {
-    // pages whose search bar sits in the top centre (like the home page): go right beside the search bar
-    var sf = document.querySelector('.app-navbar .search-form, .navbar .search-form, header .search-form');
-    if (sf && sf.parentNode && window.innerWidth > 760) {
-      var r = sf.getBoundingClientRect(), mid = window.innerWidth / 2;
-      if (r.width && r.top < 140 && r.left < mid && r.right > mid) {
-        if (root.previousSibling !== sf) sf.parentNode.insertBefore(root, sf.nextSibling);
-        root.classList.remove('float');
-        return;
-      }
+    // Every page: float at the top centre, just BELOW the navbar (never on it).
+    // Phones (non-player pages) keep the bottom-right corner so the top bar stays free.
+    var phone = window.innerWidth <= 760;
+    if (IN_PLAYER || !phone) {
+      root.classList.add('vsb-player');
+      var nav = document.querySelector('.app-navbar, header.navbar, .navbar');
+      var bottom = (nav && nav.getClientRects().length) ? Math.round(nav.getBoundingClientRect().bottom) : 0; // 0 = navbar hidden
+      root.style.setProperty('--vsb-top', (Math.max(bottom, 0) + 8) + 'px');
+    } else {
+      root.classList.remove('vsb-player');
     }
-    // everywhere else: float at the top centre of the screen
     if (root.parentNode !== document.body) document.body.appendChild(root);
     root.classList.add('float');
   }
@@ -659,11 +669,15 @@
 
   // ---------- start ----------
   function mount() {
+    if (mounted) return;
+    mounted = true;
     var style = document.createElement('style');
     style.id = 'vsb-style';
     style.textContent = css;
     document.head.appendChild(style);
     place();
+    window.addEventListener('resize', place);
+    window.addEventListener('load', place);
     window.addEventListener('load', place);
     var rt = null;
     window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(place, 200); });
@@ -734,7 +748,9 @@
     get: load
   };
 
-  function start() { if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount); }
+  function start() {
+    if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
+  }
   function switchTo(w) {              // another account is signed in (or someone signed out)
     setWho(w); rememberWho();
     clearTimeout(pushTimer); pulled = false;

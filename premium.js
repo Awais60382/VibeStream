@@ -3,18 +3,22 @@
 (function () {
   var S = window.VS_PREMIUM_STATE || { loggedIn: false, active: false, pending: false, plans: {}, payInfo: [], csrf: '' };
   var PLANS = S.plans || {};
-  var API = 'premium-api.php';
+  var API = window.VS_PREMIUM_API || 'premium-api.php';
+  var EXPORT_API = window.VS_PREMIUM_EXPORT_API || 'premium-points-export.php';
 
   function read() {
     return S.active && S.expires > Date.now() ? { plan: S.plan, since: S.since, expires: S.expires } : null;
   }
 
-  function send(action, plan, ref) {
+  function send(action, plan, ref, extra) {
     if (!S.loggedIn) { location.href = 'login.php'; return Promise.reject(new Error('Please sign in first.')); }
+    var payload = { action: action, plan: plan || '', ref: ref || '', csrf: S.csrf };
+    if (extra && extra.filters) payload.filters = extra.filters;
+    if (extra && extra.tier) payload.tier = extra.tier;
     return fetch(API, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: action, plan: plan || '', ref: ref || '', csrf: S.csrf })
+      body: JSON.stringify(payload)
     }).then(function (r) {
       return r.text().then(function (t) {
         var j;
@@ -71,9 +75,35 @@
     history: function () { return S.history || []; },
     limits: function () { return S.limits || {}; },
     request: function (plan, ref) { return send('request', plan, ref); },
-    redeem: function () { return send('redeem'); },
+    redeem: function (tier) { return send('redeem', '', '', { tier: tier || 500 }); },
+    rewards: function () {
+      return send('rewards').then(function () { return S.rewards || null; });
+    },
+    activityPage: function (filters) {
+      return send('activity', '', '', { filters: filters || {} }).then(function () {
+        return S.activityPage || null;
+      });
+    },
+    exportActivity: function (filters) {
+      if (!S.loggedIn) { location.href = 'login.php'; return Promise.reject(new Error('Please sign in first.')); }
+      return fetch(EXPORT_API, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csrf: S.csrf, filters: filters || {} })
+      }).then(function (response) {
+        if (response.ok) return response.blob();
+        return response.text().then(function (text) {
+          var result;
+          try { result = JSON.parse(text); } catch (error) { result = {}; }
+          throw new Error(result.error || 'Could not export points activity.');
+        });
+      });
+    },
     checkin: function () {
       return send('checkin').then(function () { return !!S.checkinAwarded; });
+    },
+    leaderboard: function (period) {
+      return Promise.resolve((period === 'week' ? S.leadersWeek : period === 'month' ? S.leadersMonth : S.leaders) || []);
     },
     points: function () { return Number(S.points) || 0; },
     pointsAvailable: function () { return !!S.pointsAvailable; },

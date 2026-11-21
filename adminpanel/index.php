@@ -120,6 +120,19 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
 #vsdPage .vsd-command-list li span{min-width:0}
 #vsdPage .vsd-command-list small{display:block;margin-top:2px;color:var(--vsd-muted);font-size:.74rem}
 #vsdPage .vsd-command-empty{padding:10px;border:1px dashed rgba(var(--nx-violet-rgb),.35);border-radius:9px;color:var(--vsd-muted);font-size:.82rem}
+#vsdPage .vsd-admin-alerts{padding:16px}
+#vsdPage .vsd-admin-alerts .vsd-head{margin-bottom:12px}
+#vsdPage .vsd-admin-alert-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+#vsdPage .vsd-admin-alert{display:flex;align-items:center;gap:11px;min-width:0;padding:12px;border:1px solid rgba(var(--nx-violet-rgb),.3);border-radius:12px;background:rgba(var(--nx-violet-rgb),.06);color:var(--nx-text);text-decoration:none}
+#vsdPage .vsd-admin-alert:hover{border-color:var(--nx-cyan);background:rgba(var(--nx-cyan-rgb),.07);color:var(--nx-text)}
+#vsdPage .vsd-admin-alert-icon{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border-radius:11px;background:rgba(var(--nx-cyan-rgb),.12);color:var(--nx-cyan-ink);font-size:1.05rem}
+#vsdPage .vsd-admin-alert[data-tone="warning"] .vsd-admin-alert-icon{background:rgba(var(--nx-amber-rgb),.14);color:var(--nx-amber)}
+#vsdPage .vsd-admin-alert-copy{flex:1;min-width:0}
+#vsdPage .vsd-admin-alert-copy strong,#vsdPage .vsd-admin-alert-copy small{display:block}
+#vsdPage .vsd-admin-alert-copy strong{font-size:.88rem}
+#vsdPage .vsd-admin-alert-copy small{margin-top:2px;color:var(--vsd-muted);font-size:.76rem}
+#vsdPage .vsd-admin-alert-value{flex:0 0 auto;font-size:.95rem;font-weight:700;color:var(--nx-cyan-ink)}
+#vsdPage .vsd-admin-alert[data-tone="warning"] .vsd-admin-alert-value{color:var(--nx-amber)}
 @media(max-width:640px){#vsdPage .vsd-command-lower{grid-template-columns:1fr}#vsdPage .vsd-command-head{align-items:center}}
 @media (prefers-reduced-motion:reduce){html body #vsdPage .vsd-card,html body #vsdPage .vsd-btn,html body #vsdPage .vsd-tbl tbody tr{transition:none}}
       </style>
@@ -153,6 +166,72 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
               </div>
             </div>
           </section>
+
+          <?php
+            $vsdAdminAlerts = [];
+            $vsdReportCount = $dashboardOverview['reports'] ?? null;
+            if (vs_admin_route_allowed('reported.php') && $vsdReportCount !== null) {
+                $vsdReportCount = (int)$vsdReportCount;
+                $vsdAdminAlerts[] = [
+                    'href' => 'reported.php',
+                    'icon' => 'bi-shield-exclamation',
+                    'title' => 'Open reports',
+                    'message' => $vsdReportCount > 0
+                        ? number_format($vsdReportCount) . ' report' . ($vsdReportCount === 1 ? '' : 's') . ' need review'
+                        : 'No reports need review',
+                    'value' => number_format($vsdReportCount),
+                    'tone' => $vsdReportCount > 0 ? 'warning' : 'ok',
+                ];
+            }
+            $vsdScheduledCount = $dashboardOverview['scheduledVideos'] ?? null;
+            if (vs_admin_route_allowed('videos.php') && $vsdScheduledCount !== null) {
+                $vsdScheduledCount = (int)$vsdScheduledCount;
+                $vsdAdminAlerts[] = [
+                    'href' => 'videos.php',
+                    'icon' => 'bi-calendar2-week',
+                    'title' => 'Scheduled videos',
+                    'message' => $vsdScheduledCount > 0
+                        ? number_format($vsdScheduledCount) . ' waiting to publish'
+                        : 'No upcoming videos',
+                    'value' => number_format($vsdScheduledCount),
+                    'tone' => 'ok',
+                ];
+            }
+            $vsdSystemCheck = $dashboardOverview['systemCheck'] ?? null;
+            if (is_array($vsdSystemCheck)) {
+                $vsdAdminAlerts[] = [
+                    'href' => 'system-check.php',
+                    'icon' => 'bi-heart-pulse',
+                    'title' => 'System check',
+                    'message' => (string)($vsdSystemCheck['message'] ?? 'Status unavailable'),
+                    'value' => ($vsdSystemCheck['tone'] ?? '') === 'ok' ? 'OK' : '!',
+                    'tone' => ($vsdSystemCheck['tone'] ?? '') === 'ok' ? 'ok' : 'warning',
+                ];
+            }
+          ?>
+          <?php if ($vsdAdminAlerts): ?>
+            <section class="vsd-card vsd-admin-alerts mt-3" aria-label="Admin alerts">
+              <div class="vsd-head">
+                <span class="vsd-hico plain"><i class="bi bi-bell-fill" aria-hidden="true"></i></span>
+                <div>
+                  <h2>Admin Alerts</h2>
+                  <p class="vsd-sub">Queues and system checks that may need attention</p>
+                </div>
+              </div>
+              <div class="vsd-admin-alert-grid">
+                <?php foreach ($vsdAdminAlerts as $alert): ?>
+                  <a class="vsd-admin-alert" data-tone="<?php echo vs_e($alert['tone']); ?>" href="<?php echo vs_e($alert['href']); ?>">
+                    <span class="vsd-admin-alert-icon" aria-hidden="true"><i class="bi <?php echo vs_e($alert['icon']); ?>"></i></span>
+                    <span class="vsd-admin-alert-copy">
+                      <strong><?php echo vs_e($alert['title']); ?></strong>
+                      <small><?php echo vs_e($alert['message']); ?></small>
+                    </span>
+                    <span class="vsd-admin-alert-value"><?php echo vs_e($alert['value']); ?></span>
+                  </a>
+                <?php endforeach; ?>
+              </div>
+            </section>
+          <?php endif; ?>
 
           <!-- Stat cards -->
           <?php

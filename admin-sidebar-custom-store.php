@@ -113,7 +113,7 @@ function vs_acsb_load(): array
             if ($icon !== '' && !preg_match('/^asb-[a-f0-9]{32}\.(png|jpg|webp|gif)$/', $icon)) {
                 $icon = '';
             }
-            $clean['items'][] = ['id' => $id, 'label' => $label, 'href' => $href, 'section' => $section, 'icon' => $icon];
+            $clean['items'][] = ['id' => $id, 'label' => $label, 'href' => $href, 'section' => $section, 'icon' => $icon] + vs_acsb_opts($it);
         }
     }
     return $GLOBALS['vs_acsb_cache'] = $clean;
@@ -238,7 +238,7 @@ function vs_acsb_delete_section(string $id): void
     vs_acsb_save($data);
 }
 
-function vs_acsb_add_item(string $label, string $href, string $section, array $file): void
+function vs_acsb_add_item(string $label, string $href, string $section, array $file, array $opts = []): void
 {
     $label = vs_acsb_text($label, 40);
     if ($label === '') {
@@ -253,7 +253,7 @@ function vs_acsb_add_item(string $label, string $href, string $section, array $f
         throw new RuntimeException('You can have at most ' . VS_ACSB_MAX_ITEMS . ' custom menu items.');
     }
     $icon = vs_acsb_store_icon($file);
-    $data['items'][] = ['id' => 'i' . bin2hex(random_bytes(6)), 'label' => $label, 'href' => $href, 'section' => $section, 'icon' => $icon];
+    $data['items'][] = ['id' => 'i' . bin2hex(random_bytes(6)), 'label' => $label, 'href' => $href, 'section' => $section, 'icon' => $icon] + vs_acsb_opts($opts);
     try {
         vs_acsb_save($data);
     } catch (Throwable $e) {
@@ -302,6 +302,200 @@ function vs_acsb_delete_item(string $id): void
     throw new RuntimeException('That menu item no longer exists.');
 }
 
+/** Changes the name, link, section and visibility of an existing menu item (the icon is changed separately). */
+function vs_acsb_update_item(string $id, string $label, string $href, string $section, array $opts = []): void
+{
+    $label = vs_acsb_text($label, 40);
+    if ($label === '') {
+        throw new RuntimeException('Enter a name for the menu item.');
+    }
+    $href = vs_acsb_clean_href($href);
+    $data = vs_acsb_load();
+    if (!isset(vs_acsb_section_choices($data)[$section])) {
+        throw new RuntimeException('Choose a section for the menu item.');
+    }
+    foreach ($data['items'] as $i => $it) {
+        if ($it['id'] === $id) {
+            $data['items'][$i]['label'] = $label;
+            $data['items'][$i]['href'] = $href;
+            $data['items'][$i]['section'] = $section;
+            $data['items'][$i] = array_merge($data['items'][$i], vs_acsb_opts($opts));
+            vs_acsb_save($data);
+            return;
+        }
+    }
+    throw new RuntimeException('That menu item no longer exists.');
+}
+
+/** Moves an item up or down inside its own section (swaps with its neighbour). Does nothing at the ends. */
+function vs_acsb_move_item(string $id, string $dir): void
+{
+    if ($dir !== 'up' && $dir !== 'down') {
+        throw new RuntimeException('Unknown direction.');
+    }
+    $data = vs_acsb_load();
+    $items = $data['items'];
+    $at = null;
+    foreach ($items as $i => $it) {
+        if ($it['id'] === $id) {
+            $at = $i;
+            break;
+        }
+    }
+    if ($at === null) {
+        throw new RuntimeException('That menu item no longer exists.');
+    }
+    $step = $dir === 'up' ? -1 : 1;
+    for ($j = $at + $step; $j >= 0 && $j < count($items); $j += $step) {
+        if ($items[$j]['section'] === $items[$at]['section']) {
+            $tmp = $items[$at];
+            $items[$at] = $items[$j];
+            $items[$j] = $tmp;
+            $data['items'] = $items;
+            vs_acsb_save($data);
+            return;
+        }
+    }
+}
+
+/** Moves a custom section up or down among the sections that share the same place. */
+function vs_acsb_move_section(string $id, string $dir): void
+{
+    if ($dir !== 'up' && $dir !== 'down') {
+        throw new RuntimeException('Unknown direction.');
+    }
+    $data = vs_acsb_load();
+    $secs = $data['sections'];
+    $at = null;
+    foreach ($secs as $i => $sec) {
+        if ($sec['id'] === $id) {
+            $at = $i;
+            break;
+        }
+    }
+    if ($at === null) {
+        throw new RuntimeException('That section no longer exists.');
+    }
+    $step = $dir === 'up' ? -1 : 1;
+    for ($j = $at + $step; $j >= 0 && $j < count($secs); $j += $step) {
+        if ($secs[$j]['place'] === $secs[$at]['place']) {
+            $tmp = $secs[$at];
+            $secs[$at] = $secs[$j];
+            $secs[$j] = $tmp;
+            $data['sections'] = $secs;
+            vs_acsb_save($data);
+            return;
+        }
+    }
+}
+
+/** Splits "a@x.com, b@y.com" into a clean, lower-case, unique list (max 20). Throws on a bad address. */
+function vs_acsb_clean_emails(string $raw): array
+{
+    $out = [];
+    foreach (preg_split('/[\s,;]+/', $raw, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $mail) {
+        $mail = mb_strtolower(trim($mail));
+        if (strlen($mail) > 190 || filter_var($mail, FILTER_VALIDATE_EMAIL) === false) {
+            throw new RuntimeException('"' . $mail . '" is not a valid email address.');
+        }
+        $out[$mail] = true;
+    }
+    if (count($out) > 20) {
+        throw new RuntimeException('You can list at most 20 admin emails per menu item.');
+    }
+    return array_keys($out);
+}
+
+/** Per-item options from a form ($opts['emails'] is a text field) or from saved data ($opts['emails'] is a list). */
+function vs_acsb_opts(array $opts): array
+{
+    $emails = $opts['emails'] ?? [];
+    if (is_string($emails)) {
+        $emails = vs_acsb_clean_emails($emails);
+    } else {
+        $keep = [];
+        foreach ((array)$emails as $mail) {
+            $mail = mb_strtolower(trim((string)$mail));
+            if ($mail !== '' && filter_var($mail, FILTER_VALIDATE_EMAIL) !== false) {
+                $keep[$mail] = true;
+            }
+        }
+        $emails = array_slice(array_keys($keep), 0, 20);
+    }
+    return ['owner' => !empty($opts['owner']), 'newtab' => !empty($opts['newtab']), 'emails' => $emails];
+}
+
+/** The site owner sees everything. "Owner only" items are hidden from other admins; a list of emails limits an item to those admins. */
+function vs_acsb_visible(array $it, bool $isOwner, string $email): bool
+{
+    if ($isOwner) {
+        return true;
+    }
+    if (!empty($it['owner'])) {
+        return false;
+    }
+    if (!empty($it['emails'])) {
+        return in_array(mb_strtolower(trim($email)), $it['emails'], true);
+    }
+    return true;
+}
+
+/** Renames a custom section. */
+function vs_acsb_rename_section(string $id, string $title): void
+{
+    $title = vs_acsb_text($title, 40);
+    if ($title === '') {
+        throw new RuntimeException('Enter a section name.');
+    }
+    $data = vs_acsb_load();
+    $at = null;
+    foreach ($data['sections'] as $i => $sec) {
+        if ($sec['id'] === $id) {
+            $at = $i;
+        } elseif (mb_strtolower($sec['title']) === mb_strtolower($title)) {
+            throw new RuntimeException('A section with that name already exists.');
+        }
+    }
+    if ($at === null) {
+        throw new RuntimeException('That section no longer exists.');
+    }
+    $data['sections'][$at]['title'] = $title;
+    vs_acsb_save($data);
+}
+
+/** Applies a drag-and-drop order. $ids is the new order; anything not listed keeps its place at the end. */
+function vs_acsb_reorder(string $what, array $ids): void
+{
+    if ($what !== 'items' && $what !== 'sections') {
+        throw new RuntimeException('Unknown list.');
+    }
+    $data = vs_acsb_load();
+    $byId = [];
+    foreach ($data[$what] as $row) {
+        $byId[$row['id']] = $row;
+    }
+    $sorted = [];
+    foreach ($ids as $id) {
+        $id = (string)$id;
+        if (isset($byId[$id])) {
+            $sorted[] = $byId[$id];
+            unset($byId[$id]);
+        }
+    }
+    $data[$what] = array_merge($sorted, array_values($byId));
+    vs_acsb_save($data);
+}
+
+/** Removes every custom section, menu item and uploaded item icon. The built-in sidebar is not touched. */
+function vs_acsb_reset_all(): void
+{
+    $data = vs_acsb_load();
+    foreach ($data['items'] as $it) {
+        vs_acsb_delete_icon_file($it['icon']);
+    }
+    vs_acsb_save(['sections' => [], 'items' => []]);
+}
+
 /** URL of an item icon as seen from the adminpanel folder. */
 function vs_acsb_icon_url(string $icon): string
 {
@@ -321,23 +515,23 @@ function vs_acsb_item_html(array $it, string $current): string
         : '<i class="bi bi-link-45deg" aria-hidden="true"></i>';
     return '<a class="nav-link' . ($active ? ' active' : '') . '" href="' . htmlspecialchars($href, ENT_QUOTES, 'UTF-8') . '"'
         . ($active ? ' aria-current="page"' : '')
-        . ($external ? ' target="_blank" rel="noopener noreferrer"' : '') . '>'
+        . (($external || !empty($it['newtab'])) ? ' target="_blank" rel="noopener noreferrer"' : '') . '>'
         . '<span class="nav-icon">' . $icon . '</span>'
         . '<span class="nav-text">' . htmlspecialchars((string)$it['label'], ENT_QUOTES, 'UTF-8') . '</span></a>' . "\n";
 }
 
 /** Prints the custom items that belong at the end of one built-in section (main, mywork, users, system, navigation). */
-function vs_acsb_render_builtin(string $key, string $current): void
+function vs_acsb_render_builtin(string $key, string $current, bool $isOwner = false, string $email = ''): void
 {
     foreach (vs_acsb_load()['items'] as $it) {
-        if ($it['section'] === $key) {
+        if ($it['section'] === $key && vs_acsb_visible($it, $isOwner, $email)) {
             echo vs_acsb_item_html($it, $current);
         }
     }
 }
 
 /** Prints the owner's own sections for one place (top, before_navigation, bottom). Empty sections are skipped. */
-function vs_acsb_render_places(string $place, string $current): void
+function vs_acsb_render_places(string $place, string $current, bool $isOwner = false, string $email = ''): void
 {
     $data = vs_acsb_load();
     foreach ($data['sections'] as $s) {
@@ -346,7 +540,7 @@ function vs_acsb_render_places(string $place, string $current): void
         }
         $rows = '';
         foreach ($data['items'] as $it) {
-            if ($it['section'] === $s['id']) {
+            if ($it['section'] === $s['id'] && vs_acsb_visible($it, $isOwner, $email)) {
                 $rows .= vs_acsb_item_html($it, $current);
             }
         }

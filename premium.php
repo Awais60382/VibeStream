@@ -8,7 +8,7 @@ $formatPlanLimit = static function (string $tier, string $key): string {
 ?>
 <style>
 .pm-layout{display:flex;align-items:flex-start}
-.pm-layout>.app-sidebar{flex:0 0 240px;width:240px;position:sticky!important;top:74px!important;left:auto!important;height:calc(100vh - 74px);overflow-y:auto;transform:none!important;z-index:1}
+.pm-layout>.app-sidebar{flex:0 0 206px;width:206px;position:sticky!important;top:74px!important;left:auto!important;height:calc(100vh - 74px);overflow-y:auto;transform:none!important;z-index:1}
 .pm-layout .sidebar-top{display:none}
 .pm-layout .app-sidebar{border-right:1px solid rgba(128,128,128,.25);padding:8px 0;box-sizing:border-box}
 .pm-layout .app-sidebar a{color:inherit;text-decoration:none}
@@ -25,35 +25,65 @@ $formatPlanLimit = static function (string $tier, string $key): string {
 .pm-layout .sidebar-account-copy small{opacity:.65}
 .pm-layout .sidebar-account img,.pm-layout .sidebar-account-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover}
 @media (max-width:991px){.pm-layout>.app-sidebar{display:none}}
-.pm-page{flex:1;min-width:0;max-width:980px;margin:0 auto;padding:32px clamp(16px,4vw,32px) 80px;color:inherit}
-.pm-page h1{font-size:clamp(32px,6vw,54px);line-height:1.08;margin:8px 0 12px;max-width:14ch}
-.pm-lead{opacity:.7;max-width:52ch;margin:0 0 26px}
+.pm-page{flex:1;min-width:0;max-width:1240px;margin:0 auto;padding:14px clamp(12px,1.4vw,20px) 48px;color:inherit}
+.pm-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(200px,.8fr);align-items:center;gap:10px;min-height:194px;padding:20px 30px 16px;border:1px solid rgba(90,115,255,.55);border-radius:20px;background:radial-gradient(ellipse at 2% 5%,rgba(0,150,255,.8),transparent 30%),radial-gradient(ellipse at 75% 100%,rgba(142,0,255,.78),transparent 48%),linear-gradient(108deg,#0647db 0%,#2010a0 44%,#4a0b9a 70%,#db078d 100%);color:#fff;box-shadow:0 12px 32px -18px rgba(0,94,255,.8)}
+.pm-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border:1px solid #f6c900;border-radius:999px;background:rgba(4,8,35,.55);color:#ffd400;font-size:12px;font-weight:800;letter-spacing:.08em}
+.pm-badge svg{width:18px;height:18px}
+.pm-hero h1{margin:6px 0 6px;max-width:none;font-size:clamp(34px,4.2vw,56px);line-height:1;font-weight:900;letter-spacing:-.03em}
+.pm-hero h1 b{color:#ffd400;font-weight:900}
+.pm-lead{max-width:58ch;margin:0 0 14px;font-size:clamp(14px,1.35vw,18px);line-height:1.4;color:#f1eeff;opacity:1}
+.pm-lead em{font-style:normal;color:#fff}
+.pm-perks{display:flex;flex-wrap:wrap;gap:10px 0;margin:0;padding:0;list-style:none}
+.pm-perks li{display:flex;align-items:center;gap:8px;padding:0 14px;border-left:1px solid rgba(255,255,255,.4);font-size:13px;font-weight:600;white-space:nowrap}
+.pm-perks li:first-child{padding-left:0;border-left:0}
+.pm-perks svg{width:24px;height:24px;flex:0 0 24px}
+.pm-art{justify-self:center;width:min(100%,330px);height:auto;filter:drop-shadow(0 0 24px rgba(255,50,180,.55))}
 .pm-status{display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px;border-radius:14px;margin-bottom:24px;background:linear-gradient(135deg,#f5b942,#ff8a3d);color:#2a1700;font-weight:600}
 .vs-premium .pm-status{display:flex}
 .pm-status button{background:#2a1700;color:#fff;border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
-.pm-toggle{display:inline-flex;border:1px solid rgba(128,128,128,.35);border-radius:999px;padding:4px;margin-bottom:20px}
-.pm-toggle button{border:0;background:none;color:inherit;opacity:.7;padding:8px 18px;border-radius:999px;font:inherit;font-weight:600;cursor:pointer}
-.pm-toggle button[aria-pressed=true]{background:#f9433f;color:#fff;opacity:1}
-.pm-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
-.pm-plan{background:rgba(128,128,128,.1);border:1px solid rgba(128,128,128,.28);border-radius:20px;padding:28px}
-.pm-plan.pm-pro{border:2px solid #f5b942}
-.pm-plan.pm-plus{border:2px solid #a78bfa}
-.pm-btn.pm-btn-plus{background:#7c5cff}
-.pm-btn.pm-btn-plus:disabled{background:rgba(128,128,128,.3)}
-.pm-plan h2{font-size:22px;margin:0 0 4px}
-.pm-price{font-size:42px;font-weight:800;margin:8px 0}
-.pm-price small{font-size:15px;font-weight:500;opacity:.65}
-.pm-save{display:block;font-size:13px;font-weight:600;color:#f9433f;min-height:20px}
-.pm-plan ul{list-style:none;padding:0;margin:16px 0 24px}
-.pm-plan li{padding:8px 0 8px 26px;position:relative;border-top:1px solid rgba(128,128,128,.25)}
-.pm-plan li:first-child{border-top:0}
-.pm-plan li:before{content:"";position:absolute;left:4px;top:15px;width:10px;height:6px;border-left:2px solid #f9433f;border-bottom:2px solid #f9433f;transform:rotate(-45deg)}
-.pm-plan li.pm-no{opacity:.6}
-.pm-plan li.pm-no:before{width:10px;height:0;border-left:0;transform:none;top:19px;border-color:currentColor}
-.pm-btn{width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-weight:700;font-size:16px;cursor:pointer;background:#f9433f;color:#fff}
-.pm-btn:disabled{background:rgba(128,128,128,.3);color:inherit;opacity:.7;cursor:default}
-.pm-btn:focus-visible,.pm-toggle button:focus-visible,.pm-status button:focus-visible{outline:3px solid #f5b942;outline-offset:2px}
+.pm-toggle{display:flex;width:max-content;max-width:100%;margin:14px auto 16px;padding:4px;border:1px solid rgba(82,110,220,.45);border-radius:999px;background:#101a3b;box-shadow:0 5px 22px -14px #4167ff;color:#eaf0ff}
+.pm-toggle button{display:inline-flex;align-items:center;gap:8px;border:0;background:none;color:inherit;opacity:.8;padding:10px 24px;border-radius:999px;font:inherit;font-weight:700;cursor:pointer}
+.pm-toggle button[aria-pressed=true]{background:linear-gradient(100deg,#a500ff,#5d24ff);color:#fff;opacity:1}
+.pm-chip{padding:3px 10px;border-radius:999px;background:#ffd400;color:#1a1530;font-size:12px;font-weight:800}
+.pm-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch}
+.pm-plan{position:relative;display:flex;flex-direction:column;min-height:232px;padding:16px 20px 14px;border:1px solid rgba(81,112,220,.5);border-radius:19px;background:linear-gradient(145deg,rgba(28,43,91,.9),rgba(8,15,39,.96));box-shadow:0 10px 24px -20px rgba(97,129,255,.75);color:#f4f6ff}
+.pm-plan h2{margin:0;font-size:24px;font-weight:800}
+.pm-sub{display:none}
+.pm-price{display:flex;align-items:baseline;gap:8px;margin:0 0 4px;font-size:40px;font-weight:850;line-height:1}
+.pm-price small{font-size:14px;font-weight:500;opacity:.78}
+.pm-save{display:block;min-height:8px;font-size:12px;font-weight:600;color:#ffe060}
+.pm-plan ul{flex:1;list-style:none;margin:6px 0 10px;padding:0}
+.pm-plan li{position:relative;padding:3px 0 3px 26px;font-size:14px;line-height:1.25}
+.pm-plan li:before{content:"";position:absolute;left:3px;top:7px;width:12px;height:7px;border-left:3px solid #8da6ff;border-bottom:3px solid #8da6ff;transform:rotate(-45deg)}
+.pm-plan li.pm-no{opacity:.55}
+.pm-plan li.pm-no:before{height:0;border-left:0;transform:none;top:17px;border-color:currentColor}
+.pm-plan.pm-pro{border:2px solid #ffd000;background:radial-gradient(circle at 80% 25%,rgba(255,165,25,.25),transparent 52%),linear-gradient(145deg,#35200e,#171426 75%);box-shadow:0 0 20px -4px rgba(255,208,0,.8),inset 0 0 18px -10px #ffcd00}
+.pm-plan.pm-plus{border:2px solid #c000ff;background:linear-gradient(145deg,#251052,#100a2e);box-shadow:0 0 22px -7px rgba(196,0,255,.9)}
+.pm-popular{position:absolute;top:-14px;left:50%;transform:translateX(-50%);padding:5px 16px;border-radius:999px;background:#ffd400;color:#17111f;font-size:13px;font-weight:800;white-space:nowrap}
+.pm-vip-chip{position:absolute;right:14px;top:12px;padding:5px 11px;border-radius:999px;background:linear-gradient(90deg,#b600ff,#6d20ff);font-size:12px;font-weight:800}
+.pm-vip-chip svg{width:16px;height:16px;vertical-align:-3px}
+.pm-btn{width:100%;border:0;border-radius:999px;padding:11px 14px;font:inherit;font-weight:800;font-size:14px;cursor:pointer;background:linear-gradient(90deg,#ff9b00,#ffdf00);color:#201000}
+.pm-btn:not(:disabled):not(.pm-ghost)::after{content:" \2192"}
+.pm-btn.pm-btn-plus{background:linear-gradient(90deg,#a500ff,#701bff);color:#fff}
+.pm-btn:disabled,.pm-btn.pm-btn-plus:disabled{background:rgba(128,128,128,.25);color:inherit;opacity:.7;cursor:default}
+.pm-btn:focus-visible,.pm-toggle button:focus-visible,.pm-status button:focus-visible,.pm-rewards-link:focus-visible{outline:3px solid #f5b942;outline-offset:2px}
+.pm-rewards{display:grid;grid-template-columns:minmax(240px,1.7fr) repeat(4,minmax(90px,.55fr)) auto;align-items:center;gap:0;margin-top:16px;padding:12px 14px;border:2px solid #cb00ff;border-radius:19px;background:radial-gradient(ellipse at 4% 100%,rgba(255,46,147,.35),transparent 34%),linear-gradient(105deg,#15043d,#17094a 56%,#28045c);box-shadow:0 0 25px -5px rgba(205,0,255,.82),inset 0 0 24px -15px #fd35ff;color:#fff}
+.pm-rewards-intro{display:flex;align-items:center;gap:14px;padding-right:14px}
+.pm-gift{width:78px;height:72px;flex:0 0 78px;filter:drop-shadow(0 0 12px rgba(255,193,35,.7))}
+.pm-rewards h2{margin:0 0 3px;font-size:20px}
+.pm-rewards p{margin:0;color:#e4d7ff;font-size:12px;line-height:1.35}
+.pm-reward-perk{display:grid;justify-items:center;gap:3px;align-content:center;min-height:70px;padding:0 10px;border-left:1px solid rgba(183,141,255,.6);text-align:center;font-size:12px;font-weight:700}
+.pm-reward-perk svg{width:32px;height:32px;filter:drop-shadow(0 0 8px rgba(255,200,0,.5))}
+.pm-rewards-link{display:inline-flex;align-items:center;gap:8px;margin-left:12px;padding:12px 17px;border-radius:999px;background:linear-gradient(90deg,#a500ff,#731cff);color:#fff;font-size:13px;font-weight:800;text-decoration:none;white-space:nowrap}
+.pm-rewards-link:hover{filter:brightness(1.12)}
+.pm-trust{display:flex;flex-wrap:wrap;justify-content:center;width:100%;max-width:100%;margin:14px auto 0;padding:9px 6px;border:1px solid rgba(74,101,178,.32);border-radius:999px;background:rgba(15,25,57,.8);font-size:13px;color:#eaf0ff}
+.pm-trust span{display:flex;align-items:center;gap:8px;padding:0 20px;border-left:1px solid rgba(74,101,178,.5)}
+.pm-trust span:first-child{border-left:0}
+.pm-trust svg{width:20px;height:20px;opacity:.8}
 .pm-note{margin-top:18px;font-size:13px;opacity:.65;max-width:70ch}
+@media(max-width:1050px){.pm-rewards{grid-template-columns:repeat(4,minmax(0,1fr));row-gap:8px}.pm-rewards-intro{grid-column:span 2}.pm-rewards-link{grid-column:1/-1;justify-self:center;margin:4px 0 0}}
+@media(max-width:900px){.pm-hero{grid-template-columns:1fr;padding:22px 18px}.pm-art{display:none}.pm-plans{grid-template-columns:1fr;gap:30px}}
+@media(max-width:620px){.pm-rewards{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px}.pm-rewards-intro{grid-column:1/-1}.pm-reward-perk:nth-of-type(2){border-left:0}.pm-trust{border-radius:20px}.pm-trust span{padding:6px 14px}}
 .pm-toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:#f3f0fa;color:#17141f;padding:12px 20px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:80;max-width:90vw;text-align:center}
 .pm-toast.show{opacity:1;transform:translate(-50%,0)}
 .pm-modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px;z-index:70}
@@ -81,17 +111,17 @@ $formatPlanLimit = static function (string $tier, string $key): string {
 
 /* ===== NEON THEME (dark + light) - same look as creator-analytics.php ===== */
 html:not([data-theme="light"]){
-  --bg:#05060f;--surface:#0a0d1f;--surface-2:#121634;--surface-3:#171c42;
-  --text:#eaf0ff;--muted:#8f9bd0;--border:#1d2557;
+  --bg:#050918;--surface:#0b1533;--surface-2:#121d43;--surface-3:#182654;
+  --text:#eaf0ff;--muted:#a2afd7;--border:#1d2b63;
   --accent:#ff2e93;--accent-hover:#171c42;--accent-soft:rgba(255,46,147,.18);--blue:#00e5ff;
   --neon-cyan:#00e5ff;--neon-pink:#ff2e93;--neon-violet:#8a5cff;
   --nx-cyan:#00e5ff;--nx-pink:#ff2e93;--nx-violet:#8a5cff;
   --nx-cyan-rgb:0,229,255;--nx-pink-rgb:255,46,147;--nx-violet-rgb:138,92,255;
   --nx-cyan-ink:#00e5ff;--nx-pink-ink:#ff7ac0;
-  --nx-text:#eaf0ff;--nx-card:rgba(10,13,31,.88);--nx-solid:#0a0d1f;--nx-field:rgba(10,13,31,.9);
-  --nx-nav:rgba(5,6,15,.82);--nx-side:linear-gradient(180deg,rgba(10,13,31,.97),rgba(5,6,15,.98));
-  --nx-track:#05060f;--nx-sun:#ffe14d;--nx-active:#fff;--nx-backdrop:rgba(5,6,15,.78);
-  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(138,92,255,.16),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,229,255,.10),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.08),transparent 70%),#05060f;
+  --nx-text:#eaf0ff;--nx-card:rgba(13,22,50,.92);--nx-solid:#080e23;--nx-field:rgba(10,18,42,.95);
+  --nx-nav:#050918;--nx-side:linear-gradient(180deg,#0b1533,#050918);
+  --nx-track:#050918;--nx-sun:#b9c9ff;--nx-active:#fff;--nx-backdrop:rgba(5,9,24,.82);
+  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(32,85,255,.15),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,229,255,.08),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.07),transparent 70%),#050918;
 }
 html[data-theme="light"]{
   --bg:#f4f6ff;--surface:#ffffff;--surface-2:#eceffd;--surface-3:#e3e8fc;
@@ -110,6 +140,13 @@ html[data-theme="light"]{
 /* page + top bar */
 html body{background:var(--nx-page);background-attachment:fixed}
 html body .app-navbar{background:var(--nx-nav);border-bottom:1px solid rgba(var(--nx-cyan-rgb),.45);box-shadow:0 1px 24px -4px rgba(var(--nx-cyan-rgb),.4),0 8px 30px -12px rgba(var(--nx-violet-rgb),.4)}
+html body .premium-rewards-navbar{background:#050918;color:var(--nx-text);border-bottom:1px solid rgba(66,91,170,.45);box-shadow:0 6px 24px -14px rgba(0,0,0,.8)}
+html body .premium-rewards-navbar .vs-install-btn{display:none!important}
+html body .premium-rewards-navbar .vs-user-toggle{gap:8px;min-height:40px;padding:4px 8px;background:transparent;border-color:transparent}
+html body .premium-rewards-navbar .vs-user-name{display:none}
+html body .premium-rewards-navbar .nav-right{gap:12px}
+html body .premium-rewards-navbar .nav-bell,html body .premium-rewards-navbar .vs-theme-toggle{background:transparent;border-color:transparent;color:#aab8f0}
+html body .premium-rewards-navbar .nav-bell:hover,html body .premium-rewards-navbar .vs-theme-toggle:hover{background:#101a3c;border-color:#273b78;color:#fff}
 html body .brand{background:linear-gradient(90deg,var(--nx-cyan),var(--nx-violet) 55%,var(--nx-pink));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;filter:drop-shadow(0 0 8px rgba(var(--nx-violet-rgb),.6))}
 html body .nav-toggle span{background:var(--nx-cyan);box-shadow:0 0 6px rgba(var(--nx-cyan-rgb),.7)}
 html body .nav-toggle:hover,html body .theme-toggle:hover{background:rgba(var(--nx-cyan-rgb),.14);box-shadow:0 0 14px rgba(var(--nx-cyan-rgb),.4)}
@@ -136,35 +173,10 @@ html body .pm-layout .sidebar-link.active{background:linear-gradient(90deg,rgba(
 /* premium page */
 html body .pm-page h1{text-shadow:0 0 18px rgba(var(--nx-violet-rgb),.7)}
 html body .pm-plan h2{text-shadow:0 0 12px rgba(var(--nx-violet-rgb),.5)}
+html body .pm-hero{border-color:rgba(82,115,255,.7);box-shadow:0 12px 32px -18px rgba(0,94,255,.8),0 0 26px -16px rgba(205,0,255,.8)}
 html body .pm-status{background:linear-gradient(135deg,rgba(var(--nx-pink-rgb),.92),rgba(var(--nx-violet-rgb),.92));color:#fff;border:1px solid rgba(var(--nx-pink-rgb),.7);box-shadow:0 0 24px -4px rgba(var(--nx-pink-rgb),.6)}
 html body .pm-status button{background:var(--nx-solid);color:var(--nx-cyan-ink);border:1px solid var(--nx-cyan);box-shadow:0 0 12px -2px rgba(var(--nx-cyan-rgb),.55);transition:box-shadow .18s ease}
 html body .pm-status button:hover{box-shadow:0 0 20px rgba(var(--nx-cyan-rgb),.8)}
-
-html body .pm-toggle{background:var(--nx-card);border:1px solid rgba(var(--nx-violet-rgb),.55);box-shadow:0 0 18px -6px rgba(var(--nx-violet-rgb),.6)}
-html body .pm-toggle button{transition:background .18s ease,box-shadow .18s ease}
-html body .pm-toggle button:hover{background:rgba(var(--nx-cyan-rgb),.12);opacity:1}
-html body .pm-toggle button[aria-pressed=true]{background:linear-gradient(90deg,var(--nx-violet),var(--nx-pink));color:#fff;box-shadow:0 0 16px rgba(var(--nx-pink-rgb),.6)}
-
-html body .pm-plan{--tick:var(--nx-violet);background:var(--nx-card);border:1px solid rgba(var(--nx-violet-rgb),.45);box-shadow:0 0 26px -10px rgba(var(--nx-violet-rgb),.55);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-html body .pm-plan:hover{transform:translateY(-3px);border-color:var(--nx-cyan);box-shadow:0 0 28px -4px rgba(var(--nx-cyan-rgb),.55),0 0 50px -16px rgba(var(--nx-violet-rgb),.55)}
-html body .pm-plan.pm-pro{--tick:var(--nx-pink);border:2px solid var(--nx-pink);box-shadow:0 0 30px -6px rgba(var(--nx-pink-rgb),.7),inset 0 0 26px -16px rgba(var(--nx-pink-rgb),.7)}
-html body .pm-plan.pm-pro:hover{border-color:var(--nx-pink);box-shadow:0 0 40px -4px rgba(var(--nx-pink-rgb),.9),inset 0 0 26px -14px rgba(var(--nx-pink-rgb),.8)}
-html body .pm-plan.pm-plus{--tick:var(--nx-cyan);border:2px solid var(--nx-cyan);box-shadow:0 0 30px -6px rgba(var(--nx-cyan-rgb),.7),0 0 56px -22px rgba(var(--nx-violet-rgb),.8),inset 0 0 26px -16px rgba(var(--nx-cyan-rgb),.7)}
-html body .pm-plan.pm-plus:hover{border-color:var(--nx-cyan);box-shadow:0 0 40px -4px rgba(var(--nx-cyan-rgb),.9),0 0 60px -18px rgba(var(--nx-violet-rgb),.9),inset 0 0 26px -14px rgba(var(--nx-cyan-rgb),.8)}
-html body .pm-price{text-shadow:0 0 14px rgba(var(--nx-cyan-rgb),.45)}
-html body .pm-save{color:var(--nx-pink-ink);text-shadow:0 0 10px rgba(var(--nx-pink-rgb),.55)}
-html body .pm-plan li{border-top:1px solid rgba(var(--nx-violet-rgb),.28)}
-html body .pm-plan li:first-child{border-top:0}
-html body .pm-plan li:before{border-left-color:var(--tick);border-bottom-color:var(--tick);filter:drop-shadow(0 0 4px var(--tick))}
-
-html body .pm-btn{background:linear-gradient(90deg,var(--nx-violet),var(--nx-pink));color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3);box-shadow:0 0 20px rgba(var(--nx-pink-rgb),.5);transition:box-shadow .18s ease,transform .18s ease}
-html body .pm-btn:hover{transform:translateY(-1px);box-shadow:0 0 30px rgba(var(--nx-pink-rgb),.85)}
-html body .pm-btn.pm-btn-plus{background:linear-gradient(90deg,var(--nx-violet),var(--nx-cyan));box-shadow:0 0 20px rgba(var(--nx-cyan-rgb),.5)}
-html body .pm-btn.pm-btn-plus:hover{box-shadow:0 0 30px rgba(var(--nx-cyan-rgb),.85)}
-html body .pm-btn.pm-ghost{background:rgba(var(--nx-violet-rgb),.16);color:var(--nx-text);text-shadow:none;border:1px solid rgba(var(--nx-violet-rgb),.55);box-shadow:none}
-html body .pm-btn.pm-ghost:hover{border-color:var(--nx-cyan);box-shadow:0 0 14px rgba(var(--nx-cyan-rgb),.5)}
-html body .pm-btn:disabled,html body .pm-btn.pm-btn-plus:disabled{background:rgba(var(--nx-violet-rgb),.14);color:inherit;text-shadow:none;border:1px solid rgba(var(--nx-violet-rgb),.35);box-shadow:none;transform:none;opacity:.7}
-html body .pm-btn:focus-visible,html body .pm-toggle button:focus-visible,html body .pm-status button:focus-visible{outline:3px solid var(--nx-cyan);outline-offset:2px}
 
 html body .pm-modal{background:var(--nx-backdrop);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
 html body .pm-box{background:var(--nx-solid);color:var(--nx-text);border:1px solid rgba(var(--nx-cyan-rgb),.6);box-shadow:0 0 36px -6px rgba(var(--nx-cyan-rgb),.55),0 0 70px -24px rgba(var(--nx-violet-rgb),.7)}
@@ -185,72 +197,85 @@ html body .pm-hrow a{color:var(--nx-cyan-ink);text-shadow:0 0 10px rgba(var(--nx
     <span id="pmStatusText">Premium is active</span>
     <button type="button" id="pmCancel">Cancel Premium</button>
   </div>
-
-  <h1>Watch without ads. Get more room to upload, save and download.</h1>
-  <p class="pm-lead">Premium removes configured ads from the home feed, video pages and Shorts, and includes private Creator Analytics, a VIP badge, downloads for eligible hosted videos, more playlists and Watch Later space, and higher daily upload limits. Pick a week, a month or a year.</p>
+  <section class="pm-hero">
+    <div>
+      <span class="pm-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m3 8 4.5 4L12 5l4.5 7L21 8l-2 11H5L3 8Zm2.2 12.5h13.6V22H5.2z"/></svg> PREMIUM</span>
+      <h1>Get VibeStream <b>Premium</b></h1>
+      <p class="pm-lead">Unlock more features. Enjoy an <em>ad-free</em> experience, and take your VibeStream experience to the next level!</p>
+      <ul class="pm-perks">
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="#ff3b4e" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m6 18 12-12"/></svg>No Ads</li>
+        <li><svg viewBox="0 0 26 26"><rect x="1" y="5" width="24" height="16" rx="4" fill="#e5173f"/><text x="13" y="17" text-anchor="middle" font-size="10" font-weight="800" fill="#fff" font-family="Arial">4K</text></svg>4K Quality</li>
+        <li><svg viewBox="0 0 24 24" fill="#ffb020"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Priority Support</li>
+        <li><svg viewBox="0 0 24 24" fill="#a45cff"><path d="M6 3h12l4 6-10 12L2 9z"/></svg>Exclusive Perks</li>
+      </ul>
+    </div>
+    <svg class="pm-art" viewBox="0 0 320 260" aria-hidden="true"><defs><linearGradient id="pmR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff477b"/><stop offset="1" stop-color="#e0004d"/></linearGradient><linearGradient id="pmG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff28a"/><stop offset="1" stop-color="#ff9d00"/></linearGradient><filter id="pmGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="7" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><ellipse cx="165" cy="205" rx="136" ry="31" fill="none" stroke="#ffbd28" stroke-width="5" opacity=".9" transform="rotate(-16 165 205)"/><ellipse cx="165" cy="205" rx="136" ry="31" fill="none" stroke="#ffed57" stroke-width="2" opacity=".8" transform="rotate(-16 165 205)"/><rect x="66" y="68" width="194" height="132" rx="36" fill="url(#pmR)" stroke="#ff7895" stroke-width="3" filter="url(#pmGlow)"/><path d="M137 101v64l58-32z" fill="#fff"/><path d="M111 62l11-35 22 22 17-31 17 31 22-22 11 35z" fill="url(#pmG)" stroke="#ffe273" stroke-width="3"/><path d="m40 50 8 14 14 8-14 8-8 14-8-14-14-8 14-8z" fill="#ff5a7a"/></svg>
+  </section>
 
   <div class="pm-toggle" role="group" aria-label="Billing period">
     <button type="button" id="pmW" aria-pressed="false">Weekly</button>
     <button type="button" id="pmM" aria-pressed="true">Monthly</button>
-    <button type="button" id="pmY" aria-pressed="false">Yearly</button>
+    <button type="button" id="pmY" aria-pressed="false">Yearly <span class="pm-chip" id="pmYSave" hidden></span></button>
   </div>
 
-  <div class="pm-plans">
+  <div class="pm-plans" id="pmPlans">
     <section class="pm-plan">
       <h2>Free</h2>
+      <p class="pm-sub">Start watching</p>
       <div class="pm-price">$0</div>
       <span class="pm-save"></span>
       <ul>
-        <li>Watch all videos and shorts</li>
-        <li>Up to <?php echo htmlspecialchars($formatPlanLimit('free', 'playlists'), ENT_QUOTES, 'UTF-8'); ?> playlists</li>
-        <li>Watch Later: up to <?php echo htmlspecialchars($formatPlanLimit('free', 'watch_later'), ENT_QUOTES, 'UTF-8'); ?> videos</li>
-        <li>Up to <?php echo htmlspecialchars($formatPlanLimit('free', 'uploads_per_day'), ENT_QUOTES, 'UTF-8'); ?> uploads a day</li>
-        <li class="pm-no">No VIP badge</li>
-        <li class="pm-no">No video downloads</li>
+        <li>Watch videos and Shorts</li>
+        <li>Limited playlists</li>
+        <li>Watch Later and daily uploads</li>
       </ul>
       <button class="pm-btn" type="button" disabled id="pmFree">Current plan</button>
     </section>
     <section class="pm-plan pm-pro">
+      <span class="pm-popular">&#128293; Most Popular</span>
       <h2>Premium</h2>
+      <p class="pm-sub">For viewers &amp; creators</p>
       <div class="pm-price"><span id="pmAmt">$4.99</span> <small id="pmPer">per month</small></div>
       <span class="pm-save" id="pmSave"></span>
       <ul>
-        <li>Ad-free home feed, video pages and Shorts</li>
-        <li>Private Creator Analytics with daily views and top content</li>
-        <li>VIP badge on your comments and channel</li>
-        <li>Download eligible videos hosted on VibeStream</li>
-        <li>Up to <?php echo htmlspecialchars($formatPlanLimit('premium', 'playlists'), ENT_QUOTES, 'UTF-8'); ?> playlists</li>
-        <li>Watch Later: up to <?php echo htmlspecialchars($formatPlanLimit('premium', 'watch_later'), ENT_QUOTES, 'UTF-8'); ?> videos</li>
-        <li>Up to <?php echo htmlspecialchars($formatPlanLimit('premium', 'uploads_per_day'), ENT_QUOTES, 'UTF-8'); ?> uploads a day</li>
+        <li>Ad-free experience</li>
+        <li>Private Creator Analytics</li>
+        <li>VIP badge</li>
+        <li>Eligible video downloads</li>
       </ul>
       <button class="pm-btn" type="button" id="pmBuy">Get Premium</button>
     </section>
     <section class="pm-plan pm-plus">
       <h2>Premium Plus</h2>
+      <p class="pm-sub">For power users</p>
+      <span class="pm-vip-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 2 3 7h7l-5.5 4.4 2 7.6L12 16.8 5.5 21l2-7.6L2 9h7z"/></svg> VIP+</span>
       <div class="pm-price"><span id="pmAmt2">$9.99</span> <small id="pmPer2">per month</small></div>
       <span class="pm-save" id="pmSave2"></span>
       <ul>
         <li>Everything in Premium</li>
-        <li>Ad-free home feed, video pages and Shorts</li>
-        <li>VIP+ badge (purple) on your comments and channel</li>
-        <li><?php echo htmlspecialchars($formatPlanLimit('plus', 'playlists'), ENT_QUOTES, 'UTF-8'); ?> playlists</li>
-        <li>Watch Later: up to <?php echo htmlspecialchars($formatPlanLimit('plus', 'watch_later'), ENT_QUOTES, 'UTF-8'); ?> videos</li>
-        <li>Up to <?php echo htmlspecialchars($formatPlanLimit('plus', 'uploads_per_day'), ENT_QUOTES, 'UTF-8'); ?> uploads a day</li>
+        <li>VIP+ badge</li>
+        <li>Higher limits</li>
       </ul>
       <button class="pm-btn pm-btn-plus" type="button" id="pmBuy2">Get Plus</button>
     </section>
   </div>
-  <section class="pm-plan pm-reward-panel" aria-labelledby="pmRewardsTitle">
-    <h2 id="pmRewardsTitle">Earn Premium with points</h2>
-    <p>Earn 5 points for each video or short you publish and 5 points for a daily check-in. Existing uploads are credited once. Redeem 500 points for one month of Premium.</p>
-    <p class="pm-reward-balance">Your balance: <strong><span id="pmPoints">0</span> points</strong></p>
-    <div class="pm-checkin">
-      <button class="pm-btn" type="button" id="pmCheckin">Claim daily check-in (+5 points)</button>
-      <p class="pm-small" id="pmCheckinNote" aria-live="polite">Check in once each day to earn 5 points.</p>
+  <section class="pm-rewards" aria-labelledby="pmRewardsTitle">
+    <div class="pm-rewards-intro">
+      <svg class="pm-gift" viewBox="0 0 80 72" aria-hidden="true"><defs><linearGradient id="pmGiftBox" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff06a"/><stop offset="1" stop-color="#ff4c00"/></linearGradient><linearGradient id="pmGiftRibbon" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ff48d8"/><stop offset="1" stop-color="#8f00ff"/></linearGradient></defs><path d="M8 28h64v39H8z" fill="url(#pmGiftBox)" stroke="#ffe45e" stroke-width="2"/><path d="M4 20h72v14H4z" fill="url(#pmGiftBox)" stroke="#ffe45e" stroke-width="2"/><path d="M35 20h10v47H35zM4 23h72v8H4z" fill="url(#pmGiftRibbon)"/><path d="M40 20C18 20 17 3 28 3c7 0 11 9 12 17Zm0 0C62 20 63 3 52 3c-7 0-11 9-12 17Z" fill="url(#pmGiftRibbon)" stroke="#ff9df2" stroke-width="2"/></svg>
+      <div><h2 id="pmRewardsTitle">Premium Rewards</h2><p>As a Premium member, you get exclusive rewards.</p></div>
     </div>
-    <button class="pm-btn" type="button" id="pmRedeem">Redeem 500 points for monthly Premium</button>
-    <p class="pm-small" id="pmRewardsNote">You can redeem points after your current Premium period ends.</p>
+    <div class="pm-reward-perk"><svg viewBox="0 0 32 32" fill="#ffcc24" aria-hidden="true"><path d="m16 2 4.2 8.7 9.6 1.4-6.9 6.7 1.6 9.5L16 23.8l-8.5 4.5 1.6-9.5-6.9-6.7 9.6-1.4z"/></svg><span>Exclusive<br>Badges</span></div>
+    <div class="pm-reward-perk"><svg viewBox="0 0 32 32" fill="none" stroke="#ff4f8d" stroke-width="2.5" stroke-linejoin="round" aria-hidden="true"><path d="M16 28s-12-7-12-16a6 6 0 0 1 12-2 6 6 0 0 1 12 2c0 9-12 16-12 16z"/></svg><span>Monthly<br>Rewards</span></div>
+    <div class="pm-reward-perk"><svg viewBox="0 0 32 32" fill="#ffbd27" aria-hidden="true"><path d="m3 12 7 5 6-12 6 12 7-5-3 17H6z"/></svg><span>Early Access</span></div>
+    <div class="pm-reward-perk"><svg viewBox="0 0 32 32" fill="#b74dff" aria-hidden="true"><path d="M8 3h16l6 8-14 18L2 11z"/><path d="M2 11h28M11 3l5 26M21 3l-5 26" fill="none" stroke="#fff" stroke-opacity=".65" stroke-width="1.5"/></svg><span>Bonus Points</span></div>
+    <a class="pm-rewards-link" href="premium-points.php">Explore Rewards <span aria-hidden="true">&rarr;</span></a>
   </section>
+  <div class="pm-trust">
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>Secure Payments</span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Your Data is Safe</span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Cancel Premium anytime</span>
+  </div>
+
   <p class="pm-note" id="pmNote"></p>
   <section class="pm-history" id="pmHistoryBox" hidden>
     <h2>Your payments</h2>
@@ -291,7 +316,7 @@ document.addEventListener('DOMContentLoaded', function () {
   };
   function money(n) { return '$' + Number(n).toFixed(2); }
   function toast(t) { var e = $('pmToast'); e.textContent = t; e.classList.add('show'); setTimeout(function () { e.classList.remove('show'); }, 4500); }
-  function tierOf(plan) { return plan === 'admin' || String(plan || '').indexOf('plus') === 0 ? 'plus' : 'premium'; }
+  function tierOf(plan) { return String(plan || '').indexOf('plus') === 0 ? 'plus' : 'premium'; }
   if (typeof VSPremium === 'undefined') {
     $('pmBuy').onclick = $('pmBuy2').onclick = function () { toast('premium.js is missing. Put it in the VibeStream folder and refresh.'); };
     return;
@@ -317,38 +342,14 @@ document.addEventListener('DOMContentLoaded', function () {
       $(u.per).textContent = PER[period];
       $(u.save).textContent = saving(tier, period);
     });
+    var ys = saving('premium', 'yearly').replace(/ compared.*/, '');
+    $('pmYSave').textContent = ys; $('pmYSave').hidden = !ys;
     var b1 = $('pmBuy'), b2 = $('pmBuy2');
-    var points = VSPremium.points();
-    var pointsAvailable = VSPremium.pointsAvailable();
-    $('pmPoints').textContent = pointsAvailable ? points.toLocaleString() : 'Unavailable';
-    var checkin = $('pmCheckin');
-    var checkinClaimed = VSPremium.checkinClaimed();
-    checkin.disabled = busy || !VSPremium.LOGGED_IN || !pointsAvailable || checkinClaimed;
-    checkin.textContent = !VSPremium.LOGGED_IN ? 'Sign in to check in'
-      : (!pointsAvailable ? 'Check-in temporarily unavailable'
-        : (checkinClaimed ? 'Checked in today' : 'Claim daily check-in (+5 points)'));
-    $('pmCheckinNote').textContent = !VSPremium.LOGGED_IN ? 'Sign in to claim your daily 5 points.'
-      : (!pointsAvailable ? 'Your check-in could not be loaded. Please try again later.'
-        : (checkinClaimed ? 'You have already claimed today’s check-in. Come back tomorrow.'
-          : 'Check in once each day to earn 5 points.'));
-    var redeem = $('pmRedeem');
-    redeem.disabled = busy || !VSPremium.LOGGED_IN || !pointsAvailable || !!s || points < 500;
-    redeem.textContent = !VSPremium.LOGGED_IN ? 'Sign in to redeem points'
-      : (s ? 'Premium is already active' : (!pointsAvailable ? 'Points temporarily unavailable'
-        : (points < 500 ? 'Earn ' + (500 - points) + ' more points' : 'Redeem 500 points for monthly Premium')));
-    $('pmRewardsNote').textContent = s
-      ? 'Redeem your points after your current Premium period ends.'
-      : (!VSPremium.LOGGED_IN ? 'Sign in to earn points by publishing videos or shorts and checking in daily.'
-        : (!pointsAvailable ? 'Your points balance could not be loaded. Please try again later.'
-          : 'You need 500 points to redeem one 31-day Premium month.'));
     b1.disabled = !!s || pend || busy;
     b1.textContent = s ? (cur === 'plus' ? 'Included in your plan' : 'You have Premium') : (pend ? 'Payment under review' : (VSPremium.LOGGED_IN ? 'Get Premium' : 'Sign in to get Premium'));
     b2.disabled = cur === 'plus' || pend || busy;
     b2.textContent = cur === 'plus' ? 'You have Plus' : (pend ? 'Payment under review' : (s ? 'Upgrade to Plus' : (VSPremium.LOGGED_IN ? 'Get Plus' : 'Sign in to get Plus')));
     $('pmFree').style.visibility = s ? 'hidden' : 'visible';
-    var admin = !!s && s.plan === 'admin';
-    $('pmCancel').style.display = admin ? 'none' : '';
-    document.querySelector('.pm-status').style.display = admin ? 'none' : '';
     if (s) {
       $('pmStatusText').textContent = (cur === 'plus' ? 'Premium Plus' : 'Premium') + ' is active until ' +
         new Date(s.expires).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
@@ -397,22 +398,6 @@ document.addEventListener('DOMContentLoaded', function () {
   $('pmBuy2').onclick = function () {
     if (!VSPremium.LOGGED_IN) { location.href = 'login.php'; return; }
     openModal('plus');
-  };
-  $('pmRedeem').onclick = function () {
-    if (!VSPremium.LOGGED_IN) { location.href = 'login.php'; return; }
-    if (!VSPremium.pointsAvailable() || VSPremium.points() < 500 || VSPremium.status()) return;
-    run(function () { return VSPremium.redeem(); }, '500 points redeemed. Your one-month Premium is active.');
-  };
-  $('pmCheckin').onclick = function () {
-    if (!VSPremium.LOGGED_IN) { location.href = 'login.php'; return; }
-    if (!VSPremium.pointsAvailable() || VSPremium.checkinClaimed()) return;
-    busy = true; render();
-    VSPremium.checkin()
-      .then(function (awarded) {
-        toast(awarded ? 'Daily check-in complete! 5 points added.' : 'You already claimed today’s check-in.');
-      })
-      .catch(function (e) { toast(e.message); })
-      .then(function () { busy = false; render(); });
   };
   $('pmClose').onclick = closeModal;
   $('pmModal').onclick = function (e) { if (e.target === $('pmModal')) closeModal(); };

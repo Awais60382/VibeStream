@@ -4,8 +4,8 @@ define('VS_BAN_GUARD_LOADED', true);
 /**
  * ban-guard.php  (main site folder, next to connection.php and index.php)
  *
- * connection.php loads this automatically for every database-backed site request.
- * Pages without a connection include may require this file and call vs_bg_guard().
+ *   require_once __DIR__ . '/ban-guard.php';
+ *   vs_bg_guard();            // right after connection.php is included, on any page
  *
  * If the signed-in user is banned they are signed out and sent to banned.php,
  * which shows a card with the reason and a live countdown to the unban.
@@ -44,69 +44,19 @@ function vs_bg_user_ban($db, $userId, string $username = ''): ?array {
     if ($userId === '' && $username === '') return null;
     $row = vs_bg_query(
         $db,
-        "SELECT `user_id`, `is_permanent`, `expires_at`, UNIX_TIMESTAMP(`expires_at`) AS `expires_epoch`, `reason` FROM `user_bans`
-         WHERE ((? <> '' AND `user_id` = ?) OR (? <> '' AND LOWER(`username`) = LOWER(?)))
-           AND (`is_permanent` = 1 OR (`expires_at` IS NOT NULL AND `expires_at` > NOW()))
+        "SELECT `user_id`, `is_permanent`, `expires_at`, `reason` FROM `user_bans`
+         WHERE (? <> '' AND `user_id` = ?) OR (? <> '' AND LOWER(`username`) = LOWER(?))
          ORDER BY `is_permanent` DESC, `expires_at` DESC LIMIT 1",
-        [$userId, $userId, $username, $username]
-    );
-    vs_bg_query(
-        $db,
-        "DELETE FROM `user_bans`
-         WHERE `is_permanent` = 0 AND `expires_at` IS NOT NULL AND `expires_at` <= NOW()
-           AND ((? <> '' AND `user_id` = ?) OR (? <> '' AND LOWER(`username`) = LOWER(?)))",
         [$userId, $userId, $username, $username]
     );
     if (!$row) return null;
     $permanent = (int)$row['is_permanent'] === 1;
-    $until = $permanent ? 0 : (int)($row['expires_epoch'] ?? 0);
-    return ['permanent' => $permanent, 'until' => $until, 'reason' => trim((string)($row['reason'] ?? ''))];
-}
-
-function vs_bg_legacy_user_banned($db, string $userId, string $username): bool {
-    try {
-        if ($db instanceof PDO) {
-            $columns = $db->query('SHOW COLUMNS FROM `users`')->fetchAll(PDO::FETCH_COLUMN, 0);
-        } elseif ($db instanceof mysqli) {
-            $result = $db->query('SHOW COLUMNS FROM `users`');
-            $columns = [];
-            while ($column = $result->fetch_assoc()) $columns[] = $column['Field'];
-            $result->free();
-        } else {
-            return false;
-        }
-        $map = [];
-        foreach ($columns as $column) $map[strtolower((string)$column)] = (string)$column;
-        $pick = static function (array $names) use ($map): ?string {
-            foreach ($names as $name) if (isset($map[$name])) return $map[$name];
-            return null;
-        };
-        $idColumn = $pick(['id', 'user_id']);
-        $nameColumn = $pick(['username', 'user_name']);
-        $checks = [];
-        $params = [];
-        if ($userId !== '' && $idColumn) { $checks[] = '`' . str_replace('`', '``', $idColumn) . '` = ?'; $params[] = $userId; }
-        if ($username !== '' && $nameColumn) { $checks[] = '`' . str_replace('`', '``', $nameColumn) . '` = ?'; $params[] = $username; }
-        if (!$checks) return false;
-
-        $select = [];
-        foreach (['status', 'account_status', 'is_banned', 'banned', 'is_blocked'] as $candidate) {
-            $column = $pick([$candidate]);
-            if ($column) $select[] = '`' . str_replace('`', '``', $column) . '` AS `' . $candidate . '`';
-        }
-        if (!$select) return false;
-        $row = vs_bg_query($db, 'SELECT ' . implode(', ', $select) . ' FROM `users` WHERE (' . implode(' OR ', $checks) . ') LIMIT 1', $params);
-        if (!$row) return false;
-        foreach (['status', 'account_status'] as $column) {
-            if (in_array(strtolower(trim((string)($row[$column] ?? ''))), ['banned', 'blocked', 'disabled', 'suspended'], true)) return true;
-        }
-        foreach (['is_banned', 'banned', 'is_blocked'] as $column) {
-            if ((int)($row[$column] ?? 0) === 1) return true;
-        }
-    } catch (Throwable $e) {
-        error_log('Ban guard legacy status check failed: ' . $e->getMessage());
+    $until = (!$permanent && !empty($row['expires_at'])) ? (int)strtotime((string)$row['expires_at']) : 0;
+    if (!$permanent && $until <= time()) {
+        vs_bg_query($db, 'DELETE FROM `user_bans` WHERE `user_id` = ?', [(string)$row['user_id']]);
+        return null;
     }
-    return false;
+    return ['permanent' => $permanent, 'until' => $until, 'reason' => trim((string)($row['reason'] ?? ''))];
 }
 
 function vs_bg_brand(): array {
@@ -259,71 +209,35 @@ function vs_bg_banned_url(): string {
     return 'banned.php';
 }
 
-/** True when the current session belongs to an admin / owner / CEO / founder (never bannable). */
-function vs_bg_is_privileged_session(): bool {
-    if (!empty($_SESSION['AdminSession'])) return true;
-    foreach (['role', 'user_role', 'usertype', 'user_type', 'account_type', 'admin_role'] as $key) {
-        if (!isset($_SESSION[$key]) || !is_scalar($_SESSION[$key])) continue;
-        $normalized = preg_replace('/[^a-z]/', '', strtolower(trim((string)$_SESSION[$key])));
-        if ($normalized !== '' && preg_match('/admin|owner|ceo|founder/', $normalized) === 1) return true;
+/**
+ * Who is signed in? Reads the session WITHOUT keeping it open, so the page's own session_start()
+ * and session settings still work normally (this runs from connection.php, before the page's own code).
+ */
+function vs_bg_session_user(): array {
+    $data = null;
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $data = $_SESSION;
+    } elseif (session_status() === PHP_SESSION_NONE && !headers_sent() && !empty($_COOKIE[session_name()])) {
+        @session_start(['read_and_close' => true]);   // read the data and release the session straight away
+        $data = $_SESSION;
+        // $_SESSION keeps what was read; the page's own session_start() reloads it as usual
     }
-    return false;
-}
-
-/** True when the session holds a signed-in account (a fresh login), not just leftover ban-card data. */
-function vs_bg_session_logged_in(): bool {
-    foreach (['user_id', 'id', 'userid', 'uid', 'username'] as $key) {
-        if (!empty($_SESSION[$key]) && is_scalar($_SESSION[$key])) return true;
+    if (!is_array($data)) return ['', ''];
+    $id = '';
+    foreach (['user_id', 'id', 'userid', 'uid'] as $key) {
+        if (!empty($data[$key]) && is_scalar($data[$key])) { $id = (string)$data[$key]; break; }
     }
-    return false;
+    return [$id, trim((string)($data['username'] ?? ''))];
 }
 
 /** Signs a banned visitor out and sends them to the ban card. */
 function vs_bg_enforce($db): void {
-    if (session_status() === PHP_SESSION_NONE) session_start();
-    $route = strtolower(basename((string)($_SERVER['SCRIPT_NAME'] ?? '')));
-    $authRoutes = ['login.php', 'login-handler.php', 'google-login.php', 'signup.php', 'signup-handler.php'];
-    if (in_array($route, $authRoutes, true)) return;
-
-    // Admin / owner / CEO / founder sessions are never banned; also clear any ban card left in this browser.
-    if (vs_bg_is_privileged_session()) {
-        unset($_SESSION['vs_ban_card']);
-        return;
-    }
-
-    $id = '';
-    foreach (['user_id', 'id', 'userid', 'uid'] as $key) {
-        if (!empty($_SESSION[$key]) && is_scalar($_SESSION[$key])) { $id = (string)$_SESSION[$key]; break; }
-    }
-    $name = trim((string)($_SESSION['username'] ?? ''));
-
-    if (is_array($_SESSION['vs_ban_card'] ?? null)) {
-        $banCard = $_SESSION['vs_ban_card'];
-        if ($id !== '' || $name !== '') {
-            // someone signed in after a ban card was stored in this browser session:
-            // the card belongs to the earlier (banned) visitor, so drop it and re-check this account below
-            unset($_SESSION['vs_ban_card']);
-        } elseif (empty($banCard['permanent']) && (int)($banCard['until'] ?? 0) <= time()) {
-            unset($_SESSION['vs_ban_card']);
-            if (session_status() === PHP_SESSION_ACTIVE) @session_regenerate_id(true);
-        } else {
-            if (!headers_sent()) {
-                header('Location: ' . vs_bg_banned_url());
-            } else {
-                http_response_code(403);
-                echo vs_bg_card_html($banCard);
-            }
-            exit;
-        }
-    }
-
+    [$id, $name] = vs_bg_session_user();
     if ($id === '' && $name === '') return;
     $ban = vs_bg_user_ban($db, $id, $name);
-    if (!$ban && vs_bg_legacy_user_banned($db, $id, $name)) {
-        $ban = ['permanent' => true, 'until' => 0, 'reason' => ''];
-    }
     if (!$ban) return;
 
+    if (session_status() === PHP_SESSION_NONE) @session_start();   // only now do we need to write to the session
     $_SESSION = ['vs_ban_card' => $ban];      // signed out; only the ban card data is kept
     if (session_status() === PHP_SESSION_ACTIVE) @session_regenerate_id(true);
 

@@ -45,6 +45,7 @@
     justify-content: center;
     gap: 6px;
     width: 100%;
+    min-height: 0;
     padding: 12px 2px !important;
     text-align: center;
   }
@@ -60,4 +61,20 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* the Go Premium card shrinks to just its crown */
+  html.vs-rail .app-sidebar .sidebar-gopremium {
+    box-sizing: border-box;
+    width: 48px;
+    min-height: 48px;
+    margin: 8px auto 6px;
+    padding: 8px;
+    gap: 0;
+    border-radius: 14px;
+  }
+  html.vs-rail .app-sidebar .sidebar-gopremium span,
+  html.vs-rail .app-sidebar .sidebar-gopremium strong,
+  html.vs-rail .app-sidebar .sidebar-gopremium p,
+  html.vs-rail .app-sidebar .sidebar-gopremium .gp-btn { display: none !important; }
+  html.vs-rail .app-sidebar .sidebar-gopremium .gp-crown-link { width: 100%; }
 }

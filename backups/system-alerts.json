@@ -1,0 +1,63 @@
+{
+    "last_run": 1795273929,
+    "signature": "",
+    "bad": [],
+    "acknowledged": false,
+    "last_notified": 0,
+    "history": [
+        {
+            "time": 1793400261,
+            "type": "ok",
+            "text": "All problems are fixed.",
+            "emailed": false
+        },
+        {
+            "time": 1793400233,
+            "type": "problem",
+            "emailed": true,
+            "text": "1 problem: icons.php"
+        },
+        {
+            "time": 1792593743,
+            "type": "ok",
+            "text": "All problems are fixed.",
+            "emailed": false
+        },
+        {
+            "time": 1792593706,
+            "type": "problem",
+            "emailed": true,
+            "text": "1 problem: adminpanel.zip"
+        },
+        {
+            "time": 1792256685,
+            "type": "ok",
+            "text": "All problems are fixed.",
+            "emailed": false
+        },
+        {
+            "time": 1792256674,
+            "type": "problem",
+            "emailed": true,
+            "text": "1 problem: migrations.sql"
+        },
+        {
+            "time": 1792092623,
+            "type": "ok",
+            "text": "All problems are fixed.",
+            "emailed": false
+        },
+        {
+            "time": 1792092621,
+            "type": "problem",
+            "emailed": false,
+            "text": "1 problem: client_secret_778247495161-37fq631q2nm026vm5ofn1qj79vib9au4.apps.googleusercontent.com.json"
+        },
+        {
+            "time": 1792092018,
+            "type": "problem",
+            "emailed": false,
+            "text": "2 problems: client_secret_778247495161-37fq631q2nm026vm5ofn1qj79vib9au4.apps.googleusercontent.com.json, Last backup"
+        }
+    ]
+}

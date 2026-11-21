@@ -17,6 +17,8 @@ require_once __DIR__ . '/liked-store.php';
 require_once __DIR__ . '/comment-store.php';
 require_once __DIR__ . '/context-notes-store.php';
 require_once __DIR__ . '/vip-badge.php';
+require_once __DIR__ . '/premium-popup.php';
+require_once __DIR__ . '/csrf.php';
 $siteName = vs_branding_app_name();
 $defaultTheme = vs_branding_default_theme();
 vs_maintenance_gate();
@@ -33,6 +35,21 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
         die('Database connection failed: ' . htmlspecialchars($e->getMessage()));
     }
 }
+
+if (!function_exists('column_exists')) {
+    function column_exists($conn, $table, $col) {
+        static $cache = [];
+        $key = "$table.$col";
+        if (isset($cache[$key])) return $cache[$key];
+        $t = $conn->real_escape_string($table);
+        $c = $conn->real_escape_string($col);
+        $r = $conn->query("SHOW COLUMNS FROM `$t` LIKE '$c'");
+        return $cache[$key] = ($r && $r->num_rows > 0);
+    }
+}
+$hasScheduledAtColumn = column_exists($conn, 'videos', 'scheduled_at');
+$publishCutoff = date('Y-m-d H:i:s');
+$scheduleFilter = $hasScheduledAtColumn ? ' AND (scheduled_at IS NULL OR scheduled_at <= ?)' : '';
 
 if (!function_exists('extract_youtube_id')) {
     function extract_youtube_id($raw, $allowBare = true) {
@@ -92,12 +109,19 @@ if (!function_exists('render_navbar')) {
                     <img class="site-brand-icon" src="<?php echo htmlspecialchars($siteLogoUrl); ?>" alt="">
                     <span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span>
                 </a>
+                <form class="nav-search" action="index.php" method="get" role="search">
+                    <input type="text" name="q" id="search-input" placeholder="Search videos" aria-label="Search videos" autocomplete="off">
+                    <button type="submit" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+                </form>
             </div>
 
-            <div class="nav-center">
-                <a class="nav-link<?php echo $active === 'watch' ? ' active' : ''; ?>" href="watch.php">Watch</a>
-                <a class="nav-link<?php echo $active === 'shorts' ? ' active' : ''; ?>" href="shorts.php">Shorts</a>
-            </div>
+            <nav class="nav-center" aria-label="Main">
+                <a class="nav-link<?php echo $active === 'home' ? ' active' : ''; ?>" href="index.php" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 2.5 11.5H5V20h5v-5.5h4V20h5v-8.5h2.5z"/></svg><span>Home</span></a>
+                <a class="nav-link<?php echo $active === 'watch' ? ' active' : ''; ?>" href="watch.php" aria-label="Explore" title="Explore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15.8 8.2-2.1 5.5-5.5 2.1 2.1-5.5z"/></svg><span>Explore</span></a>
+                <a class="nav-link<?php echo $active === 'shorts' ? ' active' : ''; ?>" href="shorts.php" aria-label="Shorts" title="Shorts"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 2 4.5 14H10l-1 8 9.5-12.5H13z"/></svg><span>Shorts</span></a>
+                <a class="nav-link<?php echo $active === 'live' ? ' active' : ''; ?>" href="live.php" aria-label="Live" title="Live"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8 8a5.7 5.7 0 0 0 0 8m8-8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14"/></svg><span>Live</span></a>
+                <a class="nav-link nav-premium<?php echo $active === 'premium' ? ' active' : ''; ?>" href="premium.php" aria-label="Premium" title="Premium"><svg viewBox="0 0 24 20" fill="currentColor" aria-hidden="true"><path d="M2 17 0 5l6.5 5L12 1l5.5 9L24 5l-2 12zM3 19h18v1.5H3z"/></svg><span>Premium</span></a>
+            </nav>
 
             <div class="nav-right">
                 <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
@@ -107,7 +131,7 @@ if (!function_exists('render_navbar')) {
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                 </button>
                 <?php echo vs_notification_bell_html(); ?>
-                <a href="upload.php" class="create-btn">+ Create</a>
+                <a href="upload.php" class="create-btn" aria-label="Create video" title="Create video"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10 5-3v10l-5-3M9.5 10v4M7.5 12h4"/></svg><span class="create-label">Create</span></a>
                 <?php if ($isLoggedIn): ?>
                     <?php echo vs_user_menu_html($username, $navAvatar); ?>
                 <?php else: ?>
@@ -138,8 +162,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $stmt = $conn->prepare("SELECT * FROM videos WHERE id = ?");
-        $stmt->bind_param("s", $vid);
+        if (!vs_csrf_valid($_POST['csrf_token'] ?? null)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'That request expired. Refresh the page and try again.']);
+            exit;
+        }
+
+        $stmt = $conn->prepare("SELECT * FROM videos WHERE id = ?" . $scheduleFilter);
+        if ($hasScheduledAtColumn) {
+            $stmt->bind_param('ss', $vid, $publishCutoff);
+        } else {
+            $stmt->bind_param('s', $vid);
+        }
         $stmt->execute();
         $v = $stmt->get_result()->fetch_assoc();
         $stmt->close();
@@ -314,8 +348,12 @@ $id = trim($_GET['id'] ?? '');
 $video = null;
 
 if ($id !== '') {
-    $stmt = $conn->prepare("SELECT * FROM videos WHERE id = ? AND type = 'short'");
-    $stmt->bind_param("s", $id);
+    $stmt = $conn->prepare("SELECT * FROM videos WHERE id = ? AND type = 'short'" . $scheduleFilter);
+    if ($hasScheduledAtColumn) {
+        $stmt->bind_param('ss', $id, $publishCutoff);
+    } else {
+        $stmt->bind_param('s', $id);
+    }
     $stmt->execute();
     $video = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -325,7 +363,11 @@ if (!$video) {
     // No (valid) short in the address: show a different random short every time
     // the Shorts button is pressed, then move to that short's own address so a
     // refresh or a shared link keeps pointing at it.
-    $video = vs_random_pick_video($conn, 'random_seen_shorts', "type = 'short'");
+    $where = "type = 'short'";
+    if ($hasScheduledAtColumn) {
+        $where .= " AND (scheduled_at IS NULL OR scheduled_at <= '" . $conn->real_escape_string($publishCutoff) . "')";
+    }
+    $video = vs_random_pick_video($conn, 'random_seen_shorts', $where);
     if ($video && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
         header('Cache-Control: no-store');
         header('Location: shorts.php?id=' . urlencode((string)$video['id']));
@@ -394,9 +436,13 @@ if ($video) {
     $queued = (isset($_SESSION['shorts_next_for']) && is_array($_SESSION['shorts_next_for']) && (string)($_SESSION['shorts_next_for']['for'] ?? '') === (string)$id)
         ? (string)($_SESSION['shorts_next_for']['next'] ?? '') : '';
     if ($queued !== '') {
-        $qs = $conn->prepare("SELECT * FROM videos WHERE id = ? AND type = 'short'");
+        $qs = $conn->prepare("SELECT * FROM videos WHERE id = ? AND type = 'short'" . $scheduleFilter);
         if ($qs) {
-            $qs->bind_param('s', $queued);
+            if ($hasScheduledAtColumn) {
+                $qs->bind_param('ss', $queued, $publishCutoff);
+            } else {
+                $qs->bind_param('s', $queued);
+            }
             $qs->execute();
             $nextShort = $qs->get_result()->fetch_assoc() ?: null;
             $qs->close();
@@ -476,6 +522,38 @@ header('Pragma: no-cache');
     <meta name="vs-default-theme" content="<?= htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8') ?>">
     <meta name="theme-color" content="<?= $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff' ?>">
     <meta name="description" content="<?= htmlspecialchars(vs_branding_app_description(), ENT_QUOTES, 'UTF-8') ?>">
+    <?php
+    $ogScheme = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') ? 'https' : 'http';
+    $ogBase = $ogScheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/') . '/';
+    $ogUrl = $ogBase . 'shorts.php' . (((string)$id !== '' && (string)$id !== '0') ? '?id=' . rawurlencode((string)$id) : '');
+    $ogImage = '';
+    if ($yt) {
+        $ogImage = 'https://i.ytimg.com/vi/' . $yt . '/hqdefault.jpg';
+    } elseif (!empty($video)) {
+        foreach (['thumbnail', 'thumb', 'image', 'img', 'poster'] as $ogCol) {
+            $ogThumb = trim((string)($video[$ogCol] ?? ''));
+            if ($ogThumb === '' || stripos($ogThumb, 'data:') === 0) continue;
+            if (strpos($ogThumb, '//') === 0) $ogThumb = $ogScheme . ':' . $ogThumb;
+            $ogImage = preg_match('#^https?://#i', $ogThumb) ? $ogThumb : $ogBase . ltrim($ogThumb, '/');
+            break;
+        }
+    }
+    if ($ogImage === '') $ogImage = $ogBase . 'branding-icon.php';
+    $ogDesc = trim(preg_replace('/\s+/', ' ', (string)$description));
+    if ($ogDesc === '') $ogDesc = vs_branding_app_description();
+    if (mb_strlen($ogDesc) > 200) $ogDesc = mb_substr($ogDesc, 0, 197) . '...';
+    ?>
+    <link rel="canonical" href="<?php echo htmlspecialchars($ogUrl, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:type" content="video.other">
+    <meta property="og:site_name" content="<?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:title" content="<?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:description" content="<?php echo htmlspecialchars($ogDesc, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:url" content="<?php echo htmlspecialchars($ogUrl, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:image" content="<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="twitter:description" content="<?php echo htmlspecialchars($ogDesc, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="twitter:image" content="<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>">
     <link rel="icon" type="image/png" sizes="96x96" href="branding-icon.php?size=96">
     <link rel="shortcut icon" type="image/png" href="branding-icon.php?size=96">
     <link rel="manifest" href="manifest.php">
@@ -528,7 +606,7 @@ header('Pragma: no-cache');
         .nav-left, .nav-center, .nav-right {
             display: flex; align-items: center; gap: 14px;
         }
-        .nav-center { justify-content: center; }
+        .nav-center { justify-content: center; gap: 8px; }
         .nav-right { justify-content: flex-end; }
 
         .brand { font-size: 22px; font-weight: 700; letter-spacing: 0.2px; white-space: nowrap; }
@@ -541,16 +619,35 @@ header('Pragma: no-cache');
         .nav-toggle:hover { background: var(--surface-3); }
         .nav-toggle span { display: block; width: 100%; height: 2px; border-radius: 999px; background: var(--text); }
 
+        .nav-search { position: relative; display: flex; align-items: center; width: clamp(180px, 22vw, 340px); margin-left: 6px; }
+        .nav-search input { width: 100%; height: 42px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); padding: 0 44px 0 16px; font-size: 14px; outline: none; }
+        .nav-search input::placeholder { color: var(--muted); }
+        .nav-search input:focus { border-color: var(--blue); }
+        .nav-search button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+        .nav-search button:hover { color: var(--text); }
+        .nav-search button svg { width: 19px; height: 19px; }
+        @media (max-width: 1100px) { .nav-search { width: 160px; } }
+        @media (max-width: 960px) { .nav-search { display: none; } }
         .nav-link {
-            background: var(--surface-2); border-radius: 999px; padding: 8px 14px;
-            font-size: 14px; color: var(--text); border: 1px solid transparent;
+            display: inline-flex; align-items: center; gap: 8px; background: transparent; border-radius: 999px; padding: 9px 14px;
+            font-size: 15px; font-weight: 500; color: var(--text); border: 1px solid transparent; white-space: nowrap;
+            transition: background 0.15s ease, color 0.15s ease;
         }
+        .nav-link svg { width: 20px; height: 20px; flex: 0 0 auto; }
+        .nav-link:hover { background: var(--surface-2); }
+        .nav-link.nav-premium { color: #ffc933; }
+        .nav-link.nav-premium svg { width: 22px; height: 18px; }
+        .nav-center .nav-link { width: 42px; height: 42px; justify-content: center; padding: 9px; }
+        .nav-center .nav-link span { display: none; }
         .nav-link.active { background: var(--accent-soft); color: #ffb3b3; border-color: rgba(176, 42, 42, 0.45); }
 
         .create-btn, .sign-in-btn {
             background: var(--accent); color: #ffffff; padding: 10px 16px; border-radius: 999px;
             font-size: 14px; font-weight: 700; white-space: nowrap;
         }
+        .nav-right .create-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
+        .nav-right .create-btn svg { width: 20px; height: 20px; }
+        .nav-right .create-label { display: none; }
 
         .user-badge-pill {
             display: inline-flex; align-items: center; gap: 10px;
@@ -634,8 +731,24 @@ header('Pragma: no-cache');
         .player { position: relative; width: 100%; height: 100%; background: #000000; }
         .player iframe, .player video { width: 100%; height: 100%; border: 0; object-fit: cover; display: block; }
         .player .msg {
-            height: 100%; display: flex; align-items: center; justify-content: center; text-align: center;
-            color: #9a9aa2; padding: 24px; font-size: 14px; line-height: 1.5;
+            position: absolute; inset: 0; box-sizing: border-box;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 12px; text-align: center; padding: 24px;
+            background: radial-gradient(ellipse at 50% 40%, rgba(119, 62, 255, .22), transparent 58%),
+                linear-gradient(160deg, #10152a, #05060d 72%);
+            color: #f2f4ff; font-size: 14px; line-height: 1.5;
+        }
+        .empty-short-icon {
+            display: grid; place-items: center; width: 68px; height: 68px;
+            border: 1px solid rgba(168, 115, 255, .55); border-radius: 22px;
+            background: linear-gradient(145deg, rgba(110, 75, 255, .28), rgba(255, 46, 147, .2));
+            box-shadow: 0 0 30px rgba(138, 92, 255, .26);
+        }
+        .empty-short-icon svg { width: 34px; height: 34px; fill: none; stroke: #d7c7ff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+        .empty-short-title { font-size: 20px; font-weight: 800; }
+        .empty-short-copy { max-width: 26ch; color: #aab4d2; }
+        html[data-theme="light"] .empty-short-icon { border-color: rgba(168, 115, 255, .7); }
+        html[data-theme="light"] .empty-short-copy { color: #c3c9df; }
         }
         .player-gradient {
             position: absolute; left: 0; right: 0; bottom: 0; height: 48%;
@@ -802,6 +915,12 @@ header('Pragma: no-cache');
             position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--surface-2);
             color: var(--text-primary, #ffffff); padding: 10px 18px; border-radius: 10px; font-size: 14px; display: none; z-index: 1200;
         }
+        .vs-pop { position: fixed; z-index: 2100; min-width: 200px; max-width: calc(100vw - 16px); padding: 8px; border-radius: 14px; display: flex; flex-direction: column; gap: 2px; background: #212121; color: #fff; border: 1px solid #3a3a3a; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+        .vs-pop-title { padding: 4px 12px 6px; font-size: 12px; font-weight: 600; opacity: 0.7; }
+        .vs-pop button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+        .vs-pop button:hover { background: rgba(127, 127, 127, 0.22); }
+        html:not([data-theme="light"]) .vs-pop { background: rgba(10,13,31,.94); border: 1px solid rgba(0,229,255,.45); box-shadow: 0 0 20px -6px rgba(0,229,255,.5); }
+        html[data-theme="light"] .vs-pop { background: #ffffff; color: #0b1030; border: 1px solid rgba(0,184,230,.45); box-shadow: 0 0 20px -6px rgba(0,184,230,.5); }
         .sidebar-overlay {
             position: fixed; top: var(--navbar-height); left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.55);
             opacity: 0; visibility: hidden; transition: opacity 0.25s ease, visibility 0.25s ease; z-index: 940;
@@ -832,10 +951,35 @@ header('Pragma: no-cache');
             }
             .actions-column, .nav-column { flex-direction: row; gap: 18px; padding-bottom: 0; }
         }
+        @media (max-width: 1180px) {
+            .nav-link span { display: none; }
+            .nav-link { padding: 9px 11px; }
+        }
+
         @media (max-width: 760px) {
-            .app-navbar, .app-sidebar, .sidebar-overlay { display: none !important; }
+            .app-sidebar, .sidebar-overlay { display: none !important; }
+            .app-navbar {
+                position: fixed; top: auto; right: 0; bottom: 0; left: 0; z-index: 1000;
+                display: flex !important; align-items: center; justify-content: center;
+                width: 100%; height: calc(58px + env(safe-area-inset-bottom, 0px));
+                padding: 4px 6px env(safe-area-inset-bottom, 0px);
+                background: rgba(5, 6, 15, .96); border-top: 1px solid rgba(138, 92, 255, .4);
+                border-bottom: 0; backdrop-filter: blur(12px);
+            }
+            .app-navbar .nav-left, .app-navbar .nav-right { display: none !important; }
+            .app-navbar .nav-center {
+                display: flex !important; align-items: center; justify-content: space-around;
+                width: 100%; height: 100%; gap: 2px;
+            }
+            .app-navbar .nav-center .nav-link {
+                display: flex; flex: 1 1 0; flex-direction: column; justify-content: center;
+                width: auto; height: 48px; min-width: 0; gap: 3px; padding: 3px 2px;
+                border: 0; border-radius: 10px;
+            }
+            .app-navbar .nav-center .nav-link span { display: block !important; font-size: 10px; line-height: 1; }
+            .app-navbar .nav-center .nav-link svg { width: 20px; height: 20px; }
             .app-layout, .app-main { min-height: 100dvh; padding: 0; margin: 0; }
-            .shorts-shell { position: fixed; inset: 0; min-height: 0; padding: 0; }
+            .shorts-shell { position: fixed; inset: 0 0 calc(58px + env(safe-area-inset-bottom, 0px)); min-height: 0; padding: 0; }
             .shorts-stage { position: absolute; inset: 0; display: block; width: 100%; max-width: none; }
             .short-card { width: 100%; height: 100%; min-width: 0; aspect-ratio: auto; }
             .player-card { border: 0; border-radius: 0; box-shadow: none; }
@@ -976,6 +1120,10 @@ html[data-theme="light"] {
 </head>
 <body>
     <?php render_navbar('shorts'); ?>
+    <?php
+    $vsPromptUser = trim((string)($_SESSION['username'] ?? ''));
+    echo vs_premium_popup_html($vsPromptUser, vs_premium_popup_eligible($vsPromptUser));
+    ?>
     <?php echo vs_site_announcement_html($GLOBALS['pdo'] ?? null); ?>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
@@ -998,7 +1146,11 @@ html[data-theme="light"] {
                                 <?php elseif ($src): ?>
                                     <video id="shortVideo" src="<?= htmlspecialchars($src) ?>" autoplay loop playsinline controls></video>
                                 <?php else: ?>
-                                    <div class="msg"><?= $noVideo ? 'No shorts available yet. Upload one to get started.' : 'This short has no video saved.' ?></div>
+                                    <div class="msg" role="status">
+                                        <span class="empty-short-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/><path d="M7 3v3m5-3v3"/></svg></span>
+                                        <strong class="empty-short-title"><?= $noVideo ? 'No Shorts yet' : 'Short unavailable' ?></strong>
+                                        <span class="empty-short-copy"><?= $noVideo ? 'There are no Shorts to watch right now. Upload one to get started.' : 'This Short does not have a video file saved.' ?></span>
+                                    </div>
                                 <?php endif; ?>
 
                                 <div class="player-gradient"></div>
@@ -1049,6 +1201,12 @@ html[data-theme="light"] {
                             <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
                             <span id="viewCount"><?= number_format($views) ?></span>
                         </div>
+                        <a class="icon-btn<?= $noVideo ? ' disabled' : '' ?>" id="shareBtn"
+                            href="<?= !$noVideo && !empty($video['id']) ? 'shorts.php?id=' . rawurlencode((string)$video['id']) : '#' ?>"
+                            aria-label="Share this short"<?= $noVideo ? ' aria-disabled="true" tabindex="-1"' : '' ?>>
+                            <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.7 10.7 6.6-4.4M8.7 13.3l6.6 4.4"/></svg></span>
+                            <span>Share</span>
+                        </a>
                         <button class="icon-btn on" type="button" id="loopBtn" aria-pressed="true" title="Repeat this short, or go to the next one when it ends">
                             <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg></span>
                             <span id="loopLabel">Repeat</span>
@@ -1085,6 +1243,7 @@ html[data-theme="light"] {
             'modal' => true,
             'disabled' => $noVideo,
             'list_id' => 'list',
+            'csrf_token' => vs_csrf_token(),
         ]);
         ?>
     </div>
@@ -1096,6 +1255,7 @@ html[data-theme="light"] {
 
     <script src="comments.js?v=1"></script>
     <script src="context-notes.js?v=1"></script>
+    <script src="creator-analytics-tracking.js?v=1"></script>
     <script>
         const VIDEO_ID = <?= json_encode((string)($video['id'] ?? '')) ?>;
         const $ = id => document.getElementById(id);
@@ -1119,7 +1279,7 @@ html[data-theme="light"] {
                 const res = await fetch('shorts.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ action, video_id: VIDEO_ID, ...extra })
+                    body: new URLSearchParams({ action, video_id: VIDEO_ID, csrf_token: <?= json_encode(vs_csrf_token()) ?>, ...extra })
                 });
                 const text = await res.text();
                 try {
@@ -1141,6 +1301,7 @@ html[data-theme="light"] {
             const commentBtn = $('commentBtn');
             const closeBtn = $('closeBtn');
             const likeBtn = $('likeBtn');
+            const shareBtn = $('shareBtn');
             const subBtn = $('subBtn');
             const player = $('playerWrap');
             const shortCard = document.querySelector('.short-card');
@@ -1189,6 +1350,75 @@ html[data-theme="light"] {
                         likeBtn.disabled = false;
                     }
                 });
+            }
+
+            if (shareBtn && VIDEO_ID) {
+                const copyText = async (text) => {
+                    try {
+                        if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
+                    } catch (e) {}
+                    try {
+                        const ta = document.createElement('textarea');
+                        ta.value = text;
+                        ta.setAttribute('readonly', '');
+                        ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        ta.setSelectionRange(0, text.length);
+                        const ok = document.execCommand('copy');
+                        ta.remove();
+                        return ok;
+                    } catch (e) { return false; }
+                };
+                const trackShare = () => { if (window.VSAnalyticsTracking) window.VSAnalyticsTracking.trackShare(VIDEO_ID, 'short'); };
+                let pop = null;
+                const closePop = () => { if (pop) { pop.remove(); pop = null; } };
+                const addItem = (label, fn) => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.textContent = label;
+                    b.addEventListener('click', fn);
+                    pop.appendChild(b);
+                };
+                shareBtn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    if (pop) { closePop(); return; }
+                    const shareUrl = new URL(shareBtn.getAttribute('href'), window.location.href).href;
+                    pop = document.createElement('div');
+                    pop.className = 'vs-pop';
+                    const heading = document.createElement('div');
+                    heading.className = 'vs-pop-title';
+                    heading.textContent = 'Share';
+                    pop.appendChild(heading);
+                    addItem('Copy link', async () => {
+                        toast((await copyText(shareUrl)) ? 'Link copied' : 'Could not copy the link');
+                        trackShare();
+                        closePop();
+                    });
+                    addItem('WhatsApp', () => {
+                        window.open('https://wa.me/?text=' + encodeURIComponent(document.title + ' ' + shareUrl), '_blank', 'noopener');
+                        trackShare();
+                        closePop();
+                    });
+                    if (navigator.share) {
+                        addItem('More apps\u2026', async () => {
+                            try { await navigator.share({ title: document.title, url: shareUrl }); trackShare(); } catch (e) {}
+                            closePop();
+                        });
+                    }
+                    document.body.appendChild(pop);
+                    const r = shareBtn.getBoundingClientRect();
+                    const w = pop.offsetWidth, h = pop.offsetHeight;
+                    pop.style.left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8) + 'px';
+                    let top = r.bottom + 6;
+                    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+                    pop.style.top = top + 'px';
+                });
+                document.addEventListener('click', (e) => {
+                    if (pop && !pop.contains(e.target) && !shareBtn.contains(e.target)) closePop();
+                });
+                window.addEventListener('scroll', closePop, { passive: true });
+                document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
             }
 
             if (subBtn && VIDEO_ID) {
@@ -1282,6 +1512,9 @@ html[data-theme="light"] {
             const yt = document.getElementById('ytFrame');
             if (!pill || (!vid && !yt)) return;
             let lastYoutubeViewState = -1;
+            const watchTime = window.VSAnalyticsTracking
+                ? window.VSAnalyticsTracking.trackWatchTime(<?= json_encode((string)($video['id'] ?? '')) ?>, 'short')
+                : null;
             let firstDirectPlayRecorded = false;
             let lastViewRequestAt = 0;
             const recordShortView = async () => {
@@ -1308,10 +1541,19 @@ html[data-theme="light"] {
             };
             if (vid) {
                 vid.addEventListener('playing', () => {
+                    if (watchTime) watchTime.setPlaying(true);
                     if (!firstDirectPlayRecorded) {
                         firstDirectPlayRecorded = true;
                         recordShortView();
                     }
+                });
+                ['pause', 'ended', 'waiting', 'seeking'].forEach((eventName) => {
+                    vid.addEventListener(eventName, () => {
+                        if (watchTime) watchTime.setPlaying(false);
+                    });
+                });
+                vid.addEventListener('seeked', () => {
+                    if (watchTime) watchTime.setPlaying(!vid.paused);
                 });
                 let previousTime = 0;
                 vid.addEventListener('timeupdate', () => {
@@ -1441,11 +1683,15 @@ html[data-theme="light"] {
                     if (typeof d === 'string') { try { d = JSON.parse(d); } catch (err) { return; } }
                     if (d && d.event === 'onStateChange' && typeof d.info === 'number') {
                         ytState = d.info;
+                        if (watchTime && ytState !== lastYoutubeViewState) watchTime.setPlaying(ytState === 1);
                         if (ytState === 1 && lastYoutubeViewState !== 1) recordShortView();
                         lastYoutubeViewState = ytState;
                     }
                     if (d && d.event === 'infoDelivery' && d.info) {
-                        if (typeof d.info.playerState === 'number') ytState = d.info.playerState;
+                        if (typeof d.info.playerState === 'number') {
+                            ytState = d.info.playerState;
+                            if (watchTime && ytState !== lastYoutubeViewState) watchTime.setPlaying(ytState === 1);
+                        }
                         if (ytState === 1 && lastYoutubeViewState !== 1) recordShortView();
                         if (typeof d.info.playerState === 'number') lastYoutubeViewState = ytState;
                         if (typeof d.info.currentTime === 'number') { ytCur = d.info.currentTime; ytStamp = Date.now(); }
@@ -1542,7 +1788,7 @@ html[data-theme="light"] {
                 if (e.ctrlKey || e.metaKey || e.altKey) return;
                 const t = e.target;
                 if (t && t.closest && t.closest('input, textarea, select, button, a, [contenteditable=""], [contenteditable="true"]')) return;
-                const modal = document.getElementById('commentsModal');
+                const modal = document.getElementById('modal');
                 if (modal && modal.classList.contains('open')) return;
                 const k = e.key.toLowerCase();
                 if (k === ' ' || k === 'spacebar') { e.preventDefault(); togglePlay(); }

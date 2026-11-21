@@ -17,11 +17,13 @@ require_once __DIR__ . '/context-notes-store.php';
 require_once __DIR__ . '/liked-store.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/vip-badge.php';
+require_once __DIR__ . '/premium-popup.php';
 $siteName = vs_branding_app_name();
 $defaultTheme = vs_branding_default_theme();
 vs_maintenance_gate();
 include "connection.php";
 require_once __DIR__ . '/dashboard-events.php';
+define('VS_COMMENTS_TIMESTAMPS', true); // clickable 1:23 timestamps in comments (see comment-store.php)
 
 if (!function_exists('column_exists')) {
     function column_exists($conn, $table, $col) {
@@ -36,6 +38,9 @@ if (!function_exists('column_exists')) {
 }
 $hasLikesColumn = column_exists($conn, 'videos', 'likes');
 $hasDislikesColumn = column_exists($conn, 'videos', 'dislikes');
+$hasScheduledAtColumn = column_exists($conn, 'videos', 'scheduled_at');
+$publishCutoff = date('Y-m-d H:i:s');
+$scheduleFilter = $hasScheduledAtColumn ? ' AND (scheduled_at IS NULL OR scheduled_at <= ?)' : '';
 
 if (!function_exists('extract_youtube_id')) {
     function extract_youtube_id($raw, $allowBare = false) {
@@ -119,10 +124,13 @@ if (!function_exists('render_navbar')) {
                 </a>
             </div>
 
-            <div class="nav-center">
-                <a class="nav-link<?php echo $active === 'watch' ? ' active' : ''; ?>" href="watch.php">Watch</a>
-                <a class="nav-link<?php echo $active === 'shorts' ? ' active' : ''; ?>" href="shorts.php">Shorts</a>
-            </div>
+            <nav class="nav-center" aria-label="Main">
+                <a class="nav-link<?php echo $active === 'home' ? ' active' : ''; ?>" href="index.php"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 2.5 11.5H5V20h5v-5.5h4V20h5v-8.5h2.5z"/></svg><span>Home</span></a>
+                <a class="nav-link<?php echo $active === 'watch' ? ' active' : ''; ?>" href="watch.php"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15.8 8.2-2.1 5.5-5.5 2.1 2.1-5.5z"/></svg><span>Explore</span></a>
+                <a class="nav-link<?php echo $active === 'shorts' ? ' active' : ''; ?>" href="shorts.php"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 2 4.5 14H10l-1 8 9.5-12.5H13z"/></svg><span>Shorts</span></a>
+                <a class="nav-link<?php echo $active === 'live' ? ' active' : ''; ?>" href="live.php"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8 8a5.7 5.7 0 0 0 0 8m8-8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14"/></svg><span>Live</span></a>
+                <a class="nav-link nav-premium<?php echo $active === 'premium' ? ' active' : ''; ?>" href="premium.php"><svg viewBox="0 0 24 20" fill="currentColor" aria-hidden="true"><path d="M2 17 0 5l6.5 5L12 1l5.5 9L24 5l-2 12zM3 19h18v1.5H3z"/></svg><span>Premium</span></a>
+            </nav>
 
             <div class="nav-right">
                 <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
@@ -169,12 +177,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             json_out(['success' => false, 'error' => 'That request expired. Refresh the page and try again.']);
         }
 
-        $stmt = $conn->prepare("SELECT * FROM videos WHERE id = ?");
-        $stmt->bind_param("s", $vid);
+        $stmt = $conn->prepare("SELECT * FROM videos WHERE id = ?" . $scheduleFilter);
+        if ($hasScheduledAtColumn) {
+            $stmt->bind_param('ss', $vid, $publishCutoff);
+        } else {
+            $stmt->bind_param('s', $vid);
+        }
         $stmt->execute();
         $v = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$v) json_out(['success' => false, 'error' => 'Video not found']);
+
+        if ($action === 'watch_later') {
+            $wlUser = vs_history_user_id($conn);
+            if ($wlUser <= 0) {
+                http_response_code(401);
+                json_out(['success' => false, 'error' => 'Sign in to use Watch later.']);
+            }
+            try {
+                $wlName = 'Watch later';
+                $find = $conn->prepare('SELECT `id` FROM `playlists` WHERE `user_id` = ? AND LOWER(`name`) = LOWER(?) ORDER BY `id` ASC LIMIT 1');
+                $find->bind_param('is', $wlUser, $wlName);
+                $find->execute();
+                $wlId = (int)($find->get_result()->fetch_assoc()['id'] ?? 0);
+                $find->close();
+                if ($wlId <= 0) {
+                    $vis = 'private';
+                    $mk = $conn->prepare('INSERT INTO `playlists` (`user_id`, `name`, `visibility`) VALUES (?, ?, ?)');
+                    $mk->bind_param('iss', $wlUser, $wlName, $vis);
+                    $mk->execute();
+                    $wlId = (int)$conn->insert_id;
+                    $mk->close();
+                }
+                $has = $conn->prepare('SELECT 1 FROM `playlist_videos` WHERE `playlist_id` = ? AND `video_id` = ? LIMIT 1');
+                $has->bind_param('is', $wlId, $vid);
+                $has->execute();
+                $saved = (bool)$has->get_result()->fetch_row();
+                $has->close();
+                if ($saved) {
+                    $st = $conn->prepare('DELETE FROM `playlist_videos` WHERE `playlist_id` = ? AND `video_id` = ?');
+                } else {
+                    $st = $conn->prepare('INSERT IGNORE INTO `playlist_videos` (`playlist_id`, `video_id`) VALUES (?, ?)');
+                }
+                $st->bind_param('is', $wlId, $vid);
+                $st->execute();
+                $st->close();
+                json_out(['success' => true, 'saved' => !$saved, 'playlist_id' => $wlId]);
+            } catch (Throwable $wlError) {
+                error_log('Watch later failed: ' . $wlError->getMessage());
+                json_out(['success' => false, 'error' => 'Watch later is not available yet. Open playlists.php once to set up playlists.']);
+            }
+        }
 
         if ($action === 'progress') {
             if (empty($_SESSION['username'])) {
@@ -407,8 +460,12 @@ $id = trim($_GET['id'] ?? '');
 $video = null;
 
 if ($id !== '') {
-    if ($stmt = $conn->prepare("SELECT * FROM videos WHERE id = ?")) {
-        $stmt->bind_param("s", $id);
+    if ($stmt = $conn->prepare("SELECT * FROM videos WHERE id = ?" . $scheduleFilter)) {
+        if ($hasScheduledAtColumn) {
+            $stmt->bind_param('ss', $id, $publishCutoff);
+        } else {
+            $stmt->bind_param('s', $id);
+        }
         $stmt->execute();
         $video = $stmt->get_result()->fetch_assoc();
         $stmt->close();
@@ -420,6 +477,9 @@ if (!$video) {
     // the Watch button is pressed, then move to that video's own address so a
     // refresh or a shared link keeps pointing at it.
     $where = $hasTypeColumn ? "COALESCE(type,'video') <> 'short'" : "1=1";
+    if ($hasScheduledAtColumn) {
+        $where .= " AND (scheduled_at IS NULL OR scheduled_at <= '" . $conn->real_escape_string($publishCutoff) . "')";
+    }
     $video = vs_random_pick_video($conn, 'random_seen_watch', $where);
     if ($video && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
         header('Cache-Control: no-store');
@@ -528,6 +588,19 @@ $channelKey = vs_subscription_key($channel);
 $userHasSubscribed = in_array($channelKey, $_SESSION['subscribed_channels'], true);
 
 try {
+    $inWatchLater = false;
+    try {
+        $wlUid = vs_history_user_id($conn);
+        if ($wlUid > 0) {
+            $wlq = $conn->prepare("SELECT 1 FROM `playlists` p JOIN `playlist_videos` pv ON pv.`playlist_id` = p.`id` WHERE p.`user_id` = ? AND LOWER(p.`name`) = 'watch later' AND pv.`video_id` = ? LIMIT 1");
+            $wlq->bind_param('is', $wlUid, $id);
+            $wlq->execute();
+            $inWatchLater = (bool)$wlq->get_result()->fetch_row();
+            $wlq->close();
+        }
+    } catch (Throwable $wlInitError) {
+        $inWatchLater = false;
+    }
     $comments = vs_comments_fetch($conn, (string)$id, $viewerName);
 } catch (Throwable $commentsError) {
     error_log('Comments failed: ' . $commentsError->getMessage());
@@ -546,6 +619,12 @@ try {
 $related = [];
 $relatedParams = [$id];
 $relatedTypes = 's';
+$relatedScheduleFilter = '';
+if ($hasScheduledAtColumn) {
+    $relatedScheduleFilter = ' AND (scheduled_at IS NULL OR scheduled_at <= ?)';
+    $relatedParams[] = $publishCutoff;
+    $relatedTypes .= 's';
+}
 $relatedOrder = [];
 $hasCategoryColumn = column_exists($conn, 'videos', 'category');
 if ($hasCategoryColumn && trim((string)($video['category'] ?? '')) !== '') {
@@ -556,8 +635,8 @@ if ($hasCategoryColumn && trim((string)($video['category'] ?? '')) !== '') {
 $relatedOrder[] = 'COALESCE(views, 0) DESC';
 $relatedOrder[] = 'created_at DESC';
 $relSql = $hasTypeColumn
-    ? "SELECT * FROM videos WHERE id <> ? AND COALESCE(type,'video') <> 'short' ORDER BY " . implode(', ', $relatedOrder) . ' LIMIT 10'
-    : "SELECT * FROM videos WHERE id <> ? ORDER BY " . implode(', ', $relatedOrder) . ' LIMIT 10';
+    ? "SELECT * FROM videos WHERE id <> ? AND COALESCE(type,'video') <> 'short'" . $relatedScheduleFilter . " ORDER BY " . implode(', ', $relatedOrder) . ' LIMIT 10'
+    : "SELECT * FROM videos WHERE id <> ?" . $relatedScheduleFilter . " ORDER BY " . implode(', ', $relatedOrder) . ' LIMIT 10';
 if ($stmt = $conn->prepare($relSql)) {
     $stmt->bind_param($relatedTypes, ...$relatedParams);
     $stmt->execute();
@@ -574,6 +653,38 @@ if ($stmt = $conn->prepare($relSql)) {
     <meta name="vs-default-theme" content="<?php echo htmlspecialchars($defaultTheme, ENT_QUOTES, 'UTF-8'); ?>">
     <meta name="theme-color" content="<?php echo $defaultTheme === 'dark' ? '#b02a2a' : '#ffffff'; ?>">
     <meta name="description" content="<?php echo htmlspecialchars(vs_branding_app_description(), ENT_QUOTES, 'UTF-8'); ?>">
+    <?php
+    $ogScheme = $requestScheme;
+    $ogBase = $ogScheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/') . '/';
+    $ogUrl = $ogBase . 'watch.php' . (((string)$id !== '' && (string)$id !== '0') ? '?id=' . rawurlencode((string)$id) : '');
+    $ogImage = '';
+    if ($yt_id) {
+        $ogImage = 'https://i.ytimg.com/vi/' . $yt_id . '/hqdefault.jpg';
+    } elseif (!empty($video)) {
+        foreach (['thumbnail', 'thumb', 'image', 'img', 'poster'] as $ogCol) {
+            $ogThumb = trim((string)($video[$ogCol] ?? ''));
+            if ($ogThumb === '' || stripos($ogThumb, 'data:') === 0) continue;
+            if (strpos($ogThumb, '//') === 0) $ogThumb = $ogScheme . ':' . $ogThumb;
+            $ogImage = preg_match('#^https?://#i', $ogThumb) ? $ogThumb : $ogBase . ltrim($ogThumb, '/');
+            break;
+        }
+    }
+    if ($ogImage === '') $ogImage = $ogBase . 'branding-icon.php';
+    $ogDesc = trim(preg_replace('/\s+/', ' ', (string)$description));
+    if ($ogDesc === '') $ogDesc = vs_branding_app_description();
+    if (mb_strlen($ogDesc) > 200) $ogDesc = mb_substr($ogDesc, 0, 197) . '...';
+    ?>
+    <link rel="canonical" href="<?php echo htmlspecialchars($ogUrl, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:type" content="video.other">
+    <meta property="og:site_name" content="<?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:title" content="<?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:description" content="<?php echo htmlspecialchars($ogDesc, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:url" content="<?php echo htmlspecialchars($ogUrl, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:image" content="<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="twitter:description" content="<?php echo htmlspecialchars($ogDesc, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="twitter:image" content="<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>">
     <link rel="icon" type="image/png" sizes="96x96" href="branding-icon.php?size=96">
     <link rel="shortcut icon" type="image/png" href="branding-icon.php?size=96">
     <link rel="manifest" href="manifest.php">
@@ -640,7 +751,7 @@ if ($stmt = $conn->prepare($relSql)) {
             gap: 14px;
         }
 
-        .nav-center { justify-content: center; }
+        .nav-center { justify-content: center; gap: 8px; }
         .nav-right { justify-content: flex-end; }
 
         .brand {
@@ -676,19 +787,29 @@ if ($stmt = $conn->prepare($relSql)) {
         }
 
         .nav-link {
-            background: var(--surface-2);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
             border-radius: var(--radius-pill);
-            padding: 8px 14px;
-            font-size: 14px;
+            padding: 9px 14px;
+            font-size: 15px;
+            font-weight: 500;
             color: var(--text);
             border: 1px solid transparent;
+            white-space: nowrap;
+            transition: background 0.15s ease, color 0.15s ease;
         }
+        .nav-link svg { width: 20px; height: 20px; flex: 0 0 auto; }
+        .nav-link:hover { background: var(--surface-2); }
 
         .nav-link.active {
             background: var(--accent-soft);
             color: #ffb3b3;
             border-color: rgba(176, 42, 42, 0.45);
         }
+        .nav-link.nav-premium { color: #ffc933; }
+        .nav-link.nav-premium svg { width: 22px; height: 18px; }
 
         .create-btn, .sign-in-btn {
             background: var(--accent);
@@ -962,9 +1083,23 @@ if ($stmt = $conn->prepare($relSql)) {
         }
 
         .video-wrapper .unavailable-msg {
-            position: absolute;
-            top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: var(--muted); font-size: 15px; text-align: center; width: 90%; margin: 0;
+            position: absolute; inset: 0; box-sizing: border-box; margin: 0; padding: 24px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+            width: 100%; text-align: center; color: #eef0ff;
+            background: radial-gradient(ellipse at 50% 38%, rgba(115, 72, 255, .2), transparent 58%),
+                linear-gradient(145deg, #111629, #05060d 76%);
+        }
+        .unavailable-icon {
+            display: grid; place-items: center; width: 72px; height: 72px;
+            border: 1px solid rgba(138, 92, 255, .6); border-radius: 22px;
+            background: linear-gradient(145deg, rgba(110, 75, 255, .25), rgba(0, 229, 255, .1));
+            box-shadow: 0 0 30px rgba(0, 229, 255, .16), 0 0 30px rgba(138, 92, 255, .22);
+        }
+        .unavailable-icon svg { width: 36px; height: 36px; fill: none; stroke: #d7c7ff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+        .video-wrapper .unavailable-msg strong { font-size: 20px; }
+        .video-wrapper .unavailable-msg span { max-width: 46ch; color: #aab4d2; font-size: 13px; line-height: 1.5; }
+        html[data-theme="light"] .unavailable-icon { border-color: rgba(124, 77, 255, .7); }
+        html[data-theme="light"] .video-wrapper .unavailable-msg span { color: #c3c9df; }
         }
 
         .video-title { font-size: 20px; font-weight: 700; margin: 12px 0 8px 0; line-height: 1.4; }
@@ -1099,6 +1234,11 @@ if ($stmt = $conn->prepare($relSql)) {
             .recommendations-section { width: 340px; min-width: 300px; }
         }
 
+        @media (max-width: 1180px) {
+            .nav-link span { display: none; }
+            .nav-link { padding: 9px 11px; }
+        }
+
         @media (max-width: 1000px) {
             .watch-container { flex-direction: column; padding: 16px; }
             .recommendations-section { width: 100%; min-width: 0; }
@@ -1108,7 +1248,23 @@ if ($stmt = $conn->prepare($relSql)) {
         @media (max-width: 760px) {
             .app-navbar { grid-template-columns: auto 1fr auto; gap: 12px; padding: 0 12px; }
             .brand { font-size: 20px; }
-            .nav-center { display: none; }
+            body { padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
+            .app-navbar { backdrop-filter: none; }
+            .nav-center {
+                position: fixed !important; left: 0; right: 0; bottom: 0; z-index: 1100;
+                display: flex !important; justify-content: space-around; gap: 2px;
+                height: calc(58px + env(safe-area-inset-bottom, 0px));
+                padding: 4px 6px env(safe-area-inset-bottom, 0px);
+                background: var(--surface); border-top: 1px solid var(--border);
+                box-shadow: 0 -8px 24px rgba(0, 0, 0, .24);
+            }
+            .nav-center .nav-link {
+                display: flex; flex: 1 1 0; flex-direction: column; justify-content: center;
+                width: auto; height: 48px; min-width: 0; gap: 3px; padding: 3px 2px;
+                border: 0; border-radius: 10px;
+            }
+            .nav-center .nav-link span { display: block !important; font-size: 10px; line-height: 1; }
+            .nav-center .nav-link svg { width: 20px; height: 20px; }
             .create-btn { display: none; }
             .user-name, .logout-link { display: none; }
             .user-badge-pill { padding-right: 6px; }
@@ -1273,6 +1429,10 @@ html[data-theme="light"] {
 </head>
 <body>
     <?php render_navbar('watch'); ?>
+    <?php
+    $vsPromptUser = trim((string)($_SESSION['username'] ?? ''));
+    echo vs_premium_popup_html($vsPromptUser, vs_premium_popup_eligible($vsPromptUser));
+    ?>
     <?php echo vs_site_announcement_html($GLOBALS['pdo'] ?? null); ?>
 
     <div class="admin-shell">
@@ -1308,12 +1468,11 @@ html[data-theme="light"] {
                                     Your browser does not support the video tag.
                                 </video>
                             <?php else: ?>
-                                <p class="unavailable-msg">
-                                    Video unavailable<br>
-                                    <span style="font-size:12px; color:#777;">
-                                        No video link or file was saved for this video (id <?php echo htmlspecialchars((string)$id); ?>).
-                                    </span>
-                                </p>
+                                <div class="unavailable-msg" role="status">
+                                    <span class="unavailable-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></span>
+                                    <strong>Video unavailable</strong>
+                                    <span>No video link or file was saved for this video (ID <?php echo htmlspecialchars((string)$id); ?>).</span>
+                                </div>
                             <?php endif; ?>
                             <?php if ($yt_id || $is_direct): ?>
                                 <div class="mini-player-actions" aria-label="Mini-player controls">
@@ -1369,6 +1528,7 @@ html[data-theme="light"] {
                                     <?php else: ?>
                                         <button class="btn-pill" type="button" id="download-btn" disabled title="Downloads are available for uploaded videos">Download</button>
                                     <?php endif; ?>
+                                    <button class="btn-pill" type="button" id="watch-later-btn" aria-pressed="<?php echo $inWatchLater ? 'true' : 'false'; ?>" title="Save to your Watch later playlist"><?php echo $inWatchLater ? 'Saved to Watch later' : 'Watch later'; ?></button>
                                     <a class="btn-pill" href="playlists.php?add=<?php echo rawurlencode((string)$id); ?>">Add to playlist</a>
                                     <?php if (!empty($id)) { $reportContentId = (string)$id; $reportKind = 'video'; if (is_file(__DIR__ . '/report-widget.php')) { include __DIR__ . '/report-widget.php'; } } ?>
                                 </div>
@@ -1443,8 +1603,14 @@ html[data-theme="light"] {
     <div class="toast" id="toast"></div>
 
     <script src="sidebar.js"></script>
+    <script src="creator-analytics-tracking.js?v=1"></script>
     <script src="video-menu.js?v=4"></script>
 
+    <style>
+        .vs-cm-ts { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--blue, #3ea6ff); cursor: pointer; }
+        .vs-cm-ts:hover { text-decoration: underline; }
+        #watch-later-btn[aria-pressed="true"] { background: var(--accent-soft, rgba(176,42,42,.18)); border-color: var(--accent, #b02a2a); }
+    </style>
     <script src="comments.js?v=1"></script>
     <script src="context-notes.js?v=1"></script>
     <script>
@@ -1502,9 +1668,23 @@ html[data-theme="light"] {
                     console.error('Could not record view:', error);
                 }
             };
+            const watchTime = window.VSAnalyticsTracking
+                ? window.VSAnalyticsTracking.trackWatchTime(VIDEO_ID, 'video')
+                : null;
 
             if (directVideo) {
-                directVideo.addEventListener('playing', recordView);
+                directVideo.addEventListener('playing', () => {
+                    if (watchTime) watchTime.setPlaying(true);
+                    recordView();
+                });
+                ['pause', 'ended', 'waiting', 'seeking'].forEach((eventName) => {
+                    directVideo.addEventListener(eventName, () => {
+                        if (watchTime) watchTime.setPlaying(false);
+                    });
+                });
+                directVideo.addEventListener('seeked', () => {
+                    if (watchTime) watchTime.setPlaying(!directVideo.paused);
+                });
             }
 
             if (youtubeFrame) {
@@ -1519,7 +1699,10 @@ html[data-theme="light"] {
                         ? data.info
                         : (data && data.event === 'infoDelivery' && data.info ? data.info.playerState : null);
                     if (state === 1 && lastYoutubeState !== 1) recordView();
-                    if (typeof state === 'number') lastYoutubeState = state;
+                    if (typeof state === 'number') {
+                        if (watchTime && state !== lastYoutubeState) watchTime.setPlaying(state === 1);
+                        lastYoutubeState = state;
+                    }
                 });
             }
             if (youtubePoster && youtubeFrame) {
@@ -1717,6 +1900,23 @@ html[data-theme="light"] {
             const yt = { time: 0, duration: 0, state: -1, muted: false, volume: 100 };
 
             function say(msg) { if (typeof toast === 'function') toast(msg); }
+            async function copyText(text) {
+                try {
+                    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
+                } catch (e) {}
+                try {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.setAttribute('readonly', '');
+                    ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    ta.setSelectionRange(0, text.length);
+                    const ok = document.execCommand('copy');
+                    ta.remove();
+                    return ok;
+                } catch (e) { return false; }
+            }
             function setTheaterMode(enabled, announce) {
                 if (!theaterBtn || !watchContainer) return;
                 watchContainer.classList.toggle('theater-mode', enabled);
@@ -1750,6 +1950,43 @@ html[data-theme="light"] {
                 else if (frame) { yt.time = sec; ytCmd('seekTo', [sec, true]); }
             }
             function seekBy(delta) { seekTo(getTime() + delta); }
+            // clickable timestamps in comments (buttons rendered by comment-store.php)
+            document.addEventListener('click', function (e) {
+                const t = e.target.closest ? e.target.closest('.vs-cm-ts') : null;
+                if (!t) return;
+                e.preventDefault();
+                seekTo(Number(t.getAttribute('data-seek')) || 0);
+                if (video) { const p = video.play(); if (p && p.catch) p.catch(function () {}); }
+                const stage = document.querySelector('.video-wrapper');
+                if (stage && stage.scrollIntoView) stage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+            // Watch later toggle
+            (function () {
+                const wl = document.getElementById('watch-later-btn');
+                if (!wl) return;
+                wl.addEventListener('click', function () {
+                    if (wl.disabled) return;
+                    wl.disabled = true;
+                    const body = new URLSearchParams({
+                        action: 'watch_later',
+                        video_id: VIDEO_ID,
+                        csrf_token: PROGRESS_CSRF
+                    });
+                    fetch(window.location.href, { method: 'POST', body: body, credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                        .then(function (r) { return r.json(); })
+                        .then(function (d) {
+                            if (d && d.success) {
+                                wl.setAttribute('aria-pressed', d.saved ? 'true' : 'false');
+                                wl.textContent = d.saved ? 'Saved to Watch later' : 'Watch later';
+                                if (typeof toast === 'function') toast(d.saved ? 'Added to Watch later' : 'Removed from Watch later');
+                            } else if (typeof toast === 'function') {
+                                toast((d && d.error) || 'Could not update Watch later.');
+                            }
+                        })
+                        .catch(function () { if (typeof toast === 'function') toast('Could not update Watch later.'); })
+                        .finally(function () { wl.disabled = false; });
+                });
+            })();
             function toggleMute() {
                 if (video) { video.muted = !video.muted; say(video.muted ? 'Muted' : 'Sound on'); }
                 else if (frame) { yt.muted = !yt.muted; ytCmd(yt.muted ? 'mute' : 'unMute'); say(yt.muted ? 'Muted' : 'Sound on'); }
@@ -1940,8 +2177,8 @@ html[data-theme="light"] {
                         copy.type = 'button';
                         copy.textContent = 'Copy link';
                         copy.addEventListener('click', async () => {
-                            try { await navigator.clipboard.writeText(urlNow()); say('Link copied'); }
-                            catch (e) { window.prompt('Copy this link', urlNow()); }
+                            say((await copyText(urlNow())) ? 'Link copied' : 'Could not copy the link');
+                            if (window.VSAnalyticsTracking) window.VSAnalyticsTracking.trackShare(VIDEO_ID, 'video');
                             closePop();
                         });
                         p.appendChild(copy);
@@ -1951,6 +2188,7 @@ html[data-theme="light"] {
                         wa.textContent = 'WhatsApp';
                         wa.addEventListener('click', () => {
                             window.open('https://wa.me/?text=' + encodeURIComponent(document.title + ' ' + urlNow()), '_blank', 'noopener');
+                            if (window.VSAnalyticsTracking) window.VSAnalyticsTracking.trackShare(VIDEO_ID, 'video');
                             closePop();
                         });
                         p.appendChild(wa);
@@ -1960,7 +2198,10 @@ html[data-theme="light"] {
                             more.type = 'button';
                             more.textContent = 'More apps\u2026';
                             more.addEventListener('click', async () => {
-                                try { await navigator.share({ title: document.title, url: urlNow() }); } catch (e) {}
+                                try {
+                                    await navigator.share({ title: document.title, url: urlNow() });
+                                    if (window.VSAnalyticsTracking) window.VSAnalyticsTracking.trackShare(VIDEO_ID, 'video');
+                                } catch (e) {}
                                 closePop();
                             });
                             p.appendChild(more);

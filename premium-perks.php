@@ -11,9 +11,6 @@
  */
 require_once __DIR__ . '/premium-store.php';
 
-if (!defined('VS_VIP_INCLUDE_ADMINS')) {
-    define('VS_VIP_INCLUDE_ADMINS', true);   // admins always have Premium, so they get the badge too (set false to hide it for admins)
-}
 if (!defined('VS_PERK_UNLIMITED')) {
     define('VS_PERK_UNLIMITED', 100000);     // a limit this big (or more) means "no cap"
 }
@@ -67,17 +64,6 @@ function vs_vip_prefetch(array $names): void
         }
     } catch (Throwable $e) {
         // no premium table yet: everyone is simply free
-    }
-    if (VS_VIP_INCLUDE_ADMINS) {
-        try {
-            $st = $pdo->prepare("SELECT username FROM users WHERE LOWER(role) = 'admin' AND LOWER(username) IN ($marks)");
-            $st->execute($keys);
-            foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $name) {
-                $cache[mb_strtolower((string)$name)] = 'plus';
-            }
-        } catch (Throwable $e) {
-            // users.role missing: skip
-        }
     }
 }
 

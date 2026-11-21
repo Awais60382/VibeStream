@@ -184,6 +184,17 @@
       sidebarToggle.setAttribute("aria-expanded", String(expanded));
     }
 
+    function scrollCurrentNavigationLinkIntoView() {
+      var currentLink = document.querySelector(
+        ".admin-sidebar .sidebar-nav .nav-link[aria-current='page'], .admin-sidebar .sidebar-nav .nav-link.active"
+      );
+      if (currentLink) {
+        window.requestAnimationFrame(function () {
+          currentLink.scrollIntoView({ block: "nearest" });
+        });
+      }
+    }
+
     function closeMobileSidebar() {
       body.classList.remove("sidebar-open");
       setToggleExpanded();
@@ -198,6 +209,7 @@
       }
 
       setToggleExpanded();
+      scrollCurrentNavigationLinkIntoView();
     }
 
     function addCloseHandlers(items) {
@@ -218,6 +230,7 @@
     addCloseHandlers(closeButtons);
     addCloseHandlers(sidebarLinks);
     setToggleExpanded();
+    scrollCurrentNavigationLinkIntoView();
 
     function handleBreakpointChange() {
       if (isDesktop()) {
@@ -228,6 +241,7 @@
       }
 
       setToggleExpanded();
+      scrollCurrentNavigationLinkIntoView();
     }
 
     if (mediaQuery.addEventListener) {

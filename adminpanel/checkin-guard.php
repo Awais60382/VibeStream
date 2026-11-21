@@ -17,6 +17,21 @@ if (!$vsAdmin) {
     exit;
 }
 
+// ---- Owner is exempt: the owner never checks in ----
+require_once __DIR__ . '/../connection.php';
+require_once __DIR__ . '/owner-guard.php';
+$vsIsOwner = false;
+try {
+    $vsIsOwner = isset($pdo) && $pdo instanceof PDO && vs_is_owner($pdo);
+} catch (Throwable $e) {
+    error_log('Check-in guard: owner check failed: ' . $e->getMessage());
+}
+$_SESSION['vs_is_owner'] = $vsIsOwner ? 1 : 0;
+if ($vsIsOwner) {
+    return;
+}
+// -----------------------------------------------------
+
 require_once __DIR__ . '/task-store.php';
 $vsOpenTasks = vs_task_open_for($vsAdmin);
 $vsExpectedStatus = $vsOpenTasks ? 'Busy' : 'Available';

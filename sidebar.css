@@ -312,14 +312,15 @@ body.sidebar-collapsed .app-main { margin-left: 0; }
     stroke-linejoin: round;
 }
 
+/* ---- Neon look: roomier rows and a pink -> violet highlight for the current page ---- */
 .app-sidebar .sidebar-link {
-    gap: 22px;
-    min-height: 40px;
-    padding: 0 12px;
+    gap: 18px;
+    min-height: 46px;
+    padding: 0 14px;
     border: 0;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 400;
+    border-radius: 14px;
+    font-size: 15.5px;
+    font-weight: 500;
 }
 
 .app-sidebar .sidebar-link:hover,
@@ -332,10 +333,10 @@ body.sidebar-collapsed .app-main { margin-left: 0; }
 .app-sidebar .sidebar-link.active,
 .app-sidebar .sidebar-link.active:hover {
     border: 0;
-    background: var(--sb-active-bg);
-    box-shadow: none;
-    color: var(--sb-text-strong);
-    font-weight: 600;
+    background: linear-gradient(90deg, #ff2e93, #8a5cff);
+    box-shadow: 0 0 20px -4px rgba(255, 46, 147, 0.6);
+    color: #ffffff;
+    font-weight: 700;
 }
 
 .app-sidebar .sidebar-link.active::before {
@@ -344,7 +345,7 @@ body.sidebar-collapsed .app-main { margin-left: 0; }
 
 .app-sidebar .sidebar-link.active .sidebar-icon,
 .app-sidebar .sidebar-link.active .sidebar-label {
-    color: var(--sb-text-strong);
+    color: #ffffff;
 }
 
 .sidebar-icon,

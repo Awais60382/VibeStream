@@ -244,6 +244,38 @@ if (!function_exists('vs_comments_fetch')) {
     }
 }
 
+/**
+ * Turns "1:23" / "12:05" / "1:02:03" inside an (already unescaped) comment into clickable
+ * timestamp buttons. Only used where the page defines VS_COMMENTS_TIMESTAMPS (watch.php),
+ * because that page has the player the buttons jump to. Returns safe HTML.
+ */
+if (!function_exists('vs_comments_text_html')) {
+    function vs_comments_text_html(string $text): string
+    {
+        if (!defined('VS_COMMENTS_TIMESTAMPS') || !VS_COMMENTS_TIMESTAMPS) {
+            return vs_comments_esc($text);
+        }
+        $parts = preg_split('/(?<![\d:])((?:\d{1,2}:)?[0-5]?\d:[0-5]\d)(?![\d:])/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+        if (!is_array($parts)) {
+            return vs_comments_esc($text);
+        }
+        $html = '';
+        foreach ($parts as $i => $part) {
+            if ($i % 2 === 0) {
+                $html .= vs_comments_esc($part);
+                continue;
+            }
+            $secs = 0;
+            foreach (explode(':', $part) as $n) {
+                $secs = $secs * 60 + (int)$n;
+            }
+            $html .= '<button type="button" class="vs-cm-ts" data-seek="' . $secs . '" title="Jump to ' . vs_comments_esc($part) . '">'
+                . vs_comments_esc($part) . '</button>';
+        }
+        return $html;
+    }
+}
+
 /** HTML for one comment. $c: id, username, comment_text, ts, likes, my_vote, hearted, owner, can_heart, can_delete */
 if (!function_exists('vs_comments_item_html')) {
     function vs_comments_item_html(array $c): string
@@ -270,7 +302,7 @@ if (!function_exists('vs_comments_item_html')) {
         $h .= vs_comments_icon('heart-sm') . '</span>';
         $h .= '</div>';
 
-        $h .= '<div class="vs-cm-text">' . vs_comments_esc($text) . '</div>';
+        $h .= '<div class="vs-cm-text">' . vs_comments_text_html($text) . '</div>';
 
         $h .= '<div class="vs-cm-actions">';
         $h .= '<button type="button" class="vs-cm-btn vs-cm-like' . ($myVote === 1 ? ' on' : '') . '" data-cm="like" aria-label="Like" aria-pressed="' . ($myVote === 1 ? 'true' : 'false') . '">'

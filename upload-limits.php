@@ -5,7 +5,7 @@
  *   $msg = vs_upload_too_big($_FILES['video']['size'], $conn);   // null = OK, otherwise a message to show
  *   vs_upload_limit_label($conn)                                   // e.g. "100 MB" or "1 GB"
  *
- * Premium members and admins get the Premium limit. Change the two numbers below to suit you.
+ * Premium members get the Premium limit. Change the two numbers below to suit you.
  * PHP has its own caps (upload_max_filesize and post_max_size in php.ini). Whichever is lower wins,
  * so raise those too if you want the full Premium size to work.
  */
@@ -36,7 +36,7 @@ if (!function_exists('vs_upload_too_big')) {
         return (int)$n;
     }
 
-    /** Is the current visitor Premium (or admin)? */
+    /** Is the current visitor a Premium member? */
     function vs_upload_is_premium($db = null): bool
     {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {

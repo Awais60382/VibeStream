@@ -39,6 +39,35 @@ const VS_PREMIUM_PLANS = [
 // Old plans that can no longer be bought, but members / pending payments that already use them still work.
 const VS_PREMIUM_LEGACY_PLANS = [
     'daily' => ['label' => 'Daily', 'price' => 0.99, 'days' => 1, 'tier' => 'premium'],
+    // Not for sale: granted by the 2,500-point reward.
+    'pluspoints93' => ['label' => 'Plus (3 months, rewards)', 'price' => 0, 'days' => 93, 'tier' => 'plus'],
+];
+
+// Anti-farming: most uploads that can earn points per day (5 uploads = 25 points). Edit to change.
+const VS_REWARDS_UPLOAD_DAILY_CAP = 5;
+
+// Daily quests: cap = how many count per day, points = points each. Finishing every quest also pays the bonus.
+const VS_REWARDS_QUESTS = [
+    'watch'   => ['cap' => 3, 'points' => 2],
+    'like'    => ['cap' => 3, 'points' => 1],
+    'comment' => ['cap' => 1, 'points' => 3],
+];
+const VS_REWARDS_QUEST_BONUS = 5;
+
+// Rewards levels by total points ever earned: name, minimum points, colour.
+const VS_REWARDS_LEVELS = [
+    ['Bronze', 0, '#e79a62'], ['Silver', 250, '#aab3e8'], ['Gold', 1000, '#ffc23d'],
+    ['Platinum', 2500, '#5ccbf5'], ['Diamond', 5000, '#c58bff'],
+];
+
+// Leaderboard names: true shows e.g. "aw***" instead of the full username (your own row is always shown in full).
+const VS_LEADERBOARD_MASK = false;
+
+// Points rewards: cost => plan granted. Edit here to change or add reward tiers.
+const VS_REWARDS_TIERS = [
+    500  => ['plan' => 'monthly',      'reason' => 'premium_monthly', 'label' => '31 days of Premium'],
+    1000 => ['plan' => 'plusmonth',    'reason' => 'premium_plus',    'label' => '31 days of Premium Plus'],
+    2500 => ['plan' => 'pluspoints93', 'reason' => 'premium_plus_3m', 'label' => '93 days of Premium Plus'],
 ];
 
 /** The $pdo from connection.php, or default XAMPP settings if connection.php has none. */
@@ -69,6 +98,21 @@ function vs_premium_ensure(PDO $pdo): void
             started_at DATETIME NOT NULL,
             expires_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+    );
+    // One row every time Premium is switched on or extended: who got it, how, and who gave it.
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS premium_grants (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(100) NOT NULL,
+            plan VARCHAR(10) NOT NULL,
+            source VARCHAR(12) NOT NULL,
+            granted_by VARCHAR(100) NOT NULL DEFAULT \'\',
+            ref VARCHAR(100) NOT NULL DEFAULT \'\',
+            started_at DATETIME NOT NULL,
+            expires_at DATETIME NOT NULL,
+            created_at DATETIME NOT NULL,
+            KEY idx_grant_user (username, id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
     );
     $pdo->exec(
@@ -168,6 +212,160 @@ function vs_rewards_points(PDO $pdo, string $username): int
     return (int)($st->fetchColumn() ?: 0);
 }
 
+/** Awards one daily-quest completion (once per quest item per day, capped per day) plus the all-quests bonus. Returns points added. */
+function vs_rewards_award_quest(PDO $pdo, string $username, string $quest, string $refId): int
+{
+    if ($username === '' || $refId === '' || !isset(VS_REWARDS_QUESTS[$quest])) {
+        return 0;
+    }
+    vs_premium_ensure($pdo);
+    $def = VS_REWARDS_QUESTS[$quest];
+    $reason = 'quest_' . $quest;
+    $pdo->beginTransaction();
+    try {
+        $account = $pdo->prepare('INSERT IGNORE INTO reward_points_accounts (username, points, updated_at) VALUES (:u, 0, NOW())');
+        $account->execute([':u' => $username]);
+        $lock = $pdo->prepare('SELECT points FROM reward_points_accounts WHERE username = :u FOR UPDATE');
+        $lock->execute([':u' => $username]);
+        if ($lock->fetchColumn() === false) {
+            throw new RuntimeException('Could not lock the reward points account.');
+        }
+        $day = (string)$pdo->query('SELECT CURDATE()')->fetchColumn();
+        $count = $pdo->prepare(
+            'SELECT COUNT(*) FROM reward_points_ledger WHERE username = :u AND reason = :r AND amount > 0 AND created_at >= CURDATE()'
+        );
+        $count->execute([':u' => $username, ':r' => $reason]);
+        if ((int)$count->fetchColumn() >= $def['cap']) {
+            $pdo->commit();
+            return 0;
+        }
+        $entry = $pdo->prepare(
+            'INSERT IGNORE INTO reward_points_ledger (username, amount, reason, reference_key, created_at)
+             VALUES (:u, :a, :r, :k, NOW())'
+        );
+        $entry->execute([
+            ':u' => $username, ':a' => $def['points'], ':r' => $reason,
+            ':k' => hash('sha256', "quest-$quest\0" . strtolower($username) . "\0" . $day . "\0" . $refId),
+        ]);
+        if ($entry->rowCount() !== 1) {
+            $pdo->commit();
+            return 0; // already counted today
+        }
+        $total = (int)$def['points'];
+
+        // All quests done today? Pay the bonus once.
+        $allDone = true;
+        foreach (VS_REWARDS_QUESTS as $name => $d) {
+            $count->execute([':u' => $username, ':r' => 'quest_' . $name]);
+            if ((int)$count->fetchColumn() < $d['cap']) {
+                $allDone = false;
+                break;
+            }
+        }
+        if ($allDone) {
+            $entry->execute([
+                ':u' => $username, ':a' => VS_REWARDS_QUEST_BONUS, ':r' => 'quest_bonus',
+                ':k' => hash('sha256', "quest-bonus\0" . strtolower($username) . "\0" . $day),
+            ]);
+            if ($entry->rowCount() === 1) {
+                $total += VS_REWARDS_QUEST_BONUS;
+            }
+        }
+        $update = $pdo->prepare('UPDATE reward_points_accounts SET points = points + :p, updated_at = NOW() WHERE username = :u');
+        $update->execute([':p' => $total, ':u' => $username]);
+        $pdo->commit();
+        return $total;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/**
+ * One-line helper for pages like watch.php: awards a quest to the signed-in member and never throws.
+ * Own videos don't count. $quest: 'watch', 'like' or 'comment'; $ref: video ID or comment ID.
+ */
+function vs_rewards_quest_try(string $quest, string $ref, array $video = []): int
+{
+    try {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            return 0;
+        }
+        $username = trim((string)($_SESSION['username'] ?? ''));
+        $owner = trim((string)($video['username'] ?? ''));
+        if ($username === '' || $ref === '' || ($owner !== '' && strcasecmp($owner, $username) === 0)) {
+            return 0;
+        }
+        $pdo = vs_premium_pdo();
+        return $pdo ? vs_rewards_award_quest($pdo, $username, $quest, $ref) : 0;
+    } catch (Throwable $e) {
+        error_log('Daily quest failed: ' . $e->getMessage());
+        return 0;
+    }
+}
+
+/** Today's quest progress for the rewards page. */
+function vs_rewards_quest_progress(PDO $pdo, string $username): array
+{
+    $reasons = ['quest_watch', 'quest_like', 'quest_comment', 'quest_bonus'];
+    $st = $pdo->prepare(
+        'SELECT reason, COUNT(*) FROM reward_points_ledger
+         WHERE username = :u AND created_at >= CURDATE() AND reason IN (\'quest_watch\', \'quest_like\', \'quest_comment\', \'quest_bonus\')
+         GROUP BY reason'
+    );
+    $st->execute([':u' => $username]);
+    $counts = array_fill_keys($reasons, 0);
+    foreach ($st->fetchAll(PDO::FETCH_NUM) as $row) {
+        $counts[(string)$row[0]] = (int)$row[1];
+    }
+    $out = [];
+    foreach (VS_REWARDS_QUESTS as $name => $def) {
+        $out[$name] = ['done' => min($def['cap'], $counts['quest_' . $name]), 'cap' => $def['cap'], 'points' => $def['points']];
+    }
+    $out['bonus'] = ['done' => $counts['quest_bonus'] > 0, 'points' => VS_REWARDS_QUEST_BONUS];
+    return $out;
+}
+
+/** Small level pill (Bronze..Diamond) for the user menu; cached in the session for 2 minutes. */
+function vs_rewards_level_badge_html(string $username): string
+{
+    $username = trim($username);
+    if ($username === '' || session_status() !== PHP_SESSION_ACTIVE) {
+        return '';
+    }
+    $cache = $_SESSION['vs_level_cache'] ?? null;
+    if (is_array($cache) && ($cache['u'] ?? '') === $username && (time() - (int)($cache['t'] ?? 0)) < 120) {
+        $earned = (int)($cache['e'] ?? 0);
+    } else {
+        try {
+            $pdo = vs_premium_pdo();
+            if (!$pdo) {
+                return '';
+            }
+            $st = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM reward_points_ledger WHERE username = :u AND amount > 0');
+            $st->execute([':u' => $username]);
+            $earned = (int)$st->fetchColumn();
+            $_SESSION['vs_level_cache'] = ['u' => $username, 't' => time(), 'e' => $earned];
+        } catch (Throwable $e) {
+            return '';
+        }
+    }
+    if ($earned <= 0) {
+        return '';
+    }
+    $level = VS_REWARDS_LEVELS[0];
+    foreach (VS_REWARDS_LEVELS as $candidate) {
+        if ($earned >= $candidate[1]) {
+            $level = $candidate;
+        }
+    }
+    return '<span class="vs-user-level" title="Rewards level" style="margin-left:6px;padding:1px 7px;border:1px solid '
+        . $level[2] . ';border-radius:999px;color:' . $level[2] . ';font-size:10px;font-weight:800;vertical-align:middle">'
+        . htmlspecialchars($level[0], ENT_QUOTES, 'UTF-8') . '</span>';
+}
+
 /** Credit five points once for each successfully published video or short. */
 function vs_rewards_award_upload(PDO $pdo, string $username, string $videoId): bool
 {
@@ -184,6 +382,15 @@ function vs_rewards_award_upload(PDO $pdo, string $username, string $videoId): b
         $lock->execute([':u' => $username]);
         if ($lock->fetchColumn() === false) {
             throw new RuntimeException('Could not lock the reward points account.');
+        }
+        $today = $pdo->prepare(
+            'SELECT COUNT(*) FROM reward_points_ledger
+             WHERE username = :u AND reason = \'upload\' AND amount > 0 AND created_at >= CURDATE()'
+        );
+        $today->execute([':u' => $username]);
+        if ((int)$today->fetchColumn() >= VS_REWARDS_UPLOAD_DAILY_CAP) {
+            $pdo->commit();
+            return false; // daily upload-points cap reached
         }
         $entry = $pdo->prepare(
             'INSERT IGNORE INTO reward_points_ledger (username, amount, reason, reference_key, created_at)
@@ -329,6 +536,75 @@ function vs_rewards_daily_checkin_claimed(PDO $pdo, string $username): bool
     return $statement->fetchColumn() !== false;
 }
 
+/** Streak bonus for reaching a check-in streak length: every 7th day, ramping +50, +100, then +150. Edit here to change the rule. */
+function vs_rewards_streak_bonus(int $streakDays): int
+{
+    if ($streakDays < 7 || $streakDays % 7 !== 0) {
+        return 0;
+    }
+    $ramp = [1 => 50, 2 => 100, 3 => 150];
+    return $ramp[min(3, intdiv($streakDays, 7))];
+}
+
+/** Top earners by lifetime points earned (cached for 60 seconds). */
+function vs_rewards_leaderboard(PDO $pdo, int $limit = 3, string $period = 'all'): array
+{
+    $periods = [
+        'all' => '',
+        'week' => ' AND created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)',
+        'month' => ' AND created_at >= DATE_FORMAT(CURDATE(), \'%Y-%m-01\')',
+    ];
+    if (!isset($periods[$period])) {
+        $period = 'all';
+    }
+    $cache = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'vs_rewards_leaders_' . $period . '_' . $limit . '.json';
+    if (is_file($cache) && (time() - (int)@filemtime($cache)) < 60) {
+        $cached = json_decode((string)@file_get_contents($cache), true);
+        if (is_array($cached)) {
+            return $cached;
+        }
+    }
+    $st = $pdo->query(
+        'SELECT username, SUM(amount) AS earned FROM reward_points_ledger
+         WHERE amount > 0' . $periods[$period] . ' GROUP BY username ORDER BY earned DESC, MIN(id) ASC LIMIT ' . (int)$limit
+    );
+    $rows = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $rows[] = ['name' => (string)$row['username'], 'points' => (int)$row['earned']];
+    }
+    @file_put_contents($cache, json_encode($rows), LOCK_EX);
+    return $rows;
+}
+
+/** Adds avatar, "me" flag and optional name masking to leaderboard rows. */
+function vs_rewards_decorate_leaders(array $rows, string $username, ?PDO $pdo = null): array
+{
+    return array_map(function (array $row) use ($username, $pdo): array {
+        $me = $username !== '' && strcasecmp($row['name'], $username) === 0;
+        $row['vip'] = false;
+        if ($pdo) {
+            try {
+                $row['vip'] = vs_premium_is_active(vs_premium_get($pdo, $row['name']));
+            } catch (Throwable $e) {
+                $row['vip'] = false;
+            }
+        }
+        $row['avatar'] = '';
+        if (function_exists('avatar_url')) {
+            try {
+                $row['avatar'] = (string)avatar_url($row['name']);
+            } catch (Throwable $e) {
+                $row['avatar'] = '';
+            }
+        }
+        if (VS_LEADERBOARD_MASK && !$me) {
+            $row['name'] = mb_substr($row['name'], 0, 2) . '***';
+        }
+        $row['me'] = $me;
+        return $row;
+    }, $rows);
+}
+
 /** Award five points for a daily check-in, at most once per server calendar day. */
 function vs_rewards_claim_daily_checkin(PDO $pdo, string $username): bool
 {
@@ -373,12 +649,39 @@ function vs_rewards_claim_daily_checkin(PDO $pdo, string $username): bool
             throw new RuntimeException('Could not record the daily check-in reward.');
         }
 
+        // Streak bonus: count consecutive check-in days ending today.
+        $streakRows = $pdo->prepare(
+            'SELECT DATE_FORMAT(checkin_date, \'%Y-%m-%d\') FROM reward_points_daily_checkins
+             WHERE username = :u AND checkin_date <= :d ORDER BY checkin_date DESC LIMIT 60'
+        );
+        $streakRows->execute([':u' => $username, ':d' => $date]);
+        $streakSet = array_fill_keys(array_map('strval', $streakRows->fetchAll(PDO::FETCH_COLUMN)), true);
+        $streakDays = 0;
+        for ($d = new DateTimeImmutable($date); isset($streakSet[$d->format('Y-m-d')]); $d = $d->modify('-1 day')) {
+            $streakDays++;
+        }
+        $bonus = vs_rewards_streak_bonus($streakDays);
+        if ($bonus > 0) {
+            $bonusEntry = $pdo->prepare(
+                'INSERT INTO reward_points_ledger (username, amount, reason, reference_key, created_at)
+                 VALUES (:u, :a, \'streak_bonus\', :r, NOW())'
+            );
+            $bonusEntry->execute([
+                ':u' => $username,
+                ':a' => $bonus,
+                ':r' => hash('sha256', "streak-bonus\0" . strtolower($username) . "\0" . $date),
+            ]);
+            if ($bonusEntry->rowCount() !== 1) {
+                throw new RuntimeException('Could not record the streak bonus.');
+            }
+        }
+
         $update = $pdo->prepare(
             'UPDATE reward_points_accounts
-             SET points = points + 5, updated_at = NOW()
+             SET points = points + :amt, updated_at = NOW()
              WHERE username = :u'
         );
-        $update->execute([':u' => $username]);
+        $update->execute([':u' => $username, ':amt' => 5 + $bonus]);
         if ($update->rowCount() !== 1) {
             throw new RuntimeException('Could not update the reward points account after daily check-in.');
         }
@@ -392,12 +695,16 @@ function vs_rewards_claim_daily_checkin(PDO $pdo, string $username): bool
     }
 }
 
-/** Redeem 500 points for one 31-day Premium month. Returns an error or null on success. */
-function vs_rewards_redeem_monthly(PDO $pdo, string $username): ?string
+/** Redeem points for a reward tier (see VS_REWARDS_TIERS; default 500 = 31 days Premium). Returns an error or null on success. */
+function vs_rewards_redeem_monthly(PDO $pdo, string $username, int $cost = 500): ?string
 {
     if ($username === '') {
         return 'Please sign in first.';
     }
+    if (!isset(VS_REWARDS_TIERS[$cost])) {
+        return 'Choose a valid reward.';
+    }
+    $tier = VS_REWARDS_TIERS[$cost];
     if (vs_premium_is_admin($username)) {
         return 'Admins already have Premium.';
     }
@@ -416,20 +723,20 @@ function vs_rewards_redeem_monthly(PDO $pdo, string $username): ?string
             $pdo->rollBack();
             return 'Redeem your points after your current Premium period ends.';
         }
-        if ((int)$points < 500) {
+        if ((int)$points < $cost) {
             $pdo->rollBack();
-            return 'You need 500 points to redeem one month of Premium.';
+            return 'You need ' . number_format($cost) . ' points to redeem ' . $tier['label'] . '.';
         }
 
-        $reference = hash('sha256', "premium-monthly\0" . strtolower($username) . "\0" . bin2hex(random_bytes(16)));
+        $reference = hash('sha256', "premium-reward\0" . strtolower($username) . "\0" . bin2hex(random_bytes(16)));
         $entry = $pdo->prepare(
             'INSERT INTO reward_points_ledger (username, amount, reason, reference_key, created_at)
-             VALUES (:u, -500, \'premium_monthly\', :r, NOW())'
+             VALUES (:u, :a, :reason, :r, NOW())'
         );
-        $entry->execute([':u' => $username, ':r' => $reference]);
-        $update = $pdo->prepare('UPDATE reward_points_accounts SET points = points - 500, updated_at = NOW() WHERE username = :u AND points >= 500');
-        $update->execute([':u' => $username]);
-        if ($update->rowCount() !== 1 || !vs_premium_set($pdo, $username, 'monthly')) {
+        $entry->execute([':u' => $username, ':a' => -$cost, ':reason' => $tier['reason'], ':r' => $reference]);
+        $update = $pdo->prepare('UPDATE reward_points_accounts SET points = points - :c, updated_at = NOW() WHERE username = :u AND points >= :c2');
+        $update->execute([':u' => $username, ':c' => $cost, ':c2' => $cost]);
+        if ($update->rowCount() !== 1 || !vs_premium_set($pdo, $username, $tier['plan'], 'points')) {
             throw new RuntimeException('Could not complete the Premium points redemption.');
         }
         $pdo->commit();
@@ -440,6 +747,276 @@ function vs_rewards_redeem_monthly(PDO $pdo, string $username): ?string
         }
         throw $e;
     }
+}
+
+/** Return the private rewards details used by the Premium points page. */
+function vs_rewards_page_data(PDO $pdo, string $username): array
+{
+    if ($username === '') {
+        throw new InvalidArgumentException('A signed-in username is required to load rewards details.');
+    }
+
+    vs_premium_ensure($pdo);
+    $today = (string)$pdo->query("SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d')")->fetchColumn();
+    if ($today === '') {
+        throw new RuntimeException('Could not determine the current rewards date.');
+    }
+
+    $checkins = $pdo->prepare(
+        'SELECT DATE_FORMAT(checkin_date, \'%Y-%m-%d\')
+         FROM reward_points_daily_checkins
+         WHERE username = :u
+         ORDER BY checkin_date DESC'
+    );
+    $checkins->execute([':u' => $username]);
+    $checkinDates = array_map('strval', $checkins->fetchAll(PDO::FETCH_COLUMN));
+    $checkinSet = array_fill_keys($checkinDates, true);
+
+    $todayDate = new DateTimeImmutable($today);
+    $streakStart = isset($checkinSet[$today])
+        ? $todayDate
+        : $todayDate->modify('-1 day');
+    $streak = 0;
+    for ($date = $streakStart; isset($checkinSet[$date->format('Y-m-d')]); $date = $date->modify('-1 day')) {
+        $streak++;
+    }
+
+    $weekStart = $todayDate->modify('-6 days')->format('Y-m-d');
+    $recentCheckins = array_values(array_filter(
+        $checkinDates,
+        static function (string $date) use ($weekStart): bool {
+            return $date >= $weekStart;
+        }
+    ));
+
+    $activityStatement = $pdo->prepare(
+        'SELECT amount, reason, DATE_FORMAT(created_at, \'%Y-%m-%d %H:%i:%s\') AS created_at
+         FROM reward_points_ledger
+         WHERE username = :u
+         ORDER BY created_at DESC, id DESC
+         LIMIT 20'
+    );
+    $activityStatement->execute([':u' => $username]);
+    $activity = array_map(
+        static function (array $entry): array {
+            return [
+                'amount' => (int)$entry['amount'],
+                'reason' => (string)$entry['reason'],
+                'createdAt' => (string)$entry['created_at'],
+            ];
+        },
+        $activityStatement->fetchAll(PDO::FETCH_ASSOC)
+    );
+
+    $earnedStatement = $pdo->prepare(
+        'SELECT COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0)
+         FROM reward_points_ledger
+         WHERE username = :u'
+    );
+    $earnedStatement->execute([':u' => $username]);
+
+    $monthlyStatement = $pdo->prepare(
+        'SELECT DATE_FORMAT(created_at, \'%Y-%m\') AS month,
+                COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS earned,
+                COALESCE(SUM(CASE WHEN reason = \'upload\' AND amount > 0 THEN amount ELSE 0 END), 0) AS uploads,
+                COALESCE(SUM(CASE WHEN reason = \'daily_checkin\' AND amount > 0 THEN amount ELSE 0 END), 0) AS checkins,
+                COALESCE(SUM(CASE WHEN amount > 0 AND reason NOT IN (\'upload\', \'daily_checkin\') THEN amount ELSE 0 END), 0) AS other,
+                COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS redeemed
+         FROM reward_points_ledger
+         WHERE username = :u
+           AND created_at >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 5 MONTH), \'%Y-%m-01\')
+         GROUP BY DATE_FORMAT(created_at, \'%Y-%m\')
+         ORDER BY month ASC'
+    );
+    $monthlyStatement->execute([':u' => $username]);
+    $monthlySummary = array_map(
+        static function (array $month): array {
+            return [
+                'month' => (string)$month['month'],
+                'earned' => (int)$month['earned'],
+                'uploads' => (int)$month['uploads'],
+                'checkins' => (int)$month['checkins'],
+                'other' => (int)$month['other'],
+                'redeemed' => (int)$month['redeemed'],
+            ];
+        },
+        $monthlyStatement->fetchAll(PDO::FETCH_ASSOC)
+    );
+
+    $lifetime = (int)$earnedStatement->fetchColumn();
+    $uploadsTodayStatement = $pdo->prepare(
+        'SELECT COUNT(*) FROM reward_points_ledger
+         WHERE username = :u AND reason = \'upload\' AND amount > 0 AND created_at >= CURDATE()'
+    );
+    $uploadsTodayStatement->execute([':u' => $username]);
+    $uploadsToday = (int)$uploadsTodayStatement->fetchColumn();
+    $rank = null;
+    if ($lifetime > 0) {
+        try {
+            $rankStatement = $pdo->prepare(
+                'SELECT COUNT(*) + 1 FROM (
+                     SELECT username FROM reward_points_ledger WHERE amount > 0 GROUP BY username HAVING SUM(amount) > :e
+                 ) ranked'
+            );
+            $rankStatement->execute([':e' => $lifetime]);
+            $rank = (int)$rankStatement->fetchColumn();
+        } catch (Throwable $e) {
+            $rank = null;
+        }
+    }
+
+    return [
+        'today' => $today,
+        'checkinDates' => $recentCheckins,
+        'checkinStreak' => $streak,
+        'lifetimeEarned' => $lifetime,
+        'rank' => $rank,
+        'uploadsToday' => $uploadsToday,
+        'uploadCap' => VS_REWARDS_UPLOAD_DAILY_CAP,
+        'quests' => vs_rewards_quest_progress($pdo, $username),
+        'activity' => $activity,
+        'monthlySummary' => $monthlySummary,
+    ];
+}
+
+function vs_rewards_normalize_activity_filters(array $input): array
+{
+    $types = [
+        'all' => '',
+        'upload' => 'upload',
+        'daily_checkin' => 'daily_checkin',
+        'premium_monthly' => 'premium_monthly',
+        'streak_bonus' => 'streak_bonus',
+        'premium_plus' => 'premium_plus',
+        'premium_plus_3m' => 'premium_plus_3m',
+    ];
+    $type = $input['type'] ?? 'all';
+    if (!is_string($type) || !array_key_exists($type, $types)) {
+        throw new InvalidArgumentException('Choose a valid activity type.');
+    }
+
+    $dates = [];
+    foreach (['from', 'to'] as $name) {
+        $value = $input[$name] ?? '';
+        if (!is_string($value)) {
+            throw new InvalidArgumentException('Enter a valid activity date range.');
+        }
+        $value = trim($value);
+        if ($value !== '' && (
+            !preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value)
+            || !checkdate((int)substr($value, 5, 2), (int)substr($value, 8, 2), (int)substr($value, 0, 4))
+        )) {
+            throw new InvalidArgumentException('Enter valid dates for the activity filter.');
+        }
+        $dates[$name] = $value;
+    }
+    if ($dates['from'] !== '' && $dates['to'] !== '' && $dates['from'] > $dates['to']) {
+        throw new InvalidArgumentException('The start date must be on or before the end date.');
+    }
+
+    $pageValue = $input['page'] ?? 1;
+    if (!is_int($pageValue) && !is_string($pageValue)) {
+        throw new InvalidArgumentException('Choose a valid activity page.');
+    }
+    $page = filter_var($pageValue, FILTER_VALIDATE_INT);
+    if ($page === false || $page < 1) {
+        throw new InvalidArgumentException('Choose a valid activity page.');
+    }
+
+    return [
+        'reason' => $types[$type],
+        'from' => $dates['from'],
+        'to' => $dates['to'],
+        'page' => $page,
+    ];
+}
+
+function vs_rewards_activity_conditions(string $username, array $filters): array
+{
+    if ($username === '') {
+        throw new InvalidArgumentException('A signed-in username is required to view points activity.');
+    }
+
+    $conditions = ['username = :username'];
+    $parameters = [':username' => $username];
+    if ($filters['reason'] !== '') {
+        $conditions[] = 'reason = :reason';
+        $parameters[':reason'] = $filters['reason'];
+    }
+    if ($filters['from'] !== '') {
+        $conditions[] = 'created_at >= :from_date';
+        $parameters[':from_date'] = $filters['from'] . ' 00:00:00';
+    }
+    if ($filters['to'] !== '') {
+        $toExclusive = (new DateTimeImmutable($filters['to']))->modify('+1 day')->format('Y-m-d');
+        $conditions[] = 'created_at < :to_date';
+        $parameters[':to_date'] = $toExclusive . ' 00:00:00';
+    }
+
+    return [implode(' AND ', $conditions), $parameters];
+}
+
+function vs_rewards_activity_statement(
+    PDO $pdo,
+    string $username,
+    array $filters,
+    ?int $limit = null,
+    int $offset = 0
+): PDOStatement {
+    [$where, $parameters] = vs_rewards_activity_conditions($username, $filters);
+    $sql = 'SELECT amount, reason, DATE_FORMAT(created_at, \'%Y-%m-%d %H:%i:%s\') AS created_at
+            FROM reward_points_ledger
+            WHERE ' . $where . '
+            ORDER BY created_at DESC, id DESC';
+    if ($limit !== null) {
+        $sql .= ' LIMIT :limit OFFSET :offset';
+    }
+    $statement = $pdo->prepare($sql);
+    foreach ($parameters as $name => $value) {
+        $statement->bindValue($name, $value, PDO::PARAM_STR);
+    }
+    if ($limit !== null) {
+        $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $statement->bindValue(':offset', $offset, PDO::PARAM_INT);
+    }
+    $statement->execute();
+    return $statement;
+}
+
+function vs_rewards_activity_page(PDO $pdo, string $username, array $filters): array
+{
+    [$where, $parameters] = vs_rewards_activity_conditions($username, $filters);
+    $count = $pdo->prepare('SELECT COUNT(*) FROM reward_points_ledger WHERE ' . $where);
+    $count->execute($parameters);
+    $total = (int)$count->fetchColumn();
+    $pageSize = 20;
+    $pages = max(1, (int)ceil($total / $pageSize));
+    $page = min($filters['page'], $pages);
+    $statement = vs_rewards_activity_statement(
+        $pdo,
+        $username,
+        $filters,
+        $pageSize,
+        ($page - 1) * $pageSize
+    );
+    $rows = array_map(
+        static function (array $entry): array {
+            return [
+                'amount' => (int)$entry['amount'],
+                'reason' => (string)$entry['reason'],
+                'createdAt' => (string)$entry['created_at'],
+            ];
+        },
+        $statement->fetchAll(PDO::FETCH_ASSOC)
+    );
+
+    return [
+        'rows' => $rows,
+        'total' => $total,
+        'page' => $page,
+        'pages' => $pages,
+        'pageSize' => $pageSize,
+    ];
 }
 
 /* ------------------------------------------------------------------ */
@@ -540,7 +1117,7 @@ function vs_premium_get(PDO $pdo, string $username): ?array
 }
 
 /** Switch Premium on. If the user is already active, the new time is added on top. */
-function vs_premium_set(PDO $pdo, string $username, string $plan): bool
+function vs_premium_set(PDO $pdo, string $username, string $plan, string $source = '', string $grantedBy = '', string $ref = ''): bool
 {
     $def = VS_PREMIUM_PLANS[$plan] ?? VS_PREMIUM_LEGACY_PLANS[$plan] ?? null;
     if ($username === '' || $def === null) {
@@ -555,7 +1132,131 @@ function vs_premium_set(PDO $pdo, string $username, string $plan): bool
             expires_at = DATE_ADD(IF(status = \'active\' AND expires_at > NOW(), expires_at, NOW()), INTERVAL ' . $days . ' DAY),
             plan = VALUES(plan), status = \'active\', updated_at = NOW()'
     );
-    return $st->execute([':u' => $username, ':p' => $plan]);
+    $ok = $st->execute([':u' => $username, ':p' => $plan]);
+    if ($ok) {
+        vs_premium_log_grant($pdo, $username, $plan, $source, $grantedBy, $ref);
+    }
+    return $ok;
+}
+
+/**
+ * Remember how and from whom a member got Premium (shown on the admin premium page).
+ * source: 'payment' (admin confirmed a payment), 'stripe' (paid online), 'points' (500 points),
+ * 'admin' (an admin gave it). If the caller does not say, a signed-in admin session means 'admin'.
+ * Never allowed to break the grant itself.
+ */
+function vs_premium_log_grant(PDO $pdo, string $username, string $plan, string $source = '', string $grantedBy = '', string $ref = ''): void
+{
+    try {
+        if ($source === '') {
+            $who = trim((string)($_SESSION['username'] ?? ''));
+            if ($who !== '' && vs_premium_is_admin($who)) {
+                $source = 'admin';
+                $grantedBy = $grantedBy !== '' ? $grantedBy : $who;
+            } else {
+                $source = 'system';
+            }
+        }
+        $row = vs_premium_get($pdo, $username);
+        if (!$row) {
+            return;
+        }
+        $ins = $pdo->prepare(
+            'INSERT INTO premium_grants (username, plan, source, granted_by, ref, started_at, expires_at, created_at)
+             VALUES (:u, :p, :s, :g, :r, :st, :ex, NOW())'
+        );
+        $ins->execute([
+            ':u' => $username, ':p' => $plan, ':s' => mb_substr($source, 0, 12),
+            ':g' => mb_substr($grantedBy, 0, 100), ':r' => mb_substr($ref, 0, 100),
+            ':st' => $row['started_at'], ':ex' => $row['expires_at'],
+        ]);
+    } catch (Throwable $e) {
+        error_log('premium grant log failed: ' . $e->getMessage());
+    }
+}
+
+function vs_premium_source_label(string $source): string
+{
+    switch ($source) {
+        case 'payment': return 'Paid (confirmed by admin)';
+        case 'stripe':  return 'Paid online';
+        case 'points':  return 'Redeemed 500 points';
+        case 'admin':   return 'Given by an admin';
+        case 'system':  return 'Added by the system';
+        default:        return 'Unknown (before tracking)';
+    }
+}
+
+/**
+ * Everything the admin premium page needs: each member with plan, status, how they got it,
+ * who gave it, and when it ends. Newest first. Uses 3 queries in total, however many members.
+ */
+function vs_premium_admin_overview(PDO $pdo): array
+{
+    vs_premium_ensure($pdo);
+    $members = vs_premium_all($pdo);
+
+    $latest = [];
+    foreach ($pdo->query(
+        'SELECT g.username, g.source, g.granted_by, g.ref, g.created_at
+         FROM premium_grants g
+         JOIN (SELECT username, MAX(id) AS mid FROM premium_grants GROUP BY username) x ON x.mid = g.id'
+    )->fetchAll(PDO::FETCH_ASSOC) as $g) {
+        $latest[strtolower((string)$g['username'])] = $g;
+    }
+    $counts = [];
+    foreach ($pdo->query('SELECT username, COUNT(*) AS n FROM premium_grants GROUP BY username')->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        $counts[strtolower((string)$c['username'])] = (int)$c['n'];
+    }
+    // Members who got Premium before grants were tracked: use their last approved payment, if any.
+    $paid = [];
+    foreach ($pdo->query(
+        'SELECT r.username, r.txn_ref, r.updated_at
+         FROM premium_requests r
+         JOIN (SELECT username, MAX(id) AS mid FROM premium_requests WHERE status = \'approved\' GROUP BY username) x ON x.mid = r.id'
+    )->fetchAll(PDO::FETCH_ASSOC) as $p) {
+        $paid[strtolower((string)$p['username'])] = $p;
+    }
+
+    $now = time();
+    $out = [];
+    foreach ($members as $m) {
+        $key = strtolower((string)$m['username']);
+        $source = 'unknown';
+        $by = '';
+        $ref = '';
+        $tracked = false;
+        if (isset($latest[$key])) {
+            $source = (string)$latest[$key]['source'];
+            $by = (string)$latest[$key]['granted_by'];
+            $ref = (string)$latest[$key]['ref'];
+            $tracked = true;
+        } elseif (isset($paid[$key])) {
+            $source = 'payment';
+            $ref = (string)$paid[$key]['txn_ref'];
+        }
+        $expires = strtotime((string)$m['expires_at']);
+        $isActive = vs_premium_is_active($m);
+        $def = vs_premium_plan_def((string)$m['plan']);
+        $out[] = [
+            'username'     => (string)$m['username'],
+            'plan'         => (string)$m['plan'],
+            'plan_label'   => $def['label'] ?? (string)$m['plan'],
+            'tier'         => strpos((string)$m['plan'], 'plus') === 0 ? 'plus' : 'premium',
+            'status'       => $isActive ? 'active' : ((string)$m['status'] === 'cancelled' ? 'cancelled' : 'expired'),
+            'started_at'   => (string)$m['started_at'],
+            'expires_at'   => (string)$m['expires_at'],
+            'seconds_left' => $isActive ? max(0, $expires - $now) : 0,
+            'days_left'    => $isActive ? (int)ceil(max(0, $expires - $now) / 86400) : 0,
+            'source'       => $source,
+            'source_label' => vs_premium_source_label($source),
+            'granted_by'   => $by,
+            'ref'          => $ref,
+            'times_given'  => $counts[$key] ?? 0,
+            'tracked'      => $tracked,
+        ];
+    }
+    return $out;
 }
 
 function vs_premium_cancel(PDO $pdo, string $username): bool
@@ -726,7 +1427,8 @@ function vs_premium_review(PDO $pdo, int $id, bool $approve): bool
         $up = $pdo->prepare('UPDATE premium_requests SET status = :s, updated_at = NOW() WHERE id = :i');
         $up->execute([':s' => $approve ? 'approved' : 'rejected', ':i' => $id]);
         if ($approve) {
-            vs_premium_set($pdo, (string)$r['username'], (string)$r['plan']);
+            vs_premium_set($pdo, (string)$r['username'], (string)$r['plan'], 'payment',
+                trim((string)($_SESSION['username'] ?? '')), (string)$r['txn_ref']);
         }
         $pdo->commit();
         vs_premium_after_review($pdo, $r, $approve);
@@ -759,7 +1461,7 @@ function vs_premium_confirm_payment(PDO $pdo, string $username, string $plan, st
         );
         $ins->execute([':u' => $username, ':p' => $plan, ':a' => $amount ?? $def['price'], ':r' => mb_substr($txn, 0, 100)]);
         $id = (int)$pdo->lastInsertId();
-        vs_premium_set($pdo, $username, $plan);
+        vs_premium_set($pdo, $username, $plan, 'stripe', '', mb_substr($txn, 0, 100));
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) {
@@ -936,7 +1638,19 @@ function vs_premium_state(?PDO $pdo, string $username): array
         'checkinClaimed' => false,
         'checkinAwarded' => false,
         'csrf'     => $_SESSION['premium_csrf'],
+        'leaders'  => [],
+        'leadersWeek' => [],
+        'leadersMonth' => [],
     ];
+    if ($pdo) {
+        try {
+            $state['leaders'] = vs_rewards_decorate_leaders(vs_rewards_leaderboard($pdo, 5, 'all'), $username, $pdo);
+            $state['leadersWeek'] = vs_rewards_decorate_leaders(vs_rewards_leaderboard($pdo, 5, 'week'), $username, $pdo);
+            $state['leadersMonth'] = vs_rewards_decorate_leaders(vs_rewards_leaderboard($pdo, 5, 'month'), $username, $pdo);
+        } catch (Throwable $e) {
+            // the leaderboard must never break a page
+        }
+    }
     if (vs_premium_is_admin($username)) {
         $state['active']  = true;
         $state['plan']    = 'admin';

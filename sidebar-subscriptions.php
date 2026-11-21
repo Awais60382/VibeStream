@@ -145,6 +145,107 @@ function vs_sub_latest_by(mysqli $conn, string $column, array $values): array
     return $out;
 }
 
+/** Removes every subscription TO this channel (for all subscribers) and their "seen" markers. */
+function vs_sub_purge_channel(mysqli $conn, string $channelUsername): void
+{
+    $channelUsername = trim($channelUsername);
+    if ($channelUsername === '') {
+        return;
+    }
+    vs_sub_tables_ensure($conn);
+    $key = mb_substr(mb_strtolower($channelUsername), 0, 191);
+    $a = $conn->prepare('DELETE FROM user_subscriptions WHERE channel_username = ?');
+    if ($a) {
+        $a->bind_param('s', $channelUsername);
+        $a->execute();
+        $a->close();
+    }
+    $b = $conn->prepare('DELETE FROM subscription_seen WHERE channel_key = ?');
+    if ($b) {
+        $b->bind_param('s', $key);
+        $b->execute();
+        $b->close();
+    }
+}
+
+/**
+ * Call this when a user account is deleted (in the code that runs DELETE FROM users):
+ * removes the subscriptions that user HAD and every subscription TO their channel.
+ */
+function vs_sub_purge_user(mysqli $conn, int $userId, string $username): void
+{
+    vs_sub_tables_ensure($conn);
+    if ($userId > 0) {
+        $a = $conn->prepare('DELETE FROM user_subscriptions WHERE subscriber_id = ?');
+        if ($a) {
+            $a->bind_param('i', $userId);
+            $a->execute();
+            $a->close();
+        }
+        $b = $conn->prepare('DELETE FROM subscription_seen WHERE user_id = ?');
+        if ($b) {
+            $b->bind_param('i', $userId);
+            $b->execute();
+            $b->close();
+        }
+    }
+    vs_sub_purge_channel($conn, $username);
+}
+
+/**
+ * Safety net: drops (and cleans up) subscriptions to channels whose account no longer exists,
+ * so a deleted user disappears from every sidebar even if the delete code never called
+ * vs_sub_purge_user(). If the users table cannot be checked, nothing is removed.
+ */
+function vs_sub_drop_deleted_channels(mysqli $conn, array $rows): array
+{
+    $names = [];
+    foreach ($rows as $r) {
+        $u = trim((string)$r['channel_username']);
+        if ($u !== '') {
+            $names[mb_strtolower($u)] = $u;
+        }
+    }
+    if (!$names) {
+        return $rows;
+    }
+    // Sanity check: the signed-in user must be found too, otherwise we are not reading the right table.
+    $me = trim((string)($_SESSION['username'] ?? ''));
+    $list = array_values($names);
+    if ($me !== '' && !isset($names[mb_strtolower($me)])) {
+        $list[] = $me;
+    }
+    $stmt = $conn->prepare('SELECT username FROM users WHERE username IN (' . implode(',', array_fill(0, count($list), '?')) . ')');
+    if (!$stmt) {
+        return $rows;
+    }
+    $stmt->bind_param(str_repeat('s', count($list)), ...$list);
+    if (!$stmt->execute()) {
+        $stmt->close();
+        return $rows;
+    }
+    $exists = [];
+    $res = $stmt->get_result();
+    while ($x = $res->fetch_assoc()) {
+        $exists[mb_strtolower(trim((string)$x['username']))] = true;
+    }
+    $stmt->close();
+    if ($me !== '' && !isset($exists[mb_strtolower($me)])) {
+        return $rows;
+    }
+    $gone = array_diff_key($names, $exists);
+    if (!$gone) {
+        return $rows;
+    }
+    foreach ($gone as $name) {
+        vs_sub_purge_channel($conn, $name);
+    }
+    return array_values(array_filter(
+        $rows,
+        fn($r) => !isset($gone[mb_strtolower(trim((string)$r['channel_username']))])
+    ));
+}
+
 function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $newDays = 3): string
 {
     global $conn;
@@ -195,6 +296,9 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
             $rows[] = $r;
         }
         $stmt->close();
+
+        // Channels whose account was deleted are removed from the list (and from everyone else's too).
+        $rows = vs_sub_drop_deleted_channels($conn, $rows);
 
         // When did this user last open each channel?
         $sq = $conn->prepare('SELECT channel_key, seen_at FROM subscription_seen WHERE user_id = ?');

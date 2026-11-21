@@ -28,12 +28,17 @@
     var links = document.querySelectorAll(".admin-sidebar .sidebar-nav .nav-link");
     Array.prototype.forEach.call(links, function (link) {
       var href = (link.getAttribute("href") || "").split("#")[0].split("?")[0];
-      if (Object.prototype.hasOwnProperty.call(KEEP, href)) {
+      var navText = link.querySelector(".nav-text");
+      var fullLabel = navText ? navText.textContent.replace(/\s+/g, " ").trim() : "";
+      var isActive = link.classList.contains("active") || link.getAttribute("aria-current") === "page";
+      if (Object.prototype.hasOwnProperty.call(KEEP, href) || isActive) {
+        var railLabel = KEEP[href] || fullLabel || "Current";
         link.classList.add("vs-arail-keep");
         link.classList.remove("vs-arail-hide");
-        link.setAttribute("data-rail-label", KEEP[href]);
+        link.setAttribute("data-rail-label", railLabel);
+        link.setAttribute("aria-label", fullLabel || railLabel);
         if (!link.getAttribute("title")) {
-          link.setAttribute("title", KEEP[href]);
+          link.setAttribute("title", railLabel);
         }
       } else {
         link.classList.add("vs-arail-hide");

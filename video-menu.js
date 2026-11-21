@@ -230,10 +230,22 @@
       } },
     { key: 'share', label: 'Share', run: function (i) {
         var url = absUrl(i.url);
-        if (navigator.share) { navigator.share({ title: i.title, url: url }).catch(function () {}); return; }
+        function recordShare() {
+          if (window.VSAnalyticsTracking) window.VSAnalyticsTracking.trackShare(i.id, i.kind);
+        }
+        if (navigator.share) {
+          navigator.share({ title: i.title, url: url }).then(recordShare).catch(function () {});
+          return;
+        }
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(url).then(function () { toast('Link copied'); }, function () { window.prompt('Copy this link:', url); });
-        } else { window.prompt('Copy this link:', url); }
+          navigator.clipboard.writeText(url).then(function () { toast('Link copied'); recordShare(); }, function () {
+            window.prompt('Copy this link:', url);
+            recordShare();
+          });
+        } else {
+          window.prompt('Copy this link:', url);
+          recordShare();
+        }
       } },
     { key: 'no', label: 'Not interested', run: function (i) {
         var hid = load(K.hidden, []); if (hid.indexOf(i.id) === -1) hid.push(i.id); save(K.hidden, hid); applyHidden();

@@ -34,6 +34,7 @@ if (is_file($lhAlertFile)) {
     }
 }
 require_once __DIR__ . '/adminpanel/admin-alert-store.php';
+require_once __DIR__ . '/auth-security.php';
 // Login activity page (optional: skipped if the file is missing).
 $lhSafetyFile = __DIR__ . '/account-safety-store.php';
 if (is_file($lhSafetyFile)) {
@@ -59,6 +60,13 @@ try {
     $pass  = (string)($_POST['password'] ?? '');
     if ($login === '' || $pass === '') {
         lh_fail('Please enter your username/email and password.');
+    }
+
+    if (!isset($pdo) || !($pdo instanceof PDO)) {
+        throw new RuntimeException('Login rate limiting needs a PDO database connection.');
+    }
+    if (vs_auth_login_limited($pdo, $login, $lhIp)) {
+        lh_fail('Too many attempts. Please wait a few minutes and try again.');
     }
 
     // Block an address that failed 10 times in 10 minutes (a new session does not reset this).
@@ -110,6 +118,9 @@ try {
     $st->execute();
     $user = $st->get_result()->fetch_assoc();
     $st->close();
+    if ($user && vs_auth_login_limited($pdo, (string)$user[$uCol], $lhIp)) {
+        lh_fail('Too many attempts. Please wait a few minutes and try again.');
+    }
 
     $pendingBan = null;   // set when the account is banned; shown only after the right password (so nobody can read a ban reason by guessing a username)
     if ($user) {
@@ -217,8 +228,9 @@ try {
     }
     if (!$ok) {
         $_SESSION['login_fails'][] = $now;
+        vs_auth_record_login_failure($pdo, $user ? (string)$user[$uCol] : $login, $lhIp);
         if ($user && function_exists('vs_login_log')) {
-            vs_login_log(isset($pdo) && $pdo instanceof PDO ? $pdo : null, (string)$user[$uCol], false);
+            vs_login_log($pdo, (string)$user[$uCol], false);
         }
         if (function_exists('vs_login_failed')) {
             vs_login_failed($user ? (string)$user[$uCol] : '', $lhIp);
@@ -275,11 +287,13 @@ try {
     }
     unset($_SESSION['login_fails']);
     unset($_SESSION['vs_ban_card']);
+    vs_auth_clear_login_failures($pdo, $login);
+    vs_auth_clear_login_failures($pdo, (string)$user[$uCol]);
     if (function_exists('vs_login_succeeded')) {
         vs_login_succeeded((string)$user[$uCol]);
     }
     if (function_exists('vs_login_log')) {
-        vs_login_log(isset($pdo) && $pdo instanceof PDO ? $pdo : null, (string)$user[$uCol], true);
+        vs_login_log($pdo, (string)$user[$uCol], true);
     }
 
     $roleNormalized = strtolower(trim($role));

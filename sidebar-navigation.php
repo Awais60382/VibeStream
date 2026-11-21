@@ -152,7 +152,6 @@ function vs_render_sidebar(string $active = 'home'): void
                 ['key' => 'playlists', 'label' => 'Playlists', 'href' => 'playlists.php', 'icon' => 'playlist'],
                 ['key' => 'liked', 'label' => 'Liked videos', 'href' => 'liked.php', 'icon' => 'liked'],
                 ['key' => 'subscriptions', 'label' => 'All subscriptions', 'href' => 'subscriptions.php', 'icon' => 'subscriptions'],
-                ['key' => 'upload', 'label' => 'Upload Video', 'href' => 'upload.php', 'icon' => 'upload'],
                 ['key' => 'live', 'label' => 'Live streams', 'href' => 'live.php', 'icon' => 'live'],
                 ['key' => 'membership', 'label' => 'Channel memberships', 'href' => 'memberships.php', 'icon' => 'membership'],
                 ['key' => 'creator-analytics', 'label' => 'Creator Analytics', 'href' => 'creator-analytics.php', 'icon' => 'analytics'],
@@ -230,7 +229,22 @@ function vs_render_sidebar(string $active = 'home'): void
     ?>
     <aside class="app-sidebar" id="appSidebar" aria-label="Main navigation">
         <div class="sidebar-top">
-            <span class="sidebar-heading">VibeStream</span>
+        <a class="sidebar-account" href="<?php echo htmlspecialchars(vs_sidebar_url($isLoggedIn ? 'profile.php' : 'login.php')); ?>">
+            <?php if ($isLoggedIn): ?>
+                <?php $vipDb = $GLOBALS['conn'] ?? ($GLOBALS['pdo'] ?? null); ?>
+                <?php echo vs_vip_ring_auto_open($username, $vipDb); ?><?php echo avatar_html($username, 34, 'sidebar-account-avatar'); ?><?php echo vs_vip_ring_auto_close($username, $vipDb); ?>
+                <span class="sidebar-account-copy">
+                    <strong><?php echo htmlspecialchars($username); ?><?php echo vs_vip_badge($username, $vipDb, 16); ?></strong>
+                    <small class="sp-plan"><span class="sp-free">Free Plan</span><span class="sp-pro">Premium</span><svg class="sp-crown" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg></small>
+                </span>
+            <?php else: ?>
+                <span class="sidebar-account-avatar sidebar-account-initial">G</span>
+                <span class="sidebar-account-copy">
+                    <strong>Guest</strong>
+                    <small>Sign in to VibeStream</small>
+                </span>
+            <?php endif; ?>
+        </a>
             <button type="button" class="sidebar-close" id="sidebarClose" data-sidebar-close aria-label="Close menu">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
             </button>
@@ -298,22 +312,12 @@ function vs_render_sidebar(string $active = 'home'): void
                 <?php endif; ?>
             </nav>
         <?php endforeach; ?>
-        <a class="sidebar-account" href="<?php echo htmlspecialchars(vs_sidebar_url($isLoggedIn ? 'profile.php' : 'login.php')); ?>">
-            <?php if ($isLoggedIn): ?>
-                <?php $vipDb = $GLOBALS['conn'] ?? ($GLOBALS['pdo'] ?? null); ?>
-                <?php echo vs_vip_ring_auto_open($username, $vipDb); ?><?php echo avatar_html($username, 34, 'sidebar-account-avatar'); ?><?php echo vs_vip_ring_auto_close($username, $vipDb); ?>
-                <span class="sidebar-account-copy">
-                    <strong><?php echo htmlspecialchars($username); ?><?php echo vs_vip_badge($username, $vipDb, 16); ?></strong>
-                    <small>Your channel</small>
-                </span>
-            <?php else: ?>
-                <span class="sidebar-account-avatar sidebar-account-initial">G</span>
-                <span class="sidebar-account-copy">
-                    <strong>Guest</strong>
-                    <small>Sign in to VibeStream</small>
-                </span>
-            <?php endif; ?>
-        </a>
+        <div class="sidebar-gopremium" role="complementary" aria-label="Go Premium">
+            <svg class="gp-crown" viewBox="0 0 64 54" aria-hidden="true"><defs><linearGradient id="gpGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#f29a0d"/></linearGradient></defs><path d="M6 44 2 14l16 14L32 6l14 22L62 14l-4 30z" fill="url(#gpGold)" stroke="#fff3b0" stroke-width="1.5" stroke-linejoin="round"/><rect x="8" y="46" width="48" height="7" rx="2.5" fill="url(#gpGold)"/></svg>
+            <strong>Go Premium</strong>
+            <p>Unlock premium features and enjoy an ad-free experience!</p>
+            <a class="gp-btn" href="<?php echo htmlspecialchars(vs_sidebar_url('premium.php')); ?>">Get Premium</a>
+        </div>
     </aside>
     <?php
     vs_sidebar_extras($icons['chevron-down']);
@@ -348,20 +352,37 @@ function vs_sidebar_extras(string $chevron): void
     .sidebar-link.vs-more-btn .sidebar-icon svg { transition: transform .15s; }
     .vs-more-btn[aria-expanded="true"] .sidebar-icon svg { transform: rotate(180deg); }
 
-    /* Current section: clearly highlighted in both dark and light themes */
+    /* Profile block on top + Go Premium card at the bottom */
+    .app-sidebar .sidebar-top { align-items: center; gap: 8px; padding: 6px 6px 14px; }
+    .app-sidebar .sidebar-top .sidebar-account { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; margin: 0; padding: 4px; border: 0; background: transparent; box-shadow: none; }
+    .sidebar-account-copy { min-width: 0; display: grid; gap: 2px; }
+    .sidebar-account-copy strong { font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sp-plan { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted, #aaa); }
+    .sp-pro { display: none; color: #f5b942; font-weight: 700; }
+    .sp-crown { color: #8fa8ff; }
+    .vs-premium .sp-free { display: none; }
+    .vs-premium .sp-pro { display: inline; }
+    .vs-premium .sp-crown { color: #f5b942; }
+    .app-sidebar .sidebar-gopremium { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 18px 8px 8px; padding: 18px 14px 16px; border: 1px solid rgba(138,92,255,.55); border-radius: 18px; background: radial-gradient(circle at 50% 125%, rgba(255,46,147,.38), transparent 62%), linear-gradient(160deg, rgba(48,20,110,.92), rgba(18,10,50,.96)); color: #fff; text-align: center; text-decoration: none; box-shadow: 0 0 26px -8px rgba(138,92,255,.7); }
+    .app-sidebar .sidebar-gopremium .gp-crown { width: 40px; height: 34px; flex: 0 0 auto; filter: drop-shadow(0 0 8px rgba(255,201,51,.55)); }
+    .app-sidebar .sidebar-gopremium strong { font-size: 19px; line-height: 1.1; color: #ffc933; }
+    .app-sidebar .sidebar-gopremium p { margin: 0; font-size: 13.5px; line-height: 1.45; color: #e7defe; }
+    .app-sidebar .sidebar-gopremium .gp-btn { display: block; width: 100%; margin-top: 6px; padding: 10px 14px; border-radius: 999px; background: linear-gradient(90deg, #ff2e93, #8a5cff); color: #fff; font-size: 14.5px; font-weight: 700; text-decoration: none; box-shadow: 0 0 16px -2px rgba(255,46,147,.6); }
+    .app-sidebar .sidebar-gopremium .gp-btn:hover { filter: brightness(1.1); }
+    .vs-premium .sidebar-gopremium { display: none; }
+
+    /* Current section: neon pink -> violet pill */
     .app-sidebar .sidebar-link.active {
-        background: rgba(255, 255, 255, 0.14) !important;
-        color: var(--text, #fff) !important;
+        background: linear-gradient(90deg, #ff2e93, #8a5cff) !important;
+        color: #fff !important;
         font-weight: 700;
         position: relative;
+        box-shadow: 0 0 20px -4px rgba(255, 46, 147, .6);
     }
     .app-sidebar .sidebar-link.active .sidebar-label { font-weight: 700; }
-    .app-sidebar .sidebar-link.active::before {
-        content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
-        width: 4px; border-radius: 0 4px 4px 0; background: #e53935;
-    }
-    :root[data-theme="light"] .app-sidebar .sidebar-link.active { background: rgba(0, 0, 0, 0.09) !important; color: #0f0f0f !important; }
-    .app-sidebar .sidebar-link.active .sidebar-icon { color: #e53935 !important; }
+    .app-sidebar .sidebar-link.active::before { display: none; }
+    :root[data-theme="light"] .app-sidebar .sidebar-link.active { background: linear-gradient(90deg, #ff2e93, #8a5cff) !important; color: #fff !important; }
+    .app-sidebar .sidebar-link.active .sidebar-icon { color: #fff !important; }
     </style>
     <script>
     (function () {

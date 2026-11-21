@@ -23,6 +23,8 @@ if (empty($_SESSION['premium_csrf'])) {
 }
 $csrf = $_SESSION['premium_csrf'];
 $hasDb = isset($pdo) && $pdo instanceof PDO;
+$premiumActor = trim((string)($_SESSION['username'] ?? $_SESSION['AdminSession'] ?? ''));
+$ceoCannotRevokeOthers = $hasDb && !vs_is_owner($pdo) && vs_premium_is_ceo_account($premiumActor);
 $dbError = '';
 $members = [];
 $requests = [];
@@ -69,6 +71,11 @@ if ($hasDb) {
             // Grant or revoke Premium by hand
             $who = trim((string)($_POST['username'] ?? ''));
             if ($act === 'revoke' && $who !== '') {
+                $actor = trim((string)($_SESSION['username'] ?? $_SESSION['AdminSession'] ?? ''));
+                if ($ceoCannotRevokeOthers && strcasecmp($actor, $who) !== 0) {
+                    header('Location: premium.php?msg=ceo_restricted');
+                    exit;
+                }
                 vs_premium_cancel($pdo, $who);
                 vs_admin_log($pdo, 'premium', 'Cancelled Premium for ' . $who);
                 vs_owner_alert($pdo, 'premium', 'Premium cancelled by an admin for ' . $who);
@@ -122,7 +129,7 @@ foreach ($requests as $r) {
     }
 }
 
-// Everyone who can get Premium: users and admins (the owner is left out), with their Premium state.
+// Everyone who can get Premium, including admins and the owner.
 $people = [];
 $peopleCount = ['all' => 0, 'has' => 0, 'not' => 0, 'admins' => 0];
 if ($hasDb && $dbError === '') {
@@ -145,19 +152,18 @@ if ($hasDb && $dbError === '') {
             foreach ($urows as $u) {
                 $nm = trim((string)($u['f_name'] ?? ''));
                 $em = trim((string)($u['f_email'] ?? ''));
-                if ($nm === '' || ($em !== '' && strtolower($em) === strtolower(VS_OWNER_EMAIL))) {
-                    continue;   // no name to give Premium to, or the owner
+                if ($nm === '') {
+                    continue;
                 }
                 $isAdmin = isset($u['f_role']) && strcasecmp(trim((string)$u['f_role']), 'Admin') === 0;
                 $k = mb_strtolower($nm);
-                if ($isAdmin)                          { $state = 'admin'; }
-                elseif (!empty($premState[$k]))        { $state = 'active'; }
+                if (!empty($premState[$k]))            { $state = 'active'; }
                 elseif (array_key_exists($k, $premState)) { $state = 'ended'; }
                 else                                   { $state = 'none'; }
-                $people[] = ['name' => $nm, 'email' => $em, 'state' => $state];
+                $people[] = ['name' => $nm, 'email' => $em, 'state' => $state, 'is_admin' => $isAdmin];
                 $peopleCount['all']++;
-                if ($state === 'admin')  { $peopleCount['admins']++; }
-                if ($state === 'admin' || $state === 'active') { $peopleCount['has']++; } else { $peopleCount['not']++; }
+                if ($isAdmin) { $peopleCount['admins']++; }
+                if ($state === 'active') { $peopleCount['has']++; } else { $peopleCount['not']++; }
             }
         }
     } catch (Throwable $e) {
@@ -213,6 +219,7 @@ $msgs = [
     'rejected' => 'Payment rejected.',
     'handled'  => 'That payment request was already handled.',
     'failed'   => 'Could not grant Premium. Check the username and plan.',
+    'ceo_restricted' => "The CEO cannot cancel another user's Premium plan.",
     'expired'  => 'Session expired. Try again.',
     'payinfo'  => 'Payment instructions saved. Buyers see them now.',
     'owneronly' => 'Only the owner can change the payment instructions.',
@@ -239,7 +246,7 @@ include "header.php";
               <div>
                 <p class="eyebrow mb-1">Premium</p>
                 <h1 class="h3 mb-1">Premium members</h1>
-                <p class="text-muted mb-0">Users who upgraded to VibeStream Premium on the main site. Admins always have Premium.</p>
+                <p class="text-muted mb-0">All users, including admins, need an active Premium plan. The CEO cannot revoke other users’ plans.</p>
               </div>
             </div>
             <div class="heading-actions">
@@ -423,13 +430,15 @@ include "header.php";
                         <td class="text-muted"><?php echo vs_e(date('M j, Y', strtotime((string)$m['expires_at']))); ?></td>
                         <td><span class="badge <?php echo $m['_active'] ? 'text-bg-success' : 'text-bg-secondary'; ?>"><?php echo $m['_active'] ? 'Active' : 'Ended'; ?></span></td>
                         <td class="text-end">
-                          <?php if ($m['_active']): ?>
+                          <?php if ($m['_active'] && (!$ceoCannotRevokeOthers || strcasecmp($premiumActor, (string)$m['username']) === 0)): ?>
                             <form method="post" class="d-inline" onsubmit="return confirm('Cancel Premium for this user?');">
                               <input type="hidden" name="csrf" value="<?php echo vs_e($csrf); ?>">
                               <input type="hidden" name="action" value="revoke">
                               <input type="hidden" name="username" value="<?php echo vs_e($m['username']); ?>">
                               <button type="submit" class="btn btn-outline-secondary btn-sm">Cancel</button>
                             </form>
+                          <?php elseif ($m['_active']): ?>
+                            <span class="text-muted small">CEO cannot revoke</span>
                           <?php endif; ?>
                         </td>
                       </tr>
@@ -470,7 +479,7 @@ include "header.php";
                 </div>
                 <input type="search" class="form-control form-control-sm" id="gpSearch" placeholder="Search users" aria-label="Search users" autocomplete="off" style="max-width:220px">
               </div>
-              <p class="text-muted small mb-2">Showing <span id="gpCount"><?php echo (int)$peopleCount['all']; ?></span> of <?php echo (int)$peopleCount['all']; ?>. Admins always have Premium, so they have no Give button.</p>
+              <p class="text-muted small mb-2">Showing <span id="gpCount"><?php echo (int)$peopleCount['all']; ?></span> of <?php echo (int)$peopleCount['all']; ?>.</p>
               <div class="table-responsive">
                 <table class="table align-middle mb-0">
                   <thead>
@@ -478,7 +487,7 @@ include "header.php";
                   </thead>
                   <tbody id="gpRows">
                     <?php foreach ($people as $p): ?>
-                      <tr data-name="<?php echo vs_e(mb_strtolower($p['name'] . ' ' . $p['email'])); ?>" data-state="<?php echo vs_e($p['state']); ?>">
+                      <tr data-name="<?php echo vs_e(mb_strtolower($p['name'] . ' ' . $p['email'])); ?>" data-state="<?php echo vs_e($p['state']); ?>" data-role="<?php echo $p['is_admin'] ? 'admin' : 'user'; ?>">
                         <td>
                           <div class="table-media">
                             <img class="avatar-img avatar-sm" src="<?php echo vs_e(avatar_url($p['name'])); ?>" alt="" onerror="this.onerror=null;this.src='<?php echo vs_e($pmInitial($p['name'])); ?>';">
@@ -489,8 +498,7 @@ include "header.php";
                           </div>
                         </td>
                         <td>
-                          <?php if ($p['state'] === 'admin'): ?><span class="badge text-bg-primary">Admin (included)</span>
-                          <?php elseif ($p['state'] === 'active'): ?><span class="badge text-bg-success">Has Premium</span>
+                          <?php if ($p['state'] === 'active'): ?><span class="badge text-bg-success">Has Premium</span>
                           <?php elseif ($p['state'] === 'ended'): ?><span class="badge text-bg-secondary">Ended</span>
                           <?php else: ?><span class="badge text-bg-warning">Not upgraded</span>
                           <?php endif; ?>
@@ -553,14 +561,15 @@ include "header.php";
         btns = document.querySelectorAll('[data-gp]'), mode = 'all';
     function match(state) {
       if (mode === 'all') return true;
-      if (mode === 'has') return state === 'admin' || state === 'active';
+      if (mode === 'has') return state === 'active';
       if (mode === 'not') return state === 'none' || state === 'ended';
-      return state === 'admin';
+      return mode === 'admins';
     }
     function apply() {
       var term = (search.value || '').toLowerCase().trim(), n = 0;
       rows.forEach(function (tr) {
-        var show = match(tr.dataset.state) && (!term || tr.dataset.name.indexOf(term) > -1);
+        var show = (mode === 'admins' ? tr.dataset.role === 'admin' : match(tr.dataset.state)) &&
+          (!term || tr.dataset.name.indexOf(term) > -1);
         tr.hidden = !show;
         if (show) n++;
       });

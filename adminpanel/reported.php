@@ -414,9 +414,12 @@ $typeUrls = ['all' => 'Type: All', 'video' => 'Type: Videos', 'short' => 'Type: 
   .rp-safe{display:flex;align-items:center;gap:14px;padding:12px 20px;border-radius:16px;border:1px solid rgba(255,255,255,.2);background:rgba(10,12,50,.5);font-size:1.05rem;line-height:1.3}
   .rp-safe svg{width:46px;height:46px;flex:none}
   .rp-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,2.4fr);gap:14px;margin-top:16px}
-  .rp-sel,.rp-search{position:relative;border-radius:16px;border:1px solid var(--rp-line);background:var(--rp-card)}
+  .rp-sel,.rp-search{position:relative;min-height:64px;border-radius:16px;border:1px solid var(--rp-line);background:var(--rp-card)}
   .rp-sel i,.rp-search i{position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:1.25rem;color:#9f86ff;pointer-events:none}
-  .rp-sel select,.rp-search input{width:100%;padding:16px 44px 16px 52px;border:0;border-radius:16px;background:transparent;color:var(--rp-text);font-size:1rem;font-weight:600;appearance:none;-webkit-appearance:none}
+  .rp-sel select,.rp-search input{box-sizing:border-box;width:100%;height:64px;padding:16px 54px 16px 52px;border:0;border-radius:16px;background:transparent;color:var(--rp-text);font-size:1rem;font-weight:600;line-height:32px;appearance:none;-webkit-appearance:none;-moz-appearance:none}
+  .rp-sel select{position:relative;z-index:1;cursor:pointer;color-scheme:dark}
+  html[data-theme="light"] .rp-sel select,html[data-bs-theme="light"] .rp-sel select{color-scheme:light}
+  .rp-sel select::-ms-expand{display:none}
   .rp-sel select option{color:#171b3b;background:#fff}
   html[data-theme="dark"] .rp-sel select option,html[data-bs-theme="dark"] .rp-sel select option{color:#eaf0ff;background:#0c071c}
   .rp-sel:after{content:"";position:absolute;right:18px;top:50%;width:9px;height:9px;border-right:2px solid var(--rp-muted);border-bottom:2px solid var(--rp-muted);transform:translateY(-70%) rotate(45deg);pointer-events:none}

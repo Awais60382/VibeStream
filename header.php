@@ -4,11 +4,16 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 $isLoggedIn = isset($_SESSION['username']);
 $username = $isLoggedIn ? $_SESSION['username'] : '';
+$vsPremiumRewardsPage = in_array(basename((string)($_SERVER['SCRIPT_NAME'] ?? '')), ['premium.php', 'premium-points.php'], true);
 require_once __DIR__ . '/avatar.php';
 require_once __DIR__ . '/user-menu.php';
 require_once __DIR__ . '/site-branding.php';
 require_once __DIR__ . '/connection.php';
 require_once __DIR__ . '/premium-store.php';
+require_once __DIR__ . '/premium-popup.php';
+if ($vsPremiumRewardsPage) {
+    require_once __DIR__ . '/notifications-store.php';
+}
 
 // Premium state for premium.js (uses $pdo from connection.php, or default XAMPP settings).
 $vsPdo = (isset($pdo) && $pdo instanceof PDO) ? $pdo : null;
@@ -68,6 +73,12 @@ foreach (vs_si_load()['site'] as $k => $entry) {
     <link rel="stylesheet" href="navbar-fix.css?v=8">
     <link rel="stylesheet" href="searchable-select.css?v=<?php echo (int)@filemtime(__DIR__ . '/searchable-select.css'); ?>">
     <link rel="stylesheet" href="search-suggest.css?v=3">
+    <style>
+    .nav-right .upload-btn.vs-create-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; gap: 0; background: transparent; color: var(--text, #f1f1f1); border: 1px solid var(--border, #303030); box-shadow: none; }
+    .nav-right .upload-btn.vs-create-btn:hover { background: var(--surface-hover, rgba(127,127,127,.14)); border-color: #5b8cff; }
+    .nav-right .vs-create-btn span { display: none; }
+    .nav-right .vs-create-btn svg { width: 20px; height: 20px; flex: 0 0 20px; }
+    </style>
     <script src="searchable-select.js?v=<?php echo (int)@filemtime(__DIR__ . '/searchable-select.js'); ?>" defer></script>
     <script src="search-suggest.js?v=3" defer></script>
     <?php if (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) !== 'login.php'): ?>
@@ -75,7 +86,7 @@ foreach (vs_si_load()['site'] as $k => $entry) {
     <?php endif; ?>
 </head>
 <body>
-    <header class="navbar">
+    <header class="navbar<?php echo $vsPremiumRewardsPage ? ' premium-rewards-navbar' : ''; ?>">
         <div class="nav-left">
             <a class="site-brand" href="index.php">
                 <img class="site-brand-icon" src="<?php echo htmlspecialchars($siteLogoUrl); ?>" alt="">
@@ -85,25 +96,32 @@ foreach (vs_si_load()['site'] as $k => $entry) {
         <div class="nav-center">
             <div class="vs-search-wrap">
                 <div class="vs-search-box">
-                    <input type="text" placeholder="Search" id="vs-search-input">
+                    <input type="text" placeholder="<?php echo $vsPremiumRewardsPage ? 'Search videos...' : 'Search'; ?>" id="vs-search-input">
                     <button class="vs-search-btn" type="button" id="vs-search-btn" aria-label="Search" title="Search">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
                     </button>
                 </div>
+                <?php if (!$vsPremiumRewardsPage): ?>
                 <button class="vs-mic-btn" type="button" id="vs-mic-btn" aria-label="Search with your voice" title="Search with your voice">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></svg>
                 </button>
+                <?php endif; ?>
             </div>
         </div>
         <div class="nav-right" style="display: flex; align-items: center; gap: 12px;">
+            <?php if (!$vsPremiumRewardsPage): ?>
             <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
             </button>
+            <?php else: ?>
+                <?php echo vs_notification_bell_html(); ?>
+            <?php endif; ?>
             <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
                 <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
             </button>
-            <a href="premium.php" class="upload-btn" data-vs-upgrade style="background:linear-gradient(135deg,#f5b942,#ff8a3d);color:#2a1700;">Go Premium</a>
-            <a href="upload.php" class="upload-btn">+ Create</a>
+            <?php if (!$vsPremiumRewardsPage): ?>
+            <a href="upload.php" class="upload-btn vs-create-btn" aria-label="Create video" title="Create video"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10 5-3v10l-5-3M9.5 10v4M7.5 12h4"/></svg><span>Create</span></a>
+            <?php endif; ?>
             
             <?php if ($isLoggedIn): ?>
                 <?php echo vs_user_menu_html($username, $navAvatar); ?>
@@ -112,6 +130,7 @@ foreach (vs_si_load()['site'] as $k => $entry) {
             <?php endif; ?>
         </div>
     </header>
+    <?php echo vs_premium_popup_html((string)$username, $isLoggedIn && empty($vsPremiumState['active'])); ?>
     <?php
     // E-mail verification reminder: only for signed-in users whose address is not verified yet,
     // and only when the site can actually send e-mail (mail-config.php is filled in).

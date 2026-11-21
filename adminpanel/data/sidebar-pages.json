@@ -1,0 +1,11 @@
+[
+    {
+        "id": "c0mm4ndc3n73r",
+        "label": "Command Center",
+        "url": "command-center.php",
+        "icon": "command",
+        "image": "",
+        "owner_only": false,
+        "kind": "link"
+    }
+]

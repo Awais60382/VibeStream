@@ -1,0 +1,126 @@
+{
+    "admin": {
+        "videos": {
+            "file": "uploads/site-branding/si-9f8a4cbc6a871ab31c229c9cfe65e390.png",
+            "mode": "mask"
+        },
+        "shorts": {
+            "file": "uploads/site-branding/si-c2dec7cb94bdb6e97b53c4b0f7e0d25c.png",
+            "mode": "mask"
+        },
+        "categories": {
+            "file": "uploads/site-branding/si-f72fc8c43fda1a241dd1667348f047d9.png",
+            "mode": "mask"
+        },
+        "users": {
+            "file": "uploads/site-branding/si-1c06893114b9ceb15476f751d73189aa.png",
+            "mode": "mask"
+        },
+        "admins": {
+            "file": "uploads/site-branding/si-7f354d066fda81eed1e824ea062c6c8e.png",
+            "mode": "mask"
+        },
+        "messages": {
+            "file": "uploads/site-branding/si-9e85cb38a5c38cf58f94a7379bf74647.png",
+            "mode": "mask"
+        },
+        "premium": {
+            "file": "uploads/site-branding/si-c1b43694882395f3f4f819b6022a60f6.png",
+            "mode": "mask"
+        },
+        "settings": {
+            "file": "uploads/site-branding/si-ede91203e579d951d1fc0b2cbddd6811.png",
+            "mode": "mask"
+        },
+        "activity": {
+            "file": "uploads/site-branding/si-fbb0be604caa2b2fc0c2aca2f6b43bd8.png",
+            "mode": "mask"
+        },
+        "mainsite": {
+            "file": "uploads/site-branding/si-3ab43fa53c19f1ce8bdef42f83f83116.png",
+            "mode": "mask"
+        },
+        "menu_mainsite": {
+            "file": "uploads/site-branding/si-2cb315dcb7f54b75ea3962516249f3bd.png",
+            "mode": "mask"
+        },
+        "menu_logout": {
+            "file": "uploads/site-branding/si-1b2dc6a920fe2f758c02eccd305e000f.png",
+            "mode": "mask"
+        },
+        "dashboard": {
+            "file": "uploads/site-branding/si-17a54fbdfcfd7142882114cec04017da.png",
+            "mode": "mask"
+        },
+        "userprofile": {
+            "file": "uploads/site-branding/si-9ba46f6e7e8aba1df810359070c3ce75.png",
+            "mode": "mask"
+        },
+        "profile": {
+            "file": "uploads/site-branding/si-8787794179c99a57e83608cb2002c3f9.png",
+            "mode": "mask"
+        },
+        "menu_profile": {
+            "file": "uploads/site-branding/si-1aaacb986fcd5d14eec8ea2d823d13f6.png",
+            "mode": "mask"
+        },
+        "menu_settings": {
+            "file": "uploads/site-branding/si-2f5f14a2e8acfd352db68ae6b0a617ef.png",
+            "mode": "mask"
+        }
+    },
+    "site": {
+        "shorts": {
+            "file": "uploads/site-branding/si-06cad6c7d8865e99992c67ce07425e9f.png",
+            "mode": "mask"
+        },
+        "watch": {
+            "file": "uploads/site-branding/si-cf44a537964bf48d1bdf819eb820fb12.png",
+            "mode": "mask"
+        },
+        "history": {
+            "file": "uploads/site-branding/si-016434443858e90d672b7afc5dd8ef44.png",
+            "mode": "mask"
+        },
+        "adminreports": {
+            "file": "uploads/site-branding/si-75551b9ac79696c5bc4286ac91436025.png",
+            "mode": "mask"
+        },
+        "premium": {
+            "file": "uploads/site-branding/si-b41988bc6c362c7d2547f6c72e1a14f5.png",
+            "mode": "mask"
+        },
+        "adminpanel": {
+            "file": "uploads/site-branding/si-25a6f93eeb6a50a7d7aa877cccaba6e4.png",
+            "mode": "mask"
+        },
+        "adminpremium": {
+            "file": "uploads/site-branding/si-3bdcf6fe269d9264e77ec7d5f77f0962.png",
+            "mode": "mask"
+        },
+        "adminvidcats": {
+            "file": "uploads/site-branding/si-1fbc2d9e9f142d94e7fc0608642ed90d.png",
+            "mode": "mask"
+        },
+        "menu_subscriptions": {
+            "file": "uploads/site-branding/si-907128797a937b7338869b7f72e0abdf.png",
+            "mode": "mask"
+        },
+        "menu_adminpanel": {
+            "file": "uploads/site-branding/si-06d4f712070c8d71944d327a08c0add4.png",
+            "mode": "mask"
+        },
+        "menu_logout": {
+            "file": "uploads/site-branding/si-83254859fe7e1e67db0c3961f10c51a9.png",
+            "mode": "mask"
+        },
+        "home": {
+            "file": "uploads/site-branding/si-e5292dba9634cf7db4da24294aecb253.png",
+            "mode": "mask"
+        },
+        "profile": {
+            "file": "uploads/site-branding/si-1506a1799c38d2bcaef69e6643f0533a.png",
+            "mode": "mask"
+        }
+    }
+}

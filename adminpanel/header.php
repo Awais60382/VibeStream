@@ -82,7 +82,7 @@ if ($adminNotifUserId > 0 && isset($conn) && $conn instanceof mysqli) {
     try {
         vs_notifications_ensure_table($conn);
         $adminChannelUnread = vs_notifications_unread_count($conn, $adminNotifUserId);
-        $notifStmt = $conn->prepare('SELECT message, link, is_read, created_at FROM user_notifications WHERE user_id = ? ORDER BY id DESC LIMIT 8');
+        $notifStmt = $conn->prepare('SELECT message, link, is_read, created_at FROM user_notifications WHERE user_id = ? AND is_read = 0 ORDER BY id DESC LIMIT 8');
         $notifStmt->bind_param('i', $adminNotifUserId);
         $notifStmt->execute();
         $adminChannelNotifs = $notifStmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -371,6 +371,29 @@ vs_admin_log_page_view(
       apply(root.getAttribute('data-theme'), false);
     })();
   </script>
+  <style id="vs-admin-mockup">
+    /* Neon admin look: sidebar pills, brand card, round search, Create button */
+    html[data-theme="dark"] .admin-shell .admin-sidebar { background:linear-gradient(180deg,#0e0724,#070412)!important; }
+    .admin-shell .sidebar-nav .nav-link { display:flex; align-items:center; gap:14px; padding:11px 14px; font-size:15px; font-weight:500; border:1px solid transparent; }
+    .admin-shell .sidebar-nav .nav-link .nav-icon { flex:0 0 26px; width:26px; font-size:21px; text-align:center; }
+    .admin-shell .sidebar-nav .nav-link.active { background:linear-gradient(100deg,rgba(255,46,120,.3),rgba(150,0,236,.55))!important; border-color:rgba(255,70,140,.6); box-shadow:0 0 20px -4px rgba(190,40,255,.65); color:#fff; }
+    .admin-shell .sidebar-section-title { font-size:10.5px; letter-spacing:.14em; opacity:.55; }
+    .admin-shell .admin-sidebar > .sidebar-header,
+    .admin-shell .admin-sidebar > .vs-side-card,
+    .admin-shell .admin-sidebar > .sidebar-user,
+    .admin-shell .admin-sidebar > .sidebar-footer { flex:0 0 auto; }
+    .admin-shell .vs-side-card { margin:10px 14px 8px; padding:16px 12px; border:1px solid var(--vs-shell-line); border-radius:16px; text-align:center; background:radial-gradient(circle at 50% 0,rgba(168,85,247,.3),transparent 70%),var(--vs-shell-soft); overflow:hidden; }
+    .admin-shell .vs-side-card svg { width:38px; height:38px; margin-bottom:4px; }
+    .admin-shell .vs-side-card strong { display:block; font-size:16px; color:var(--vs-shell-text); }
+    .admin-shell .vs-side-card span { display:block; margin-top:2px; font-size:12px; color:var(--vs-shell-muted); }
+    .admin-shell .admin-navbar .search-input { height:46px; padding-left:48px; border-radius:999px; background-color:var(--vs-shell-soft); background-repeat:no-repeat; background-position:17px center; background-size:20px; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b9adcf' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E"); }
+    .admin-shell .vs-create { display:inline-flex; align-items:center; gap:8px; height:42px; padding:0 16px; border:1px solid var(--vs-shell-line); border-radius:12px; background:var(--vs-shell-soft); color:var(--vs-shell-text); font-size:14px; font-weight:700; text-decoration:none; white-space:nowrap; }
+    .admin-shell .vs-create:hover { border-color:#b36bff; color:var(--vs-shell-text); }
+    .admin-shell .admin-navbar .profile-button { padding:3px 8px 3px 3px; border-radius:999px; }
+    .admin-shell .admin-navbar .profile-button .avatar-sm { width:38px; height:38px; border-radius:50%; }
+    .admin-shell .admin-navbar .profile-name { display:none!important; }
+    @media (max-width:700px) { .admin-shell .vs-create span { display:none; } }
+  </style>
 </head>
 
 <body>
@@ -391,7 +414,7 @@ vs_admin_log_page_view(
       </div>
 
       <nav class="sidebar-nav">
-        <?php if ($vsAcsbReady) { vs_acsb_render_places('top', $vsCurrent); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_places('top', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
         <div class="sidebar-section-title">MAIN</div>
         <a class="nav-link<?php echo $vsCurrent === 'index.php' ? ' active' : ''; ?>" href="index.php"<?php echo $vsCurrent === 'index.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','dashboard'); ?><i class="bi bi-speedometer2" aria-hidden="true"></i><?php vs_si_close(); ?></span>
@@ -445,7 +468,7 @@ vs_admin_log_page_view(
         </a>
 <?php endif; ?>
 
-        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('main', $vsCurrent); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('main', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
         <div class="sidebar-section-title">MY WORK</div>
         <a class="nav-link<?php echo $vsCurrent === 'my-tasks.php' ? ' active' : ''; ?>" href="my-tasks.php"<?php echo $vsCurrent === 'my-tasks.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','mytasks'); ?><i class="bi bi-list-check" aria-hidden="true"></i><?php vs_si_close(); ?></span>
@@ -456,7 +479,7 @@ vs_admin_log_page_view(
           <span class="nav-text">My pay</span>
         </a>
 
-        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('mywork', $vsCurrent); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('mywork', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
         <div class="sidebar-section-title">USERS</div>
 <?php if ($vsCanOpenAdminRoute('Users.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'Users.php' ? ' active' : ''; ?>" href="Users.php"<?php echo $vsCurrent === 'Users.php' ? ' aria-current="page"' : ''; ?>>
@@ -500,7 +523,7 @@ vs_admin_log_page_view(
 <?php endif; ?>
 
 
-        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('users', $vsCurrent); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('users', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
         <div class="sidebar-section-title">SYSTEM</div>
         <a class="nav-link<?php echo $vsCurrent === 'profile.php' ? ' active' : ''; ?>" href="profile.php"<?php echo $vsCurrent === 'profile.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','profile'); ?><i class="bi bi-person-badge" aria-hidden="true"></i><?php vs_si_close(); ?></span>
@@ -566,17 +589,23 @@ vs_admin_log_page_view(
         </a>
 <?php endif; ?>
 
-        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('system', $vsCurrent); } ?>
-        <?php if ($vsAcsbReady) { vs_acsb_render_places('before_navigation', $vsCurrent); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('system', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_places('before_navigation', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
         <div class="sidebar-section-title">NAVIGATION</div>
         <a class="nav-link" href="../index.php">
           <span class="nav-icon"><?php vs_si_open('admin','mainsite'); ?><i class="bi bi-house" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Main Site</span>
         </a>
-        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('navigation', $vsCurrent); } ?>
-        <?php if ($vsAcsbReady) { vs_acsb_render_places('bottom', $vsCurrent); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_builtin('navigation', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
+        <?php if ($vsAcsbReady) { vs_acsb_render_places('bottom', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
       </nav>
 
+      <div class="vs-side-card">
+        <svg viewBox="0 0 24 24" fill="#f5b942" aria-hidden="true"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg>
+        <strong><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></strong>
+        <strong style="font-weight:500">Admin Panel</strong>
+        <span>Powering the next era of entertainment.</span>
+      </div>
       <div class="sidebar-user">
         <img class="avatar-img avatar-md sidebar-user-avatar" id="sidebarAvatar" src="<?php echo htmlspecialchars($adminAvatarPath); ?>" onerror="this.onerror=null;this.src='<?php echo htmlspecialchars($adminAvatarFallback, ENT_QUOTES); ?>';" alt="Admin Avatar">
         <span class="sidebar-user-copy">
@@ -655,6 +684,7 @@ try {
             </style>
             <?php endif; ?>
 
+            <a class="vs-create" href="../upload.php"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10 5-3v10l-5-3"/></svg><span>Create</span></a>
             <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme" title="Switch color theme">
               <i class="bi bi-moon-stars" data-theme-icon aria-hidden="true"></i>
             </button>
@@ -734,7 +764,7 @@ try {
                           'form' => false,
                       ];
                   }
-                  if ($brandingNotificationMessage !== '') {
+                  if ($brandingNotificationMessage !== '' && !$brandingNotificationRead) {
                       $bName = '';
                       if (preg_match('/ by ([^.]+?)\.?$/u', $brandingNotificationMessage, $bm)) {
                           $bName = trim($bm[1]);

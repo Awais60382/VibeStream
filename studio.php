@@ -9,6 +9,18 @@
  */
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/premium-perks.php';
+if (is_file(__DIR__ . '/avatar.php')) {
+    require_once __DIR__ . '/avatar.php';
+}
+if (is_file(__DIR__ . '/creator-ui.php')) {
+    require_once __DIR__ . '/creator-ui.php';
+}
+if (is_file(__DIR__ . '/creator-rank.php')) {
+    require_once __DIR__ . '/creator-rank.php';
+}
+if (is_file(__DIR__ . '/creator-confetti.php')) {
+    require_once __DIR__ . '/creator-confetti.php';
+}
 include __DIR__ . '/connection.php';
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -19,6 +31,11 @@ if ($username === '') {
     header('Location: login.php?next=' . rawurlencode('studio.php'));
     exit;
 }
+
+// Where the buttons on this page go. Change these if your pages are named differently.
+$profileUrl = 'profile.php?user=' . rawurlencode($username);
+$subscribersUrl = 'subscribers.php';
+$settingsUrl = 'settings.php';
 
 $h = static function ($value) { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); };
 $q = static function (string $name): string { return '`' . str_replace('`', '``', $name) . '`'; };
@@ -31,18 +48,31 @@ if (!in_array($sort, ['newest', 'views', 'likes', 'comments'], true)) {
     $sort = 'newest';
 }
 
+$span = (int)($_GET['range'] ?? 30);
+if (!in_array($span, [7, 30, 90], true)) {
+    $span = 30;
+}
 $error = '';
 $videos = [];
 $totals = ['views' => 0, 'likes' => 0, 'comments' => 0, 'videos' => 0, 'shorts' => 0, 'subscribers' => null, 'views_30d' => null];
 $creatorRanking = ['rank' => null, 'total_creators' => 0];
+$rankInfo = ['rank' => null, 'total' => 0, 'views' => 0, 'change' => null, 'became_first' => false];
+$rankHistory = [];
+$isVerified = false;
 $days = [];
 $viewsByDay = [];
-for ($offset = 29; $offset >= 0; $offset--) {
+for ($offset = $span - 1; $offset >= 0; $offset--) {
     $day = date('Y-m-d', strtotime('-' . $offset . ' days'));
     $days[] = $day;
     $viewsByDay[$day] = 0;
 }
 $viewsAvailable = false;
+$likesByDay = array_fill_keys($days, 0);
+$commentsByDay = array_fill_keys($days, 0);
+$subsByDay = array_fill_keys($days, 0);
+$likesAvailable = false;
+$commentsAvailable = false;
+$subsAvailable = false;
 
 try {
     $tableExists = static function (string $table) use ($conn): bool {
@@ -75,6 +105,7 @@ try {
         isset($cols['views']) ? 'COALESCE(' . $q($cols['views']) . ', 0) AS views' : '0 AS views',
         isset($cols['likes']) ? 'COALESCE(' . $q($cols['likes']) . ', 0) AS likes' : '0 AS likes',
         isset($cols['created_at']) ? $q($cols['created_at']) . ' AS created_at' : 'NULL AS created_at',
+        isset($cols['duration']) ? $q($cols['duration']) . ' AS duration' : 'NULL AS duration',
     ];
     $thumbnailColumns = [];
     foreach (['thumbnail', 'thumbnail_url', 'thumb', 'thumb_url', 'image', 'image_url', 'image_path', 'poster', 'cover', 'cover_image', 'preview'] as $candidate) {
@@ -148,8 +179,15 @@ try {
     }
     unset($v);
 
-    // Rank creators by total views, using the same view field as the cards above.
-    if (isset($cols['views'])) {
+    // Rank creators by total views (shared helper: one #1 only, daily snapshot for the up/down arrow)
+    if (function_exists('vs_creator_rank_info')) {
+        $rankInfo = vs_creator_rank_info($conn, $username);
+        $creatorRanking['rank'] = $rankInfo['rank'];
+        $creatorRanking['total_creators'] = $rankInfo['total'];
+        if (function_exists('vs_creator_rank_history')) {
+            $rankHistory = vs_creator_rank_history($conn, $username, $span);
+        }
+    } elseif (isset($cols['views'])) {
         try {
             $rankingSql = 'SELECT LOWER(TRIM(CAST(' . $q($owner) . ' AS CHAR))) AS creator_key, '
                 . 'COALESCE(SUM(COALESCE(' . $q($cols['views']) . ', 0)), 0) AS total_views '
@@ -177,6 +215,10 @@ try {
         }
     }
 
+    if (function_exists('vs_creator_is_verified')) {
+        $isVerified = vs_creator_is_verified($conn, $username);
+    }
+
     // Subscribers
     if ($tableExists('user_subscriptions')) {
         $sc = $columnsOf('user_subscriptions');
@@ -194,7 +236,7 @@ try {
         $vstmt = $conn->prepare(
             "SELECT DATE(`viewed_at`) AS d, COUNT(*) AS total FROM `video_view_events`
              WHERE LOWER(`creator`) = LOWER(?) AND `content_type` IN ('video', 'short')
-               AND `viewed_at` >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) GROUP BY DATE(`viewed_at`)"
+               AND `viewed_at` >= DATE_SUB(CURDATE(), INTERVAL " . ($span - 1) . " DAY) GROUP BY DATE(`viewed_at`)"
         );
         $vstmt->bind_param('s', $username);
         $vstmt->execute();
@@ -206,6 +248,62 @@ try {
         $vstmt->close();
         $viewsAvailable = true;
         $totals['views_30d'] = array_sum($viewsByDay);
+    }
+
+    // Daily likes / comments / new subscribers (used for the trend arrows and mini charts on the cards)
+    $collectDaily = static function (string $sql, array &$target) use ($conn, $username): bool {
+        try {
+            $dstmt = $conn->prepare($sql);
+            $dstmt->bind_param('s', $username);
+            $dstmt->execute();
+            foreach ($dstmt->get_result()->fetch_all(MYSQLI_ASSOC) as $dr) {
+                $dayKey = (string)$dr['d'];
+                if (array_key_exists($dayKey, $target)) {
+                    $target[$dayKey] = (int)$dr['total'];
+                }
+            }
+            $dstmt->close();
+            return true;
+        } catch (Throwable $dailyError) {
+            error_log('Creator Studio daily series could not be loaded: ' . $dailyError->getMessage());
+            return false;
+        }
+    };
+    if ($tableExists('comments')) {
+        $cc2 = $columnsOf('comments');
+        if (isset($cc2['video_id'], $cc2['created_at'])) {
+            $commentsAvailable = $collectDaily(
+                'SELECT DATE(c.' . $q($cc2['created_at']) . ') AS d, COUNT(*) AS total
+                 FROM `comments` c INNER JOIN `videos` v ON CAST(v.' . $q($cols['id']) . ' AS CHAR) = CAST(c.' . $q($cc2['video_id']) . ' AS CHAR)
+                 WHERE LOWER(v.' . $q($owner) . ') = LOWER(?) AND c.' . $q($cc2['created_at']) . ' >= DATE_SUB(CURDATE(), INTERVAL ' . ($span - 1) . ' DAY)
+                 GROUP BY DATE(c.' . $q($cc2['created_at']) . ')',
+                $commentsByDay
+            );
+        }
+    }
+    if ($tableExists('video_likes')) {
+        $lc = $columnsOf('video_likes');
+        if (isset($lc['video_id'], $lc['created_at'])) {
+            $likesAvailable = $collectDaily(
+                'SELECT DATE(l.' . $q($lc['created_at']) . ') AS d, COUNT(*) AS total
+                 FROM `video_likes` l INNER JOIN `videos` v ON CAST(v.' . $q($cols['id']) . ' AS CHAR) = CAST(l.' . $q($lc['video_id']) . ' AS CHAR)
+                 WHERE LOWER(v.' . $q($owner) . ') = LOWER(?) AND l.' . $q($lc['created_at']) . ' >= DATE_SUB(CURDATE(), INTERVAL ' . ($span - 1) . ' DAY)
+                 GROUP BY DATE(l.' . $q($lc['created_at']) . ')',
+                $likesByDay
+            );
+        }
+    }
+    if ($tableExists('user_subscriptions')) {
+        $sc2 = $columnsOf('user_subscriptions');
+        if (isset($sc2['channel_username'], $sc2['created_at'])) {
+            $subsAvailable = $collectDaily(
+                'SELECT DATE(' . $q($sc2['created_at']) . ') AS d, COUNT(*) AS total
+                 FROM `user_subscriptions`
+                 WHERE LOWER(' . $q($sc2['channel_username']) . ') = LOWER(?) AND ' . $q($sc2['created_at']) . ' >= DATE_SUB(CURDATE(), INTERVAL ' . ($span - 1) . ' DAY)
+                 GROUP BY DATE(' . $q($sc2['created_at']) . ')',
+                $subsByDay
+            );
+        }
     }
 
     // Sort the table
@@ -290,10 +388,70 @@ $compact = static function ($value): string {
     if ($number >= 1000) { return rtrim(rtrim(number_format($number / 1000, 1), '0'), '.') . 'K'; }
     return number_format($number);
 };
+$trendPct = static function (array $series, bool $available): ?float {
+    if (!$available) { return null; }
+    $values = array_values($series);
+    $half = intdiv(count($values), 2);
+    if ($half < 1) { return null; }
+    $now = array_sum(array_slice($values, -$half));
+    $before = array_sum(array_slice($values, -2 * $half, $half));
+    if ($before < 1) { return null; }
+    return ($now - $before) / $before * 100;
+};
+// Smooth mini line chart (viewBox 0 0 120 48) for the stat cards
+$sparkSvg = static function (array $series, string $gradId): string {
+    $values = array_map('intval', array_values($series));
+    $count = count($values);
+    $max = $values ? max($values) : 0;
+    $pts = [];
+    foreach ($values as $i => $val) {
+        $x = $count > 1 ? $i / ($count - 1) * 120 : 0;
+        $y = $max > 0 ? 42 - ($val / $max) * 34 : 42;
+        $pts[] = [round($x, 1), round($y, 1)];
+    }
+    if (count($pts) < 2) { return ''; }
+    $d = 'M' . $pts[0][0] . ',' . $pts[0][1];
+    $last = count($pts) - 1;
+    for ($i = 0; $i < $last; $i++) {
+        $p0 = $pts[max(0, $i - 1)]; $p1 = $pts[$i]; $p2 = $pts[$i + 1]; $p3 = $pts[min($last, $i + 2)];
+        $lo = min($p1[1], $p2[1]); $hi = max($p1[1], $p2[1]);
+        $c1y = min($hi, max($lo, $p1[1] + ($p2[1] - $p0[1]) / 6));
+        $c2y = min($hi, max($lo, $p2[1] - ($p3[1] - $p1[1]) / 6));
+        $d .= ' C' . round($p1[0] + ($p2[0] - $p0[0]) / 6, 1) . ',' . round($c1y, 1)
+            . ' ' . round($p2[0] - ($p3[0] - $p1[0]) / 6, 1) . ',' . round($c2y, 1)
+            . ' ' . $p2[0] . ',' . $p2[1];
+    }
+    return '<svg class="st-kpi-spark" viewBox="0 0 120 48" preserveAspectRatio="none" aria-hidden="true">'
+        . '<defs><linearGradient id="' . $gradId . '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".38"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>'
+        . '<path d="' . $d . ' L120,48 L0,48 Z" fill="url(#' . $gradId . ')"/>'
+        . '<path d="' . $d . '" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
+};
+$durationLabel = static function ($value): string {
+    $value = trim((string)$value);
+    if ($value === '') { return ''; }
+    if (ctype_digit($value)) {
+        $secs = (int)$value;
+        if ($secs <= 0) { return ''; }
+        return $secs >= 3600
+            ? sprintf('%d:%02d:%02d', intdiv($secs, 3600), intdiv($secs % 3600, 60), $secs % 60)
+            : sprintf('%d:%02d', intdiv($secs, 60), $secs % 60);
+    }
+    return preg_match('/^\d{1,2}(:\d{2}){1,2}$/', $value) ? $value : '';
+};
+$recentVideos = $videos;
+usort($recentVideos, static function ($a, $b) {
+    return strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? ''));
+});
+$recentVideos = array_slice($recentVideos, 0, 3);
+$rankNow = $creatorRanking['rank'];
+$rankTotal = (int)$creatorRanking['total_creators'];
+$isNumberOne = $rankNow === 1 && $totals['views'] > 0;
+$topPercent = ($rankNow !== null && $rankTotal > 0) ? max(1, (int)ceil($rankNow / $rankTotal * 100)) : null;
 $lastSeven = array_slice(array_values($viewsByDay), -7);
 $maxSeven = max(1, $lastSeven ? max($lastSeven) : 1);
-$previousHalf = array_sum(array_slice(array_values($viewsByDay), 0, 15));
-$currentHalf = array_sum(array_slice(array_values($viewsByDay), 15));
+$halfSpan = max(1, intdiv($span, 2));
+$currentHalf = array_sum(array_slice(array_values($viewsByDay), -$halfSpan));
+$previousHalf = array_sum(array_slice(array_values($viewsByDay), -2 * $halfSpan, $halfSpan));
 $viewTrend = $viewsAvailable && $previousHalf >= 10
     ? (($currentHalf - $previousHalf) / $previousHalf) * 100
     : null;
@@ -312,6 +470,16 @@ $icons = [
     'trend-up' => '<path d="M4 16l6-6 4 4 6-8"/><path d="M14 6h6v6"/>',
     'trend-down' => '<path d="M4 8l6 6 4-4 6 8"/><path d="M14 18h6v-6"/>',
     'star' => '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3z"/>',
+    'heart' => '<path d="M12 21s-8-5.2-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.8-8 11-8 11z"/>',
+    'upload' => '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
+    'settings' => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    'crown' => '<path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5L3 8z"/>',
+    'bolt' => '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+    'check' => '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    'sparkle' => '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+    'chevron' => '<path d="M6 9l6 6 6-6"/>',
+    'up' => '<path d="M12 19V5M5 12l7-7 7 7"/>',
+    'down' => '<path d="M12 5v14M19 12l-7 7-7-7"/>',
 ];
 $ic = static function (string $name) use ($icons): string {
     if (!isset($icons[$name])) { return ''; }
@@ -701,7 +869,135 @@ html[data-theme="light"] .st-chart-footnote{color:#656079}
 .st-bars rect:hover{fill:#ff2e93}
 .st-bars text{fill:var(--muted,#9a9a9a);font-size:10px}
 .st-tip{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+/* ===== Creator Dashboard look (matches the mockup) ===== */
+.st-hero-mark{flex:0 0 64px;width:64px;height:64px;border:0;border-radius:0;background:none;box-shadow:none;color:#a855f7;font-size:58px;filter:drop-shadow(0 0 14px rgba(168,85,247,.75))}
+.st-hero-mark .st-icon{fill:currentColor}
+.st-hero-art{position:absolute;right:230px;top:50%;height:118px;width:auto;transform:translateY(-50%);opacity:.95;pointer-events:none}
+@media(max-width:1000px){.st-hero-art{display:none}}
+.ca-card.st-kpi{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:14px;min-height:124px;padding:16px 18px;color:var(--accent)}
+.ca-card.st-kpi::before{display:none}
+.ca-card.st-kpi .st-kpi-icon{display:grid;place-items:center;width:52px;height:52px;color:var(--accent);font-size:40px;filter:drop-shadow(0 0 10px color-mix(in srgb,var(--accent) 70%,transparent))}
+.st-kpi-body{position:relative;z-index:1;min-width:0}
+.st-kpi-trend{display:inline-flex;align-items:center;gap:5px;margin-top:6px;font-size:13px;font-weight:700}
+.st-kpi-trend.is-up{color:#34d399}
+.st-kpi-trend.is-down{color:#fb7185}
+.st-kpi-trend.is-flat{color:#9a96b5;font-weight:600}
+.st-kpi-spark{position:absolute;right:0;bottom:0;width:50%;height:62%;color:var(--accent);pointer-events:none}
+html:not([data-theme="light"]) body .ca-page .ca-card.st-kpi{background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 28%,#0b0a24),color-mix(in srgb,var(--accent) 7%,#0b0a24));border-color:color-mix(in srgb,var(--accent) 50%,transparent)}
+html[data-theme="light"] body .ca-page .ca-card.st-kpi{background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 14%,#fff),#fff)}
+.ca-panel h2{display:flex;align-items:center;gap:10px}
+.ca-panel h2 .st-icon{color:#a855f7}
+.ca-panel h2 .st-bolt .st-icon{color:#f5b942}
+.ca-view-all{display:inline-flex;align-items:center;gap:6px;color:#b06bff;font-size:14px;font-weight:700;text-decoration:none}
+.ca-view-all:hover{color:#d2a8ff}
+.ca-panel.st-profile{display:flex;flex-direction:column;padding:0;overflow:hidden}
+.st-profile-top{display:flex;align-items:center;gap:14px;padding:18px 18px 14px}
+.st-avatar{flex:0 0 72px;width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid #8b5cf6;background:#26134d;box-shadow:0 0 18px rgba(139,92,246,.6)}
+.st-avatar-fallback{display:grid;place-items:center;color:#fff;font-size:30px;font-weight:800}
+.st-profile-id{min-width:0;flex:1}
+.st-profile-name{display:block;overflow:hidden;color:#fff;font-size:19px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}
+.st-profile-role{display:block;margin-top:3px;color:#a8a2c2;font-size:13px}
+.st-profile-btn{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;padding:9px 13px;border:1px solid #8b5cf6;border-radius:10px;color:#c9aaff;font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap}
+.st-profile-btn:hover{background:rgba(139,92,246,.16);color:#fff}
+.st-profile-stats{display:grid;grid-template-columns:1fr 1fr;gap:0;padding:4px 18px 18px}
+.st-profile-stats>div{min-width:0}
+.st-profile-stats>div+div{padding-left:16px;border-left:1px solid rgba(139,92,246,.28)}
+.st-pstat-label{display:block;color:#f4c94f;font-size:12px;font-weight:600}
+.st-profile-stats>div+div .st-pstat-label{color:#b9b3d2}
+.st-pstat-value{display:flex;align-items:center;gap:8px;margin-top:6px;color:#fff;font-size:26px;font-weight:850;line-height:1.1}
+.st-pstat-value .st-icon{font-size:24px}
+.st-gold{color:#f4c94f;display:inline-flex}
+.st-pstat-note{display:block;margin-top:4px;color:#9a96b5;font-size:11px}
+.st-rank-banner{display:flex;align-items:center;gap:12px;margin-top:auto;padding:15px 18px;background:linear-gradient(100deg,#7c1d6f,#b02a8d 55%,#5b21b6);color:#fff}
+.st-rank-banner.is-champion{background:linear-gradient(100deg,#b45309,#f59e0b 55%,#c026d3)}
+.st-rank-star{display:inline-flex;font-size:28px;color:#fcd34d}
+.st-rank-star .st-icon{fill:currentColor}
+.st-rank-text{flex:1;min-width:0}
+.st-rank-text strong{display:block;font-size:15px;font-weight:800}
+.st-rank-text span{display:block;margin-top:2px;font-size:12px;opacity:.9}
+.st-rank-trend{display:inline-flex;font-size:30px;color:#fff;opacity:.9}
+.st-celebrate{flex:0 0 auto;width:44px;height:44px;border:1px solid rgba(255,255,255,.55);border-radius:50%;background:rgba(255,255,255,.18);font-size:22px;line-height:1;cursor:pointer;transition:transform .15s ease,background .15s ease}
+.st-celebrate:hover{background:rgba(255,255,255,.3);transform:scale(1.1) rotate(-8deg)}
+.st-recent-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
+.st-recent-card{display:block;min-width:0;color:inherit;text-decoration:none}
+.st-recent-thumb{position:relative;display:block;aspect-ratio:16/9;overflow:hidden;border:1px solid rgba(155,99,255,.28);border-radius:12px;background:linear-gradient(140deg,#39146a,#15142e);transition:box-shadow .15s ease,transform .15s ease}
+.st-recent-card:hover .st-recent-thumb{box-shadow:0 0 20px rgba(139,92,246,.45);transform:translateY(-2px)}
+.st-recent-thumb img{display:block;width:100%;height:100%;object-fit:cover}
+.st-recent-play{position:absolute;left:50%;top:50%;display:grid;place-items:center;width:38px;height:38px;transform:translate(-50%,-50%);border-radius:50%;background:rgba(10,8,30,.72);color:#fff;font-size:18px}
+.st-recent-play .st-icon{fill:currentColor;margin-left:2px}
+.st-duration{position:absolute;right:8px;bottom:8px;padding:2px 7px;border-radius:6px;background:rgba(8,7,18,.85);color:#fff;font-size:12px;font-weight:700}
+.st-recent-title{display:block;margin-top:10px;overflow:hidden;color:#f2efff;font-size:15px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.st-recent-card:hover .st-recent-title{color:#c78aff}
+.st-recent-meta{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:7px;color:#b7b1cf;font-size:13px}
+.st-recent-meta>span{display:inline-flex;align-items:center;gap:5px}
+.st-recent-meta .is-heart .st-icon{color:#ec4899;fill:currentColor}
+.st-recent-meta .is-comment .st-icon{color:#60a5fa}
+.st-actions-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:10px}
+.st-action{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:106px;padding:12px 6px;border:1px solid color-mix(in srgb,var(--qa) 38%,transparent);border-radius:14px;background:color-mix(in srgb,var(--qa) 11%,#0d0b20);color:#e9e4fb;font-size:13px;font-weight:600;line-height:1.25;text-align:center;text-decoration:none;transition:transform .15s ease,box-shadow .15s ease}
+.st-action .st-icon{font-size:30px;color:var(--qa)}
+.st-action:hover{transform:translateY(-2px);box-shadow:0 10px 22px -14px var(--qa);color:#fff}
+html:not([data-theme="light"]) body .ca-page .ca-panel.st-profile{background:radial-gradient(circle at 85% 20%,rgba(139,92,246,.14),transparent 45%),linear-gradient(155deg,#19172b,#0d0c1c)}
+html[data-theme="light"] .st-profile-name,html[data-theme="light"] .st-pstat-value,html[data-theme="light"] .st-recent-title{color:#211737}
+html[data-theme="light"] .st-profile-role,html[data-theme="light"] .st-recent-meta,html[data-theme="light"] .st-pstat-note,html[data-theme="light"] .st-profile-stats>div+div .st-pstat-label{color:#656079}
+html[data-theme="light"] .st-pstat-label{color:#b7791f}
+html[data-theme="light"] .st-profile-btn{color:#6d28d9}
+html[data-theme="light"] .st-action{background:color-mix(in srgb,var(--qa) 9%,#fff);color:#211737}
+html[data-theme="light"] .ca-view-all{color:#7c3aed}
+@media(max-width:600px){.ca-card.st-kpi{min-height:108px;padding:12px}.ca-card.st-kpi .st-kpi-icon{width:38px;height:38px;font-size:28px}.st-profile-top{flex-wrap:wrap}.st-profile-btn{margin-left:86px}.st-pstat-value{font-size:22px}}
+@media(prefers-reduced-motion:reduce){.st-celebrate,.st-action,.st-recent-thumb{transition:none!important}}
+
+.st-period{margin:0}
+.st-period select{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:0 14px 0 0;outline:none}
+.st-period select option{color:#211737;background:#fff}
+.st-period:focus-within{border-color:#a855f7;box-shadow:0 0 0 2px rgba(168,85,247,.3)}
+.st-profile-top{position:relative}
+.st-verified{position:absolute;left:72px;top:70px;display:grid;place-items:center;width:22px;height:22px;border:2px solid #0d0c1c;border-radius:50%;background:#3b82f6;color:#fff;font-size:13px}
+.st-verified .st-icon{stroke-width:3}
+.st-rank-change{display:inline-flex;align-items:center;gap:2px;font-size:14px;font-weight:800}
+.st-rank-change.is-up{color:#34d399}
+.st-rank-change.is-down{color:#fb7185}
+
+/* ---- rank history chart ---- */
+.vs-rank-chart{display:block;width:100%;height:auto;color:#a855f7;filter:drop-shadow(0 0 8px rgba(168,85,247,.45))}
+.vs-rank-note{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;margin-top:6px;color:#9a96b5;font-size:11px}
+html[data-theme="light"] .vs-rank-note{color:#656079}
+
+.st-rank-history{padding:0 18px 16px}
+/* ---- mobile / tablet polish ---- */
+.st-profile-top{flex-wrap:wrap}
+.st-profile-id{flex:1 1 90px}
+.st-profile-btn{margin-left:auto}
+.st-dashboard-grid>*,.st-bottom-grid>*{min-width:0}
+@media(max-width:900px){
+  .st-hero-actions{flex-wrap:wrap}
+  .st-chart-foot{flex-wrap:wrap}
+  .ca-panel-head{gap:8px}
+}
+@media(max-width:600px){
+  .st-kpi-spark{width:40%;height:42%;opacity:.7}
+  .ca-card.st-kpi .ca-value{font-size:22px}
+  .ca-card.st-kpi .ca-label{font-size:12px}
+  .st-profile-btn{margin-left:86px}
+  .st-pstat-value{font-size:21px}
+  .st-profile-stats>div+div{padding-left:12px}
+  .st-recent-grid{grid-template-columns:1fr}
+  .st-recent-title{font-size:14px}
+  .st-actions-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .st-period{font-size:12px}
+  .st-promo-link{margin-left:auto}
+  .st-tabs{overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}
+  .st-tab{white-space:nowrap}
+}
+@media(max-width:380px){
+  .ca-grid{grid-template-columns:1fr}
+  .st-hero h1{font-size:23px}
+}
+@media(hover:none){.ca-card:hover,.st-action:hover,.st-recent-card:hover .st-recent-thumb{transform:none}}
+
 CSS;
+if (function_exists('vs_creator_ui_css')) {
+    $extraCss .= vs_creator_ui_css();
+}
 vs_page_start('Creator Studio', 'studio', $extraCss);
 ?>
 <div class="ca-page">
@@ -709,10 +1005,17 @@ vs_page_start('Creator Studio', 'studio', $extraCss);
         <div class="st-hero-main">
             <span class="st-hero-mark" aria-hidden="true"><?= $ic('play') ?></span>
             <div class="st-hero-copy">
-                <h1>Creator Studio</h1>
-                <p>Welcome back, <strong><?= $h($username) ?></strong>! Keep creating great content.</p>
+                <h1>Welcome back, <?= $h($username) ?>!</h1>
+                <p>Keep creating amazing content on VibeStream <span aria-hidden="true">&#10024;</span></p>
             </div>
         </div>
+        <svg class="st-hero-art" viewBox="0 0 300 130" aria-hidden="true">
+            <defs><linearGradient id="stArtG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#4c1d95"/></linearGradient></defs>
+            <g transform="rotate(-8 190 70)"><rect x="140" y="26" width="104" height="76" rx="14" fill="url(#stArtG)" stroke="#d8b4fe" stroke-opacity=".6"/><path d="M178 50l30 14-30 14z" fill="#fff"/></g>
+            <polygon points="262,30 276,44 262,58 248,44" fill="#a855f7" opacity=".8"/>
+            <polygon points="118,36 126,46 118,56 110,46" fill="#7c3aed" opacity=".7"/>
+            <polygon points="280,92 288,102 280,112 272,102" fill="#c084fc" opacity=".7"/>
+        </svg>
         <div class="st-hero-actions">
             <?php if ($isPremium): ?>
                 <span class="st-hero-badge"><?= $ic('star') ?> Premium creator</span>
@@ -729,22 +1032,26 @@ vs_page_start('Creator Studio', 'studio', $extraCss);
         <section class="ca-grid" aria-label="Channel performance totals">
             <?php
             $kpis = [
-                ['Total views', $totals['views'], '#8b35ff', $viewsAvailable ? $compact($totals['views_30d']) . ' in the last 30 days' : 'All time'],
-                ['Total likes', $totals['likes'], '#ed38a8', 'Across your videos and Shorts'],
-                ['Total comments', $totals['comments'], '#338dff', 'Across your videos and Shorts'],
-                ['Subscribers', $totals['subscribers'], '#10c981', 'People following your channel'],
+                ['Total Views', $totals['views'], '#8b5cf6', 'eye', $viewsByDay, $viewsAvailable],
+                ['Total Likes', $totals['likes'], '#ec4899', 'heart', $likesByDay, $likesAvailable],
+                ['Total Comments', $totals['comments'], '#3b82f6', 'comment', $commentsByDay, $commentsAvailable],
+                ['Subscribers', $totals['subscribers'], '#10b981', 'users', $subsByDay, $subsAvailable],
             ];
-            foreach ($kpis as $index => [$label, $value, $color, $note]):
+            foreach ($kpis as $index => [$label, $value, $color, $icon, $series, $available]):
+                $trend = $trendPct($series, $available);
             ?>
-                <article class="ca-card" style="--accent:<?= $h($color) ?>">
-                    <div class="ca-label"><i></i><?= $h($label) ?></div>
-                    <div class="ca-value"><?= $value === null ? '—' : $h($compact($value)) ?></div>
-                    <div class="st-kpi-note"><?= $h($note) ?></div>
-                    <?php if ($index === 0 && $viewsAvailable): ?>
-                        <div class="st-spark" aria-hidden="true">
-                            <?php foreach ($lastSeven as $value): ?><i style="height:<?= max(8, (int)round($value / $maxSeven * 100)) ?>%"></i><?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
+                <article class="ca-card st-kpi" style="--accent:<?= $h($color) ?>">
+                    <span class="st-kpi-icon" aria-hidden="true"><?= $ic($icon) ?></span>
+                    <div class="st-kpi-body">
+                        <div class="ca-label"><?= $h($label) ?></div>
+                        <div class="ca-value"<?= $value === null ? '' : ' title="' . $h(number_format((int)$value)) . '"' ?>><?= $value === null ? '—' : $h($compact($value)) ?></div>
+                        <?php if ($trend !== null): ?>
+                            <div class="st-kpi-trend <?= $trend >= 0 ? 'is-up' : 'is-down' ?>" title="Last <?= (int)$halfSpan ?> days vs the <?= (int)$halfSpan ?> days before"><?= $ic($trend >= 0 ? 'up' : 'down') ?> <?= $trend >= 0 ? '+' : '&minus;' ?><?= number_format(abs($trend), 1) ?>%</div>
+                        <?php else: ?>
+                            <div class="st-kpi-trend is-flat">No trend yet</div>
+                        <?php endif; ?>
+                    </div>
+                    <?= $available ? $sparkSvg($series, 'stSpark' . $index) : '' ?>
                 </article>
             <?php endforeach; ?>
         </section>
@@ -752,20 +1059,29 @@ vs_page_start('Creator Studio', 'studio', $extraCss);
         <div class="st-dashboard-grid">
             <section class="ca-panel">
                 <div class="ca-panel-head">
-                    <h2><span class="st-section-icon"><?= $ic('analytics') ?></span> Channel Analytics</h2>
-                    <span class="st-period"><?= $ic('calendar') ?> Last 30 Days</span>
+                    <h2><span class="st-section-icon"><?= $ic('analytics') ?></span> Your Channel Overview</h2>
+                    <form class="st-period" method="get" action="studio.php">
+                        <?= $ic('calendar') ?>
+                        <?php if ($sort !== 'newest'): ?><input type="hidden" name="sort" value="<?= $h($sort) ?>"><?php endif; ?>
+                        <select name="range" aria-label="Date range" onchange="this.form.submit()">
+                            <?php foreach ([7 => 'Last 7 Days', 30 => 'Last 30 Days', 90 => 'Last 90 Days'] as $rangeValue => $rangeLabel): ?>
+                                <option value="<?= $rangeValue ?>"<?= $span === $rangeValue ? ' selected' : '' ?>><?= $h($rangeLabel) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <noscript><button type="submit">Go</button></noscript>
+                    </form>
                 </div>
                 <?php if (!$viewsAvailable): ?>
                     <p class="ca-empty">Daily views will appear here after your videos get their first views.</p>
                 <?php else: ?>
-                    <div class="st-chart-summary"><strong><?= $h($compact($totals['views_30d'])) ?></strong><span>views in the last 30 days</span></div>
+                    <div class="st-chart-summary"><strong><?= $h($compact($totals['views_30d'])) ?></strong><span>views in the last <?= (int)$span ?> days</span></div>
                     <div class="st-chart-box">
                         <div class="st-chart-tooltip" id="stChartTooltip" role="tooltip" aria-hidden="true" hidden>
                             <span data-chart-date></span>
                             <strong><span data-chart-views></span> views</strong>
                         </div>
-                        <svg class="st-chart" viewBox="0 0 <?= $chartWidth ?> <?= $chartHeight ?>" data-chart-points="<?= $h($chartInteractionJson) ?>" data-chart-left="<?= $chartLeft ?>" data-chart-right="<?= $chartWidth - $chartRight ?>" role="img" aria-label="Daily views for the last 30 days. Move across the chart or use the arrow keys to inspect each day." aria-describedby="stChartTooltip" tabindex="0">
-                            <defs><linearGradient id="stChartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a42dff" stop-opacity=".32"/><stop offset="1" stop-color="#a42dff" stop-opacity="0"/></linearGradient></defs>
+                        <svg class="st-chart" viewBox="0 0 <?= $chartWidth ?> <?= $chartHeight ?>" data-chart-points="<?= $h($chartInteractionJson) ?>" data-chart-left="<?= $chartLeft ?>" data-chart-right="<?= $chartWidth - $chartRight ?>" role="img" aria-label="Daily views for the last <?= (int)$span ?> days. Move across the chart or use the arrow keys to inspect each day." aria-describedby="stChartTooltip" tabindex="0">
+                            <defs><linearGradient id="stLineG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#d946ef"/></linearGradient><linearGradient id="stChartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a42dff" stop-opacity=".32"/><stop offset="1" stop-color="#a42dff" stop-opacity="0"/></linearGradient></defs>
                             <?php for ($step = 0; $step <= 4; $step++):
                                 $axisValue = $chartScale * (1 - $step / 4);
                                 $y = $chartY($axisValue);
@@ -774,8 +1090,9 @@ vs_page_start('Creator Studio', 'studio', $extraCss);
                                 <text x="<?= $chartLeft - 9 ?>" y="<?= round($y + 4, 1) ?>" text-anchor="end"><?= $h($compact($axisValue)) ?></text>
                             <?php endfor; ?>
                             <?php foreach ($days as $index => $day):
-                                if ($index % 5 !== 0 && $index !== count($days) - 1) { continue; }
-                                if ($index !== count($days) - 1 && count($days) - 1 - $index < 4) { continue; }
+                                $labelStep = $span <= 7 ? 1 : ($span <= 30 ? 5 : 15);
+                                if ($index % $labelStep !== 0 && $index !== count($days) - 1) { continue; }
+                                if ($index !== count($days) - 1 && count($days) - 1 - $index < $labelStep - 1) { continue; }
                                 $x = $chartPoints[$index][0];
                                 $anchor = $index === 0 ? 'start' : ($index === count($days) - 1 ? 'end' : 'middle');
                             ?>
@@ -783,7 +1100,7 @@ vs_page_start('Creator Studio', 'studio', $extraCss);
                                 <text x="<?= $x ?>" y="<?= $chartHeight - 8 ?>" text-anchor="<?= $anchor ?>"><?= $h(date('M j', strtotime($day))) ?></text>
                             <?php endforeach; ?>
                             <path class="st-area" d="<?= $h($chartArea) ?>"/>
-                            <path class="st-line" d="<?= $h($chartLine) ?>"/>
+                            <path class="st-line" pathLength="1" d="<?= $h($chartLine) ?>"/>
                             <?php [$latestX, $latestY] = $chartPoints[count($chartPoints) - 1]; ?>
                             <line class="st-latest-line" x1="<?= $latestX ?>" x2="<?= $latestX ?>" y1="<?= $chartTop ?>" y2="<?= $chartTop + $chartInnerHeight ?>"/>
                             <circle class="st-latest-dot" cx="<?= $latestX ?>" cy="<?= $latestY ?>" r="5">
@@ -793,79 +1110,116 @@ vs_page_start('Creator Studio', 'studio', $extraCss);
                     </div>
                     <div class="st-chart-foot"><span class="st-chart-legend"><i></i> Daily views</span>
                         <?php if ($viewTrend !== null): ?>
-                            <span class="st-trend <?= $viewTrend >= 0 ? 'is-up' : 'is-down' ?>"><?= $ic($viewTrend >= 0 ? 'trend-up' : 'trend-down') ?> <?= $viewTrend >= 0 ? '+' : '' ?><?= number_format($viewTrend, 1) ?>% vs previous 15 days</span>
+                            <span class="st-trend <?= $viewTrend >= 0 ? 'is-up' : 'is-down' ?>"><?= $ic($viewTrend >= 0 ? 'trend-up' : 'trend-down') ?> <?= $viewTrend >= 0 ? '+' : '' ?><?= number_format($viewTrend, 1) ?>% vs previous <?= (int)$halfSpan ?> days</span>
                         <?php elseif ($newActivity): ?>
                             <span class="st-trend is-up"><?= $ic('trend-up') ?> New activity · low baseline</span>
                         <?php else: ?>
-                            <span class="st-chart-footnote">Compared with the previous 15 days</span>
+                            <span class="st-chart-footnote">Compared with the previous <?= (int)$halfSpan ?> days</span>
                         <?php endif; ?>
                     </div>
                 <?php endif; ?>
             </section>
 
-            <aside class="ca-panel st-ranking" aria-label="Creator ranking">
-                <div class="ca-panel-head"><h2 class="st-ranking-title"><?= $ic('trophy') ?> Your Ranking</h2></div>
-                <div class="st-rank-row">
-                    <div>
-                        <strong class="st-rank-number"><?= $creatorRanking['rank'] === null ? '—' : '#' . number_format((int)$creatorRanking['rank']) ?></strong>
-                        <span class="st-rank-caption">
-                            <?= $creatorRanking['total_creators'] > 0
-                                ? 'Among ' . number_format((int)$creatorRanking['total_creators']) . ' creators'
-                                : 'Ranking appears as creators earn views' ?>
-                        </span>
+            <?php $avatarSrc = function_exists('avatar_url') ? (string)avatar_url($username) : ''; ?>
+            <aside class="ca-panel st-profile<?= $isNumberOne ? ' is-champion' : '' ?>" aria-label="Creator profile and ranking">
+                <div class="st-profile-top">
+                    <?php if ($isNumberOne): ?><span class="st-crown" aria-hidden="true"><?= $ic('crown') ?></span><?php endif; ?>
+                    <?php if ($avatarSrc !== ''): ?>
+                        <img class="st-avatar" src="<?= $h($avatarSrc) ?>" alt="">
+                    <?php else: ?>
+                        <span class="st-avatar st-avatar-fallback" aria-hidden="true"><?= $h(mb_strtoupper(mb_substr($username, 0, 1, 'UTF-8'), 'UTF-8')) ?></span>
+                    <?php endif; ?>
+                    <?php if ($isVerified): ?><span class="st-verified" title="Verified creator"><?= $ic('check') ?></span><?php endif; ?>
+                    <div class="st-profile-id">
+                        <strong class="st-profile-name"><?= $h($username) ?></strong>
+                        <span class="st-profile-role">Creator</span>
                     </div>
-                    <span class="st-rank-emblem" aria-hidden="true"><?= $ic('trophy') ?></span>
+                    <a class="st-profile-btn" href="<?= $h($profileUrl) ?>">View Profile <?= $ic('arrow') ?></a>
                 </div>
-                <div class="st-rank-badge">
-                    <?= $ic($creatorRanking['rank'] !== null && $creatorRanking['rank'] <= 3 ? 'star' : 'analytics') ?>
-                    <?= $creatorRanking['rank'] !== null && $creatorRanking['rank'] <= 3 ? 'Top 3 creators by views!' : 'Keep growing your audience' ?>
+                <div class="st-profile-stats">
+                    <div>
+                        <span class="st-pstat-label">Channel Rank</span>
+                        <strong class="st-pstat-value"><span class="st-gold"><?= $ic('trophy') ?></span> <?= $rankNow === null ? '—' : '#' . number_format((int)$rankNow) ?><?php if ($rankInfo['change'] !== null && $rankInfo['change'] !== 0): ?> <small class="st-rank-change <?= $rankInfo['change'] > 0 ? 'is-up' : 'is-down' ?>" title="Since yesterday's snapshot"><?= $ic($rankInfo['change'] > 0 ? 'up' : 'down') ?><?= abs((int)$rankInfo['change']) ?></small><?php endif; ?></strong>
+                        <?php if ($rankTotal > 0): ?><span class="st-pstat-note">of <?= $h(number_format($rankTotal)) ?> creators</span><?php endif; ?>
+                    </div>
+                    <div>
+                        <span class="st-pstat-label">Total Views (All Time)</span>
+                        <strong class="st-pstat-value"><?= $ic('eye') ?> <?= $h($compact($totals['views'])) ?></strong>
+                    </div>
+                </div>
+                <?php $rankChartHtml = ($rankNow !== null && function_exists('vs_creator_rank_chart')) ? vs_creator_rank_chart($rankHistory, $span, 'stRankG') : ''; ?>
+                <?php if ($rankChartHtml !== ''): ?><div class="st-rank-history"><?= $rankChartHtml ?></div><?php endif; ?>
+                <div class="st-rank-banner<?= $isNumberOne ? ' is-champion' : '' ?>">
+                    <span class="st-rank-star"><?= $ic('star') ?></span>
+                    <div class="st-rank-text">
+                        <?php if ($isNumberOne): ?>
+                            <strong>You&rsquo;re the #1 creator on VibeStream!</strong><span>Congratulations, you&rsquo;re at the very top!</span>
+                        <?php elseif ($rankNow !== null && $rankNow <= 3): ?>
+                            <strong>You&rsquo;re a Top 3 creator!</strong><span>Keep going, you&rsquo;re doing great!</span>
+                        <?php elseif ($topPercent !== null && $topPercent <= 10): ?>
+                            <strong>You&rsquo;re in the Top <?= (int)$topPercent ?>%!</strong><span>Keep going, you&rsquo;re doing great!</span>
+                        <?php else: ?>
+                            <strong>Keep growing your audience</strong><span>Every upload brings you closer to the top.</span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($isNumberOne && function_exists('vs_creator_confetti')): ?>
+                        <button type="button" class="st-celebrate" data-confetti-replay aria-label="Celebrate again">&#127881;</button>
+                    <?php else: ?>
+                        <span class="st-rank-trend" aria-hidden="true"><?= $ic('trend-up') ?></span>
+                    <?php endif; ?>
                 </div>
             </aside>
         </div>
 
         <div class="st-bottom-grid">
             <section class="ca-panel">
-                <div class="ca-panel-head"><h2><?= $ic('play') ?> Your Top Videos &amp; Shorts</h2><a class="ca-view-all" href="#stContentLibrary">View All <?= $ic('arrow') ?></a></div>
-                <?php if (!$topVideos): ?>
+                <div class="ca-panel-head"><h2><?= $ic('play') ?> Recent Videos</h2><a class="ca-view-all" href="#stContentLibrary">View All <?= $ic('arrow') ?></a></div>
+                <?php if (!$recentVideos): ?>
                     <p class="ca-empty">Your published videos and Shorts will appear here. <a href="upload.php">Upload your first video</a>.</p>
                 <?php else: ?>
-                    <div class="st-top-list">
-                        <?php foreach ($topVideos as $index => $video): ?>
-                            <?php $videoUrl = ($video['is_short'] ? 'shorts.php?id=' : 'watch.php?id=') . rawurlencode((string)$video['video_id']); ?>
-                            <article class="st-top-item">
-                                <span class="st-top-rank"><?= $index + 1 ?></span>
-                                <a class="st-top-thumb" href="<?= $h($videoUrl) ?>" aria-label="Play <?= $h($video['title'] !== '' ? $video['title'] : 'Untitled') ?>">
-                                    <?php if ($video['thumbnail'] !== ''): ?><img src="<?= $h($video['thumbnail']) ?>" alt="" loading="lazy"><?php else: ?><?= $ic('play') ?><?php endif; ?>
-                                </a>
-                                <div class="st-top-info">
-                                    <a class="st-top-title" href="<?= $h($videoUrl) ?>"><?= $h($video['title'] !== '' ? $video['title'] : 'Untitled') ?></a>
-                                    <span class="st-top-meta"><?= $h($compact($video['views'])) ?> views · <?= $video['is_short'] ? 'Short' : 'Video' ?></span>
-                                </div>
-                                <div class="st-top-views"><?= $ic('eye') ?> <?= $h($compact($video['views'])) ?><div class="st-top-bar"><span style="width:<?= max(4, (int)round($video['views'] / $maxViews * 100)) ?>%"></span></div></div>
-                            </article>
+                    <div class="st-recent-grid">
+                        <?php foreach ($recentVideos as $video): ?>
+                            <?php
+                            $videoUrl = ($video['is_short'] ? 'shorts.php?id=' : 'watch.php?id=') . rawurlencode((string)$video['video_id']);
+                            $videoTitle = $video['title'] !== '' ? $video['title'] : 'Untitled';
+                            $durationText = $durationLabel($video['duration'] ?? '');
+                            ?>
+                            <a class="st-recent-card" href="<?= $h($videoUrl) ?>">
+                                <span class="st-recent-thumb">
+                                    <?php if ($video['thumbnail'] !== ''): ?><img src="<?= $h($video['thumbnail']) ?>" alt="" loading="lazy"><?php endif; ?>
+                                    <span class="st-recent-play" aria-hidden="true"><?= $ic('play') ?></span>
+                                    <?php if ($durationText !== ''): ?><span class="st-duration"><?= $h($durationText) ?></span><?php endif; ?>
+                                </span>
+                                <span class="st-recent-title"><?= $h($videoTitle) ?></span>
+                                <span class="st-recent-meta">
+                                    <span><?= $ic('eye') ?> <?= $h($compact($video['views'])) ?></span>
+                                    <span class="is-heart"><?= $ic('heart') ?> <?= $h($compact($video['likes'])) ?></span>
+                                    <span class="is-comment"><?= $ic('comment') ?> <?= $h($compact($video['comments'])) ?></span>
+                                </span>
+                            </a>
                         <?php endforeach; ?>
                     </div>
                 <?php endif; ?>
             </section>
 
             <div class="st-side-stack">
-                <aside class="ca-panel">
-                    <div class="ca-panel-head"><h2><?= $ic('analytics') ?> Quick Stats</h2><a class="ca-view-all" href="<?= $isPremium ? 'creator-analytics.php' : 'premium.php' ?>">Details <?= $ic('arrow') ?></a></div>
-                    <div class="st-quick-grid">
-                        <div class="st-quick-card"><span class="st-quick-icon" style="--quick:#a644ff"><?= $ic('play') ?></span><span><span class="st-quick-label">Videos</span><strong class="st-quick-value"><?= number_format($totals['videos']) ?></strong></span></div>
-                        <div class="st-quick-card"><span class="st-quick-icon" style="--quick:#f04cb2"><?= $ic('play') ?></span><span><span class="st-quick-label">Shorts</span><strong class="st-quick-value"><?= number_format($totals['shorts']) ?></strong></span></div>
-                        <div class="st-quick-card"><span class="st-quick-icon" style="--quick:#12ca84"><?= $ic('eye') ?></span><span><span class="st-quick-label">Views · 30 days</span><strong class="st-quick-value"><?= $totals['views_30d'] === null ? '—' : $h($compact($totals['views_30d'])) ?></strong></span></div>
-                        <div class="st-quick-card"><span class="st-quick-icon" style="--quick:#328fff"><?= $ic('comment') ?></span><span><span class="st-quick-label">Comments</span><strong class="st-quick-value"><?= $h($compact($totals['comments'])) ?></strong></span></div>
-                    </div>
-                </aside>
-                <section class="st-promo">
-                    <span class="st-promo-icon" aria-hidden="true"><?= $ic('rocket') ?></span>
-                    <div class="st-promo-copy">
-                        <strong><?= $isPremium ? 'Take a deeper look at your growth' : 'Grow faster with VibeStream Premium' ?></strong>
-                        <span><?= $isPremium ? 'See detailed audience and engagement analytics.' : 'Unlock advanced analytics and creator tools.' ?></span>
-                    </div>
-                    <a class="st-promo-link" href="<?= $isPremium ? 'creator-analytics.php' : 'premium.php' ?>"><?= $isPremium ? 'Analytics' : 'Go Premium' ?> <?= $ic('arrow') ?></a>
-                </section>
+            <aside class="ca-panel">
+                <div class="ca-panel-head"><h2><span class="st-bolt"><?= $ic('bolt') ?></span> Quick Actions</h2></div>
+                <div class="st-actions-grid">
+                    <a class="st-action" style="--qa:#a855f7" href="upload.php"><?= $ic('upload') ?><span>Upload Video</span></a>
+                    <a class="st-action" style="--qa:#ec4899" href="<?= $isPremium ? 'creator-analytics.php' : 'premium.php' ?>"><?= $ic('analytics') ?><span>Check Analytics</span></a>
+                    <a class="st-action" style="--qa:#10b981" href="<?= $h($subscribersUrl) ?>"><?= $ic('users') ?><span>Manage Subscribers</span></a>
+                    <a class="st-action" style="--qa:#f59e0b" href="<?= $h($settingsUrl) ?>"><?= $ic('settings') ?><span>Settings</span></a>
+                </div>
+            </aside>
+            <section class="st-promo">
+                <span class="st-promo-icon" aria-hidden="true"><?= $ic('rocket') ?></span>
+                <div class="st-promo-copy">
+                    <strong><?= $isPremium ? 'Take a deeper look at your growth' : 'Grow faster with VibeStream Premium' ?></strong>
+                    <span><?= $isPremium ? 'See detailed audience and engagement analytics.' : 'Unlock advanced analytics and creator tools.' ?></span>
+                </div>
+                <a class="st-promo-link" href="<?= $isPremium ? 'creator-analytics.php' : 'premium.php' ?>"><?= $isPremium ? 'Analytics' : 'Go Premium' ?> <?= $ic('arrow') ?></a>
+            </section>
             </div>
         </div>
 
@@ -1010,4 +1364,10 @@ vs_page_start('Creator Studio', 'studio', $extraCss);
     }());
     </script>
     <?php
+    if (function_exists('vs_creator_ui_script')) {
+        vs_creator_ui_script();
+    }
+    if (function_exists('vs_creator_confetti')) {
+        vs_creator_confetti($creatorRanking['rank'], $totals['views'], !empty($rankInfo['became_first']));
+    }
     vs_page_end();

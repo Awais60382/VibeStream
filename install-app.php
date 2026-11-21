@@ -32,8 +32,8 @@ if (!function_exists('vs_install_app_html')) {
 
         $html .= '<style>' . <<<'CSS'
 .nav-right .vs-install-btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    height: 40px; min-width: 40px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; min-width: 40px; padding: 0; border-radius: 999px; cursor: pointer;
     background: var(--surface-2, #272727); color: var(--text, #f1f1f1);
     border: 1px solid var(--border, #303030); font-size: 14px; font-weight: 600; white-space: nowrap;
 }
@@ -41,10 +41,7 @@ if (!function_exists('vs_install_app_html')) {
 .nav-right .vs-install-btn:focus { background: var(--surface-hover, #2a2a31); border-color: #5b8cff; color: var(--text, #f1f1f1); }
 .nav-right .vs-install-btn[hidden] { display: none; }
 .vs-install-btn svg { width: 20px; height: 20px; flex: 0 0 20px; display: block; }
-@media (max-width: 1100px) {
-    .nav-right .vs-install-btn { padding: 0; width: 40px; }
-    .vs-install-label { display: none; }
-}
+.vs-install-label { display: none; }
 .vs-install-modal { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.6); }
 .vs-install-box {
     width: 100%; max-width: 420px; padding: 22px; border-radius: 16px; text-align: left;

@@ -39,9 +39,6 @@ if (!$pdo) {
     vs_stripe_fail('No database connection.', $planKey);
 }
 vs_premium_ensure($pdo);
-if (vs_premium_is_admin($me)) {
-    vs_stripe_fail('Admins always have Premium. Sign in with a normal account to buy.', $planKey);
-}
 $cur = vs_premium_get($pdo, $me);
 if (vs_premium_is_active($cur)) {
     $isPlusNow = strpos((string)$cur['plan'], 'plus') === 0;

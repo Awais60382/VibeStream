@@ -326,9 +326,16 @@ if ($accountFound) {
     }
     if ($uploaderCol !== '') {
         $order = isset($vCols['created_at']) ? 'created_at DESC' : 'id DESC';
-        $st = $conn->prepare("SELECT * FROM `videos` WHERE LOWER(`$uploaderCol`) = LOWER(?) ORDER BY $order");
+        $videoSql = "SELECT * FROM `videos` WHERE LOWER(`$uploaderCol`) = LOWER(?)";
+        $videoParams = [$profileUser];
+        if (!$isMe && isset($vCols['scheduled_at'])) {
+            $videoSql .= ' AND (`scheduled_at` IS NULL OR `scheduled_at` <= ?)';
+            $videoParams[] = date('Y-m-d H:i:s');
+        }
+        $videoSql .= " ORDER BY $order";
+        $st = $conn->prepare($videoSql);
         if ($st) {
-            $st->bind_param('s', $profileUser);
+            $st->bind_param(str_repeat('s', count($videoParams)), ...$videoParams);
             $st->execute();
             foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
                 if (isset($row['type']) && strtolower((string)$row['type']) === 'short') {

@@ -2,7 +2,7 @@
 /**
  * VIP badge helper. Put this file in the SITE ROOT (next to premium-store.php).
  *
- *   vs_vip_is($username, $db)     true when the member has Premium (admins always do)
+ *   vs_vip_is($username, $db)     true when the member has an active Premium plan
  *   vs_vip_badge($username, $db, $size)  white check-mark circle HTML (shown next to the name), or '' when not VIP. $size is optional (default 18).
  *   vs_vip_ring_open/close($username, $db)  gold ring + VIP pill around an avatar, or '' when not VIP
  *   vs_viewer_is_vip($db)         is the person looking at the page Premium?
@@ -102,10 +102,6 @@ if (!function_exists('vs_vip_badge')) {
         if (isset($cache[$key])) {
             return $cache[$key];
         }
-        // Admins always have Premium.
-        if (strcasecmp(vs_vip_role($db, $username), 'admin') === 0) {
-            return $cache[$key] = true;
-        }
         return $cache[$key] = (vs_vip_premium_check($username) === true);
     }
 
@@ -144,7 +140,7 @@ if (!function_exists('vs_vip_badge')) {
     }
 
     /**
-     * Gold ring + "VIP" pill around an avatar, only for Premium members and admins.
+     * Gold ring + "VIP" pill around an avatar, only for Premium members.
      * Wrap the avatar like this (both calls must use the same name):
      *   <?= vs_vip_ring_open($name, $conn, 36) ?> ...avatar html... <?= vs_vip_ring_close($name, $conn) ?>
      * The last number is the avatar's normal size in pixels (default 40).
@@ -202,15 +198,12 @@ if (!function_exists('vs_vip_badge')) {
 
     /**
      * Should the CURRENT visitor see ads? Guests and free members: yes.
-     * Premium members and admins: no.
+     * Active Premium members: no.
      */
     function vs_show_ads(): bool
     {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
             session_start();
-        }
-        if (isset($_SESSION['AdminSession']) || strcasecmp((string)($_SESSION['role'] ?? ''), 'admin') === 0) {
-            return false;
         }
         $user = trim((string)($_SESSION['username'] ?? ''));
         if ($user === '') {
@@ -238,14 +231,11 @@ if (!function_exists('vs_vip_badge')) {
 // Premium perks helpers. Guarded on their own, so they always load, even next to an older copy of the code above.
 if (!function_exists('vs_viewer_is_vip')) {
 
-    /** Is the person looking at the page Premium (or admin) right now? */
+    /** Is the person looking at the page Premium right now? */
     function vs_viewer_is_vip($db = null): bool
     {
         if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
             session_start();
-        }
-        if (isset($_SESSION['AdminSession']) || strcasecmp((string)($_SESSION['role'] ?? ''), 'admin') === 0) {
-            return true;
         }
         $user = trim((string)($_SESSION['username'] ?? ''));
         if ($user === '') {
