@@ -1,6 +1,6 @@
 <?php
 // Include on the dashboard (adminpanel/index.php) where you want the badge, e.g.:
-//   <?php include __DIR__ . '/checkin-online-badge.php'; ?>
+//   include __DIR__ . '/checkin-online-badge.php';
 // Shows "3 of 5 admins online" and links to the check-in page. Owner only.
 if (!empty($_SESSION['vs_is_owner'])) {
     require_once __DIR__ . '/checkin-lib.php';
