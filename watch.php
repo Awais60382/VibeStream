@@ -6,6 +6,7 @@ if (is_file(__DIR__ . '/premium-perks.php')) {
 require_once __DIR__ . '/avatar.php';   
 require_once __DIR__ . '/icons.php';    
 require_once __DIR__ . '/site-branding.php';
+require_once __DIR__ . '/page-loader-render.php';
 require_once __DIR__ . '/notifications-store.php';
 require_once __DIR__ . '/user-menu.php';
 require_once __DIR__ . '/sidebar-navigation.php';
@@ -18,6 +19,7 @@ require_once __DIR__ . '/liked-store.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/vip-badge.php';
 require_once __DIR__ . '/premium-popup.php';
+if (is_file(__DIR__ . '/premium-store.php')) { require_once __DIR__ . '/premium-store.php'; }
 $siteName = vs_branding_app_name();
 $defaultTheme = vs_branding_default_theme();
 vs_maintenance_gate();
@@ -73,10 +75,11 @@ if (!function_exists('find_source')) {
 
 if (!function_exists('thumb_for')) {
     function thumb_for(array $row, $src, $realYt) {
-        if ($realYt) return "https://i.ytimg.com/vi/{$realYt}/hqdefault.jpg";
-        foreach (['thumbnail', 'thumb', 'image', 'img', 'poster'] as $c) {
-            if (!empty($row[$c])) return $row[$c];
+        foreach (['thumbnail_url', 'thumbnail', 'thumb_url', 'thumb', 'image_url', 'image', 'image_path', 'img', 'poster_url', 'poster', 'cover_image', 'cover', 'preview_image', 'preview'] as $c) {
+            $thumbnail = trim((string)($row[$c] ?? ''));
+            if ($thumbnail !== '') return $thumbnail;
         }
+        if ($realYt) return "https://i.ytimg.com/vi/{$realYt}/hqdefault.jpg";
         return 'data:image/svg+xml;utf8,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#1e1e24"/><text x="50%" y="50%" fill="#6f6f7a" font-family="Arial" font-size="16" text-anchor="middle" dy=".3em">No preview</text></svg>');
     }
 }
@@ -133,14 +136,14 @@ if (!function_exists('render_navbar')) {
             </nav>
 
             <div class="nav-right">
-                <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
-                </button>
                 <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                 </button>
                 <?php echo vs_notification_bell_html(); ?>
-                <a href="upload.php" class="create-btn">+ Create</a>
+                <a href="upload.php" class="create-btn" aria-label="Create video" title="Create video">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10 5-3v10l-5-3M9.5 10v4M7.5 12h4"/></svg>
+                    <span class="create-label">Create</span>
+                </a>
                 <?php if ($isLoggedIn): ?>
                     <?php echo vs_user_menu_html($username, $navAvatar); ?>
                 <?php else: ?>
@@ -244,8 +247,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 http_response_code(400);
                 json_out(['success' => false, 'error' => 'Invalid playback progress.']);
             }
+            $questPointsW = (function_exists('vs_rewards_quest_try') && $position >= 30 && $duration >= 30) ? vs_rewards_quest_try('watch', (string)$vid, $v) : 0;
             vs_history_save_progress($conn, $vid, $position, $duration);
-            json_out(['success' => true]);
+            json_out(['success' => true, 'quest_points' => (int)($questPointsW ?? 0)]);
         }
 
         foreach (['liked_videos', 'disliked_videos', 'subscribed_channels'] as $k) {
@@ -353,6 +357,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($isLike && !$mineActive && !empty($_SESSION['username'] ?? $_SESSION['AdminSession'] ?? '')) {
                 $actor = (string)($_SESSION['username'] ?? $_SESSION['AdminSession']);
                 vs_notify_video_event($conn, $v, 'like', $actor);
+                if (function_exists('vs_rewards_quest_try')) { $questPoints = vs_rewards_quest_try('like', (string)$vid, $v); }
             }
 
             $c = $counts();
@@ -362,6 +367,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'dislikes' => (int)$c['d'],
                 'liked' => in_array($vid, $_SESSION['liked_videos'], true),
                 'disliked' => in_array($vid, $_SESSION['disliked_videos'], true),
+                'quest_points' => (int)($questPoints ?? 0),
             ]);
         }
 
@@ -385,6 +391,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ins->close();
             vs_notify_video_event($conn, $v, 'comment', (string)$user, $text);
             vs_notify_comment_reply($conn, $v, (string)$user, $text, $newCommentId);
+            $questPointsC = (function_exists('vs_rewards_quest_try') && mb_strlen($text) >= 10) ? vs_rewards_quest_try('comment', (string)$newCommentId, $v) : 0;
 
             $stmt = $conn->prepare("SELECT COUNT(*) AS n FROM comments WHERE video_id = ?");
             $stmt->bind_param("s", $vid);
@@ -399,6 +406,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'comment_count' => $n,
                 'id' => $newCommentId,
                 'html' => vs_comment_new_item_html($newCommentId, (string)$user, $text),
+                'quest_points' => (int)($questPointsC ?? 0),
                 'avatar' => avatar_or_cartoon($user), 
             ]);
         }
@@ -549,6 +557,7 @@ $src = find_source($video, __DIR__);
 $yt_id = $src !== '' ? extract_youtube_id($src, true) : null;
 $is_direct = $src !== '' && !$yt_id;
 $playerPoster = $yt_id ? thumb_for($video, $src, $yt_id) : thumb_for($video, $src, null);
+$hasPlayerPoster = strpos($playerPoster, 'data:image/svg+xml;utf8,') !== 0;
 $requestScheme = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') ? 'https' : 'http';
 $playerOrigin = $requestScheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
 $requestedStart = array_key_exists('t', $_GET) ? (int)$_GET['t'] : $savedProgress;
@@ -690,10 +699,9 @@ if ($stmt = $conn->prepare($relSql)) {
     <link rel="manifest" href="manifest.php">
     <link rel="apple-touch-icon" href="branding-icon.php">
     <title><?php echo htmlspecialchars($title, ENT_QUOTES, 'UTF-8'); ?> - <?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
+    <?php vs_page_loader_assets(); ?>
     <script src="theme.js?v=3"></script>
     <script src="brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/brain.js'); ?>" defer></script>
-    <link rel="stylesheet" href="neon-off.css?v=7">
-    <script src="neon-switch.js?v=7"></script>
     <link rel="stylesheet" href="style.css?v=5">
     <link rel="stylesheet" href="context-notes.css?v=1">
 
@@ -709,7 +717,7 @@ if ($stmt = $conn->prepare($relSql)) {
             --accent: #b02a2a;
             --accent-hover: #1f1f1f;
             --accent-soft: rgba(176, 42, 42, 0.18);
-            --blue: #3ea6ff;
+            --blue: #ff2a32;
             --navbar-height: 72px;
             --sidebar-width: 240px;
             --radius-md: 12px;
@@ -836,7 +844,7 @@ if ($stmt = $conn->prepare($relSql)) {
             width: 32px;
             height: 32px;
             border-radius: 50%;
-            background: #3ea6ff;
+            background: #ff2a32;
             color: #ffffff;
             font-weight: 700;
             display: flex;
@@ -996,7 +1004,7 @@ if ($stmt = $conn->prepare($relSql)) {
             place-items: center;
             background:
                 radial-gradient(circle at 35% 28%, rgba(255,255,255,.28), transparent 18%),
-                linear-gradient(145deg, #ff2e93 0%, #9d4edd 48%, #00d9ff 100%);
+                linear-gradient(145deg, #ff2a32 0%, #9d4edd 48%, #00d9ff 100%);
             border: 2px solid rgba(255,255,255,.92);
             opacity: .88;
             box-shadow:
@@ -1027,7 +1035,7 @@ if ($stmt = $conn->prepare($relSql)) {
             transform: translate(-1px, 0);
             color: #fff;
             text-shadow:
-                -2px 0 0 rgba(0,229,255,.88),
+                -2px 0 0 rgba(255,42,50,.88),
                 2px 2px 0 rgba(138,92,255,.88),
                 0 5px 12px rgba(0,0,0,.48);
         }
@@ -1053,7 +1061,7 @@ if ($stmt = $conn->prepare($relSql)) {
             min-height: 42px;
             padding: 9px 16px;
             border-radius: 999px;
-            background: #ff2e93;
+            background: #ff2a32;
             color: #fff;
             font-weight: 700;
         }
@@ -1092,8 +1100,8 @@ if ($stmt = $conn->prepare($relSql)) {
         .unavailable-icon {
             display: grid; place-items: center; width: 72px; height: 72px;
             border: 1px solid rgba(138, 92, 255, .6); border-radius: 22px;
-            background: linear-gradient(145deg, rgba(110, 75, 255, .25), rgba(0, 229, 255, .1));
-            box-shadow: 0 0 30px rgba(0, 229, 255, .16), 0 0 30px rgba(138, 92, 255, .22);
+            background: linear-gradient(145deg, rgba(110, 75, 255, .25), rgba(255,42,50, .1));
+            box-shadow: 0 0 30px rgba(255,42,50, .16), 0 0 30px rgba(138, 92, 255, .22);
         }
         .unavailable-icon svg { width: 36px; height: 36px; fill: none; stroke: #d7c7ff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
         .video-wrapper .unavailable-msg strong { font-size: 20px; }
@@ -1192,7 +1200,7 @@ if ($stmt = $conn->prepare($relSql)) {
         .autoplay-toggle input { position: absolute; opacity: 0; pointer-events: none; }
         .autoplay-track { position: relative; width: 34px; height: 18px; border-radius: 999px; background: #555; transition: background 0.15s; }
         .autoplay-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
-        .autoplay-toggle input:checked + .autoplay-track { background: #3ea6ff; }
+        .autoplay-toggle input:checked + .autoplay-track { background: #ff2a32; }
         .autoplay-toggle input:checked + .autoplay-track::after { transform: translateX(16px); }
         .autoplay-toggle input:focus-visible + .autoplay-track { outline: 2px solid #fff; outline-offset: 2px; }
         .upnext {
@@ -1286,6 +1294,7 @@ if ($stmt = $conn->prepare($relSql)) {
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
     <link rel="stylesheet" href="theme.css?v=5">
+    <link rel="stylesheet" href="main-pages-theme.css?v=1">
     <link rel="stylesheet" href="navbar-fix.css?v=4">
     <link rel="stylesheet" href="comments.css?v=1">
     <!-- NEON THEME (dark + light). Stays after theme.css so it wins. -->
@@ -1293,113 +1302,113 @@ if ($stmt = $conn->prepare($relSql)) {
 html:not([data-theme="light"]) {
             --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
             --text: #eaf0ff; --muted: #8f9bd0; --border: #1d2557;
-            --accent: #ff2e93; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #00e5ff;
-            --neon-cyan: #00e5ff; --neon-pink: #ff2e93; --neon-violet: #8a5cff;
+            --accent: #ff2a32; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #ff2a32;
+            --neon-cyan: #ff2a32; --neon-pink: #ff2a32; --neon-violet: #b50d16;
         }
         html:not([data-theme="light"]) body { background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.16), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50,.10), transparent 70%),
                 radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.08), transparent 70%), #05060f; background-attachment: fixed; }
-        html:not([data-theme="light"]) .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(0,229,255,.35); box-shadow: 0 1px 24px -4px rgba(0,229,255,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
-        html:not([data-theme="light"]) .brand { background: linear-gradient(90deg, #00e5ff, #8a5cff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
-        html:not([data-theme="light"]) .nav-toggle span { background: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.7); }
-        html:not([data-theme="light"]) .nav-toggle:hover, html:not([data-theme="light"]) .theme-toggle:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(255,42,50,.35); box-shadow: 0 1px 24px -4px rgba(255,42,50,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
+        html:not([data-theme="light"]) .brand { background: linear-gradient(90deg, #ff2a32, #b50d16 55%, #ff2a32); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
+        html:not([data-theme="light"]) .nav-toggle span { background: #ff2a32; box-shadow: 0 0 6px rgba(255,42,50,.7); }
+        html:not([data-theme="light"]) .nav-toggle:hover, html:not([data-theme="light"]) .theme-toggle:hover { background: rgba(255,42,50,.14); box-shadow: 0 0 14px rgba(255,42,50,.4); }
         html:not([data-theme="light"]) .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(138,92,255,.6)); }
         html:not([data-theme="light"]) .nav-link.active { background: rgba(255,46,147,.16); color: #ff7ac0; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
         html:not([data-theme="light"]) .create-btn, html:not([data-theme="light"]) .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
         html:not([data-theme="light"]) #search-input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.55); color: #eaf0ff; box-shadow: 0 0 10px -2px rgba(138,92,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
-        html:not([data-theme="light"]) #search-input:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 20px rgba(0,229,255,.55); }
+        html:not([data-theme="light"]) #search-input:focus { outline: none; border-color: #ff2a32; box-shadow: 0 0 0 1px #ff2a32, 0 0 20px rgba(255,42,50,.55); }
         html:not([data-theme="light"]) .user-badge-pill { background: linear-gradient(180deg, rgba(23,28,66,.9), rgba(10,13,31,.95)); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
-        html:not([data-theme="light"]) .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html:not([data-theme="light"]) .logout-link:hover { color: #ff2a32; text-shadow: 0 0 10px rgba(255,46,147,.7); }
         html:not([data-theme="light"]) .app-sidebar { background: linear-gradient(180deg, rgba(10,13,31,.97), rgba(5,6,15,.98)); border-right: 1px solid rgba(138,92,255,.4); box-shadow: 4px 0 28px -10px rgba(138,92,255,.45); }
         html:not([data-theme="light"]) .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
-        html:not([data-theme="light"]) .sidebar-link:hover { background: rgba(0,229,255,.10); box-shadow: inset 3px 0 0 #00e5ff, 0 0 16px -4px rgba(0,229,255,.5); }
-        html:not([data-theme="light"]) .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
-        html:not([data-theme="light"]) .sidebar-heading { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) .sidebar-link:hover { background: rgba(255,42,50,.10); box-shadow: inset 3px 0 0 #ff2a32, 0 0 16px -4px rgba(255,42,50,.5); }
+        html:not([data-theme="light"]) .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2a32, 0 0 18px -4px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) .sidebar-heading { color: #ff2a32; text-shadow: 0 0 8px rgba(255,42,50,.45); }
         html:not([data-theme="light"]) ::-webkit-scrollbar { width: 10px; height: 10px; }
         html:not([data-theme="light"]) ::-webkit-scrollbar-track { background: #05060f; }
-        html:not([data-theme="light"]) ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
+        html:not([data-theme="light"]) ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #b50d16, #ff2a32); border-radius: 8px; }
         html:not([data-theme="light"]) ::selection { background: rgba(255,46,147,.4); color: #fff; }
 
         /* ---- watch page ---- */
-        html:not([data-theme="light"]) .video-wrapper { border: 1px solid rgba(138,92,255,.5); box-shadow: 0 0 28px -4px rgba(0,229,255,.45), 0 0 60px -16px rgba(138,92,255,.55); }
+        html:not([data-theme="light"]) .video-wrapper { border: 1px solid rgba(138,92,255,.5); box-shadow: 0 0 28px -4px rgba(255,42,50,.45), 0 0 60px -16px rgba(138,92,255,.55); }
         html:not([data-theme="light"]) .video-title { text-shadow: 0 0 14px rgba(138,92,255,.55); }
         html:not([data-theme="light"]) .channel-avatar { box-shadow: 0 0 0 2px rgba(255,46,147,.75), 0 0 12px rgba(255,46,147,.5); }
-        html:not([data-theme="light"]) .subscribe-btn { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); transition: box-shadow .18s ease, transform .18s ease; }
-        html:not([data-theme="light"]) .subscribe-btn:hover { background: linear-gradient(90deg, #8a5cff, #ff2e93); box-shadow: 0 0 26px rgba(255,46,147,.8); transform: translateY(-1px); }
-        html:not([data-theme="light"]) .subscribe-btn.subscribed { background: rgba(23,28,66,.7); color: #eaf0ff; border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 14px rgba(0,229,255,.35); }
+        html:not([data-theme="light"]) .subscribe-btn { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); transition: box-shadow .18s ease, transform .18s ease; }
+        html:not([data-theme="light"]) .subscribe-btn:hover { background: linear-gradient(90deg, #b50d16, #ff2a32); box-shadow: 0 0 26px rgba(255,46,147,.8); transform: translateY(-1px); }
+        html:not([data-theme="light"]) .subscribe-btn.subscribed { background: rgba(23,28,66,.7); color: #eaf0ff; border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 14px rgba(255,42,50,.35); }
         html:not([data-theme="light"]) .btn-pill, html:not([data-theme="light"]) .like-dislike-group { background: rgba(23,28,66,.7); border: 1px solid rgba(138,92,255,.4); color: #eaf0ff; transition: box-shadow .18s ease, border-color .18s ease; }
-        html:not([data-theme="light"]) .btn-pill:hover { background: rgba(0,229,255,.14); border-color: #00e5ff; box-shadow: 0 0 14px rgba(0,229,255,.5); }
-        html:not([data-theme="light"]) .like-dislike-group button:hover:not(:disabled) { background: rgba(0,229,255,.14); }
+        html:not([data-theme="light"]) .btn-pill:hover { background: rgba(255,42,50,.14); border-color: #ff2a32; box-shadow: 0 0 14px rgba(255,42,50,.5); }
+        html:not([data-theme="light"]) .like-dislike-group button:hover:not(:disabled) { background: rgba(255,42,50,.14); }
         html:not([data-theme="light"]) .like-dislike-group .divider { background: rgba(138,92,255,.5); }
-        html:not([data-theme="light"]) .like-dislike-group #like-btn.active { background: rgba(0,229,255,.18); color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.8); }
+        html:not([data-theme="light"]) .like-dislike-group #like-btn.active { background: rgba(255,42,50,.18); color: #ff2a32; text-shadow: 0 0 10px rgba(255,42,50,.8); }
         html:not([data-theme="light"]) .like-dislike-group #dislike-btn.active { background: rgba(255,46,147,.18); color: #ff7ac0; text-shadow: 0 0 10px rgba(255,46,147,.7); }
         html:not([data-theme="light"]) .description-box { background: rgba(10,13,31,.88); border: 1px solid rgba(138,92,255,.35); box-shadow: 0 0 22px -10px rgba(138,92,255,.6); }
         html:not([data-theme="light"]) .comment-input-line { background: transparent; color: #eaf0ff; }
-        html:not([data-theme="light"]) .comment-input-line:focus { border-bottom-color: #00e5ff; box-shadow: 0 6px 14px -8px rgba(0,229,255,.8); outline: none; }
-        html:not([data-theme="light"]) .comment-submit-btn { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.45); }
+        html:not([data-theme="light"]) .comment-input-line:focus { border-bottom-color: #ff2a32; box-shadow: 0 6px 14px -8px rgba(255,42,50,.8); outline: none; }
+        html:not([data-theme="light"]) .comment-submit-btn { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.45); }
         html:not([data-theme="light"]) .comment-submit-btn:disabled { background: rgba(23,28,66,.7); color: #8f9bd0; box-shadow: none; }
-        html:not([data-theme="light"]) .comment-author { color: #00e5ff; }
-        html:not([data-theme="light"]) .autoplay-toggle input:checked + .autoplay-track { background: linear-gradient(90deg, #8a5cff, #00e5ff); box-shadow: 0 0 10px rgba(0,229,255,.7); }
-        html:not([data-theme="light"]) .upnext { background: rgba(10,13,31,.88); border: 1px solid rgba(0,229,255,.45); box-shadow: 0 0 20px -6px rgba(0,229,255,.5); }
-        html:not([data-theme="light"]) .upnext button.primary { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; box-shadow: 0 0 12px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) .comment-author { color: #ff2a32; }
+        html:not([data-theme="light"]) .autoplay-toggle input:checked + .autoplay-track { background: linear-gradient(90deg, #b50d16, #ff2a32); box-shadow: 0 0 10px rgba(255,42,50,.7); }
+        html:not([data-theme="light"]) .upnext { background: rgba(10,13,31,.88); border: 1px solid rgba(255,42,50,.45); box-shadow: 0 0 20px -6px rgba(255,42,50,.5); }
+        html:not([data-theme="light"]) .upnext button.primary { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; box-shadow: 0 0 12px rgba(255,46,147,.5); }
         html:not([data-theme="light"]) .video-card.compact .thumbnail { border: 1px solid rgba(138,92,255,.28); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
-        html:not([data-theme="light"]) .video-card.compact:hover .thumbnail { border-color: #00e5ff; box-shadow: 0 0 20px rgba(0,229,255,.55), 0 0 40px -8px rgba(138,92,255,.5); transform: translateY(-2px); }
-        html:not([data-theme="light"]) .video-card.compact:hover .video-title { color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.5); }
-        html:not([data-theme="light"]) .toast { border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 22px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) .video-card.compact:hover .thumbnail { border-color: #ff2a32; box-shadow: 0 0 20px rgba(255,42,50,.55), 0 0 40px -8px rgba(138,92,255,.5); transform: translateY(-2px); }
+        html:not([data-theme="light"]) .video-card.compact:hover .video-title { color: #ff2a32; text-shadow: 0 0 10px rgba(255,42,50,.5); }
+        html:not([data-theme="light"]) .toast { border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 22px rgba(255,42,50,.45); }
     </style>
     <style id="neon-light">
 html[data-theme="light"] {
             --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
             --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
-            --accent: #ff2e93; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #00b8e6;
-            --neon-cyan: #00b8e6; --neon-pink: #ff2e93; --neon-violet: #7c4dff;
+            --accent: #ff2a32; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #ff2a32;
+            --neon-cyan: #ff2a32; --neon-pink: #ff2a32; --neon-violet: #b50d16;
         }
         html[data-theme="light"] body { background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.14), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50,.14), transparent 70%),
                 radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.10), transparent 70%), #f4f6ff; background-attachment: fixed; }
-        html[data-theme="light"] .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(0,184,230,.55); box-shadow: 0 1px 22px -4px rgba(0,184,230,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
-        html[data-theme="light"] .brand { background: linear-gradient(90deg, #00b8e6, #7c4dff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
-        html[data-theme="light"] .nav-toggle span { background: #7c4dff; box-shadow: 0 0 6px rgba(124,77,255,.7); }
-        html[data-theme="light"] .nav-toggle:hover, html[data-theme="light"] .theme-toggle:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 14px rgba(0,184,230,.4); }
-        html[data-theme="light"] .theme-toggle svg { color: #7c4dff; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
+        html[data-theme="light"] .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(255,42,50,.55); box-shadow: 0 1px 22px -4px rgba(255,42,50,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
+        html[data-theme="light"] .brand { background: linear-gradient(90deg, #ff2a32, #b50d16 55%, #ff2a32); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
+        html[data-theme="light"] .nav-toggle span { background: #b50d16; box-shadow: 0 0 6px rgba(124,77,255,.7); }
+        html[data-theme="light"] .nav-toggle:hover, html[data-theme="light"] .theme-toggle:hover { background: rgba(255,42,50,.14); box-shadow: 0 0 14px rgba(255,42,50,.4); }
+        html[data-theme="light"] .theme-toggle svg { color: #b50d16; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
         html[data-theme="light"] .nav-link.active { background: rgba(255,46,147,.16); color: #d4147a; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
         html[data-theme="light"] .create-btn, html[data-theme="light"] .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
         html[data-theme="light"] #search-input { background: #ffffff; border: 1px solid rgba(124,77,255,.55); color: #0b1030; box-shadow: 0 0 10px -2px rgba(124,77,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
-        html[data-theme="light"] #search-input:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 20px rgba(0,184,230,.55); }
+        html[data-theme="light"] #search-input:focus { outline: none; border-color: #ff2a32; box-shadow: 0 0 0 1px #ff2a32, 0 0 20px rgba(255,42,50,.55); }
         html[data-theme="light"] .user-badge-pill { background: linear-gradient(180deg, #ffffff, #f1f3ff); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
-        html[data-theme="light"] .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html[data-theme="light"] .logout-link:hover { color: #ff2a32; text-shadow: 0 0 10px rgba(255,46,147,.7); }
         html[data-theme="light"] .app-sidebar { background: linear-gradient(180deg, #ffffff, #f4f6ff); border-right: 1px solid rgba(124,77,255,.35); box-shadow: 4px 0 28px -10px rgba(124,77,255,.45); }
         html[data-theme="light"] .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
-        html[data-theme="light"] .sidebar-link:hover { background: rgba(0,184,230,.12); box-shadow: inset 3px 0 0 #00b8e6, 0 0 16px -4px rgba(0,184,230,.5); }
-        html[data-theme="light"] .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
-        html[data-theme="light"] .sidebar-heading { color: #7c4dff; text-shadow: 0 0 8px rgba(124,77,255,.45); }
+        html[data-theme="light"] .sidebar-link:hover { background: rgba(255,42,50,.12); box-shadow: inset 3px 0 0 #ff2a32, 0 0 16px -4px rgba(255,42,50,.5); }
+        html[data-theme="light"] .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2a32, 0 0 18px -4px rgba(255,46,147,.55); }
+        html[data-theme="light"] .sidebar-heading { color: #b50d16; text-shadow: 0 0 8px rgba(124,77,255,.45); }
         html[data-theme="light"] ::-webkit-scrollbar { width: 10px; height: 10px; }
         html[data-theme="light"] ::-webkit-scrollbar-track { background: #eceffd; }
-        html[data-theme="light"] ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
+        html[data-theme="light"] ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #b50d16, #ff2a32); border-radius: 8px; }
         html[data-theme="light"] ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
 
         /* ---- watch page ---- */
-        html[data-theme="light"] .video-wrapper { border: 1px solid rgba(124,77,255,.5); box-shadow: 0 0 28px -4px rgba(0,184,230,.45), 0 0 60px -16px rgba(124,77,255,.55); }
+        html[data-theme="light"] .video-wrapper { border: 1px solid rgba(124,77,255,.5); box-shadow: 0 0 28px -4px rgba(255,42,50,.45), 0 0 60px -16px rgba(124,77,255,.55); }
         html[data-theme="light"] .video-title { text-shadow: 0 0 14px rgba(124,77,255,.25); }
         html[data-theme="light"] .channel-avatar { box-shadow: 0 0 0 2px rgba(255,46,147,.75), 0 0 12px rgba(255,46,147,.5); }
-        html[data-theme="light"] .subscribe-btn { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); transition: box-shadow .18s ease, transform .18s ease; }
-        html[data-theme="light"] .subscribe-btn:hover { background: linear-gradient(90deg, #7c4dff, #ff2e93); box-shadow: 0 0 26px rgba(255,46,147,.8); transform: translateY(-1px); }
-        html[data-theme="light"] .subscribe-btn.subscribed { background: #ffffff; color: #0b1030; border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 14px rgba(0,184,230,.35); }
+        html[data-theme="light"] .subscribe-btn { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); transition: box-shadow .18s ease, transform .18s ease; }
+        html[data-theme="light"] .subscribe-btn:hover { background: linear-gradient(90deg, #b50d16, #ff2a32); box-shadow: 0 0 26px rgba(255,46,147,.8); transform: translateY(-1px); }
+        html[data-theme="light"] .subscribe-btn.subscribed { background: #ffffff; color: #0b1030; border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 14px rgba(255,42,50,.35); }
         html[data-theme="light"] .btn-pill, html[data-theme="light"] .like-dislike-group { background: #ffffff; border: 1px solid rgba(124,77,255,.4); color: #0b1030; transition: box-shadow .18s ease, border-color .18s ease; }
-        html[data-theme="light"] .btn-pill:hover { background: rgba(0,184,230,.14); border-color: #00b8e6; box-shadow: 0 0 14px rgba(0,184,230,.5); }
-        html[data-theme="light"] .like-dislike-group button:hover:not(:disabled) { background: rgba(0,184,230,.14); }
+        html[data-theme="light"] .btn-pill:hover { background: rgba(255,42,50,.14); border-color: #ff2a32; box-shadow: 0 0 14px rgba(255,42,50,.5); }
+        html[data-theme="light"] .like-dislike-group button:hover:not(:disabled) { background: rgba(255,42,50,.14); }
         html[data-theme="light"] .like-dislike-group .divider { background: rgba(124,77,255,.5); }
-        html[data-theme="light"] .like-dislike-group #like-btn.active { background: rgba(0,184,230,.18); color: #0086b3; text-shadow: 0 0 10px rgba(0,184,230,.8); }
+        html[data-theme="light"] .like-dislike-group #like-btn.active { background: rgba(255,42,50,.18); color: #d80e18; text-shadow: 0 0 10px rgba(255,42,50,.8); }
         html[data-theme="light"] .like-dislike-group #dislike-btn.active { background: rgba(255,46,147,.18); color: #d4147a; text-shadow: 0 0 10px rgba(255,46,147,.7); }
         html[data-theme="light"] .description-box { background: #ffffff; border: 1px solid rgba(124,77,255,.35); box-shadow: 0 0 22px -10px rgba(124,77,255,.6); }
         html[data-theme="light"] .comment-input-line { background: transparent; color: #0b1030; }
-        html[data-theme="light"] .comment-input-line:focus { border-bottom-color: #00b8e6; box-shadow: 0 6px 14px -8px rgba(0,184,230,.8); outline: none; }
-        html[data-theme="light"] .comment-submit-btn { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.45); }
+        html[data-theme="light"] .comment-input-line:focus { border-bottom-color: #ff2a32; box-shadow: 0 6px 14px -8px rgba(255,42,50,.8); outline: none; }
+        html[data-theme="light"] .comment-submit-btn { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.45); }
         html[data-theme="light"] .comment-submit-btn:disabled { background: #ffffff; color: #55608f; box-shadow: none; }
-        html[data-theme="light"] .comment-author { color: #0086b3; }
-        html[data-theme="light"] .autoplay-toggle input:checked + .autoplay-track { background: linear-gradient(90deg, #7c4dff, #00b8e6); box-shadow: 0 0 10px rgba(0,184,230,.7); }
-        html[data-theme="light"] .upnext { background: #ffffff; border: 1px solid rgba(0,184,230,.45); box-shadow: 0 0 20px -6px rgba(0,184,230,.5); }
-        html[data-theme="light"] .upnext button.primary { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; box-shadow: 0 0 12px rgba(255,46,147,.5); }
+        html[data-theme="light"] .comment-author { color: #d80e18; }
+        html[data-theme="light"] .autoplay-toggle input:checked + .autoplay-track { background: linear-gradient(90deg, #b50d16, #ff2a32); box-shadow: 0 0 10px rgba(255,42,50,.7); }
+        html[data-theme="light"] .upnext { background: #ffffff; border: 1px solid rgba(255,42,50,.45); box-shadow: 0 0 20px -6px rgba(255,42,50,.5); }
+        html[data-theme="light"] .upnext button.primary { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; box-shadow: 0 0 12px rgba(255,46,147,.5); }
 
         /* speed menu, share menu and keyboard help */
         .vs-pop { position: fixed; z-index: 2100; min-width: 210px; max-width: calc(100vw - 16px); padding: 8px; border-radius: 14px; display: flex; flex-direction: column; gap: 2px; background: #212121; color: #fff; border: 1px solid #3a3a3a; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
@@ -1414,20 +1423,22 @@ html[data-theme="light"] {
         .vs-help-box h3 { margin: 0 0 12px; font-size: 17px; }
         .vs-help-row { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; font-size: 14px; border-bottom: 1px solid rgba(127, 127, 127, 0.2); }
         .vs-help-row kbd { font: inherit; font-size: 12px; padding: 1px 8px; border-radius: 6px; background: rgba(127, 127, 127, 0.28); white-space: nowrap; }
-        html:not([data-theme="light"]) .vs-pop, html:not([data-theme="light"]) .vs-help-box { background: rgba(10,13,31,.94); border: 1px solid rgba(0,229,255,.45); box-shadow: 0 0 20px -6px rgba(0,229,255,.5); }
-        html[data-theme="light"] .vs-pop, html[data-theme="light"] .vs-help-box { background: #ffffff; color: #0b1030; border: 1px solid rgba(0,184,230,.45); box-shadow: 0 0 20px -6px rgba(0,184,230,.5); }
+        html:not([data-theme="light"]) .vs-pop, html:not([data-theme="light"]) .vs-help-box { background: rgba(10,13,31,.94); border: 1px solid rgba(255,42,50,.45); box-shadow: 0 0 20px -6px rgba(255,42,50,.5); }
+        html[data-theme="light"] .vs-pop, html[data-theme="light"] .vs-help-box { background: #ffffff; color: #0b1030; border: 1px solid rgba(255,42,50,.45); box-shadow: 0 0 20px -6px rgba(255,42,50,.5); }
         html[data-theme="light"] .video-card.compact .thumbnail { border: 1px solid rgba(124,77,255,.28); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
-        html[data-theme="light"] .video-card.compact:hover .thumbnail { border-color: #00b8e6; box-shadow: 0 0 20px rgba(0,184,230,.55), 0 0 40px -8px rgba(124,77,255,.5); transform: translateY(-2px); }
-        html[data-theme="light"] .video-card.compact:hover .video-title { color: #0086b3; text-shadow: 0 0 10px rgba(0,184,230,.5); }
-        html[data-theme="light"] .toast { border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 22px rgba(0,184,230,.45); }
+        html[data-theme="light"] .video-card.compact:hover .thumbnail { border-color: #ff2a32; box-shadow: 0 0 20px rgba(255,42,50,.55), 0 0 40px -8px rgba(124,77,255,.5); transform: translateY(-2px); }
+        html[data-theme="light"] .video-card.compact:hover .video-title { color: #d80e18; text-shadow: 0 0 10px rgba(255,42,50,.5); }
+        html[data-theme="light"] .toast { border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 22px rgba(255,42,50,.45); }
     </style>
     <link rel="preconnect" href="https://www.youtube.com">
     <link rel="preconnect" href="https://i.ytimg.com">
     <link rel="dns-prefetch" href="https://www.google.com">
     <link rel="stylesheet" href="sidebar-rail.css?v=1">
     <script src="sidebar-rail.js?v=1"></script>
+    <link rel="stylesheet" href="no-neon.css?v=2">
 </head>
 <body>
+    <?php vs_page_loader_markup(); ?>
     <?php render_navbar('watch'); ?>
     <?php
     $vsPromptUser = trim((string)($_SESSION['username'] ?? ''));
@@ -1464,7 +1475,7 @@ html[data-theme="light"] {
                                     <a href="https://www.youtube.com/watch?v=<?php echo htmlspecialchars($yt_id); ?>" target="_blank" rel="noopener noreferrer">Watch on YouTube</a>
                                 </div>
                             <?php elseif ($is_direct): ?>
-                                <video id="main-video" src="<?php echo htmlspecialchars($src); ?>" controls autoplay playsinline preload="auto">
+                                <video id="main-video" src="<?php echo htmlspecialchars($src); ?>"<?php if ($hasPlayerPoster): ?> poster="<?php echo htmlspecialchars($playerPoster, ENT_QUOTES, 'UTF-8'); ?>"<?php endif; ?> controls autoplay playsinline preload="auto">
                                     Your browser does not support the video tag.
                                 </video>
                             <?php else: ?>
@@ -1605,9 +1616,10 @@ html[data-theme="light"] {
     <script src="sidebar.js"></script>
     <script src="creator-analytics-tracking.js?v=1"></script>
     <script src="video-menu.js?v=4"></script>
+    <script src="quest-toast.js?v=1"></script>
 
     <style>
-        .vs-cm-ts { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--blue, #3ea6ff); cursor: pointer; }
+        .vs-cm-ts { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--blue, #ff2a32); cursor: pointer; }
         .vs-cm-ts:hover { text-decoration: underline; }
         #watch-later-btn[aria-pressed="true"] { background: var(--accent-soft, rgba(176,42,42,.18)); border-color: var(--accent, #b02a2a); }
     </style>

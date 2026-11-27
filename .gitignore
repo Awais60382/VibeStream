@@ -1,5 +1,7 @@
 node_modules/
+/vendor/
 uploads/
+/storage/GeoLite2-Country.mmdb
 .env
 stripe-config.php
 youtube-config.php

@@ -105,8 +105,14 @@ try {
         }
     } elseif ($action === 'cancel') {
         vs_premium_cancel($pdo, $username);
+    } elseif ($action === 'freeze') {
+        $err = vs_rewards_buy_streak_freeze($pdo, $username);
+        if ($err !== null) {
+            vs_json(400, ['error' => $err]);
+        }
     } elseif ($action === 'redeem') {
-        $err = vs_rewards_redeem_monthly($pdo, $username);
+        // $in['tier'] is the point cost of the reward (500, 1000 or 2500); see VS_REWARDS_TIERS.
+        $err = vs_rewards_redeem_monthly($pdo, $username, (int)($in['tier'] ?? 500));
         if ($err !== null) {
             vs_json(400, ['error' => $err]);
         }

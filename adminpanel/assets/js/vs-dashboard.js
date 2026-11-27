@@ -71,3 +71,81 @@
   poll();
   setInterval(poll, 5000);
 })();
+
+/* ---------- Live system health ---------- */
+(function () {
+  var list = document.getElementById('vsdSystemStatus');
+  var updated = document.getElementById('vsdStatusUpdated');
+  if (!list) { return; }
+
+  var pending = false;
+  var tones = { ok: 'ok', warn: 'warn', bad: 'bad', off: 'off' };
+
+  function render(statuses) {
+    var fragment = document.createDocumentFragment();
+    statuses.forEach(function (status) {
+      var tone = tones[status.tone] || 'off';
+      var item = document.createElement('li');
+      var iconWrap = document.createElement('span');
+      iconWrap.className = 'vsd-sico s-' + tone;
+      var icon = document.createElement('i');
+      icon.className = 'bi ' + (tone === 'ok' ? 'bi-check-lg' : (tone === 'off' ? 'bi-dash-lg' : (tone === 'bad' ? 'bi-x-lg' : 'bi-exclamation-lg')));
+      icon.setAttribute('aria-hidden', 'true');
+      iconWrap.appendChild(icon);
+
+      var copy = document.createElement('span');
+      copy.className = 'vsd-tx';
+      var name = document.createElement('strong');
+      name.textContent = String(status.name || 'System service');
+      var description = document.createElement('small');
+      description.className = tone;
+      description.textContent = String(status.text || 'Status unavailable');
+      copy.appendChild(name);
+      copy.appendChild(description);
+
+      var badge = document.createElement('span');
+      badge.className = 'vsd-badge';
+      badge.textContent = String(status.badge || 'N/A');
+      item.appendChild(iconWrap);
+      item.appendChild(copy);
+      item.appendChild(badge);
+      fragment.appendChild(item);
+    });
+    list.textContent = '';
+    list.appendChild(fragment);
+  }
+
+  function refresh() {
+    if (document.hidden || pending) { return; }
+    pending = true;
+    fetch('index.php?live=1&health=1', { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (response) {
+        if (!response.ok) { throw new Error('System status request failed (' + response.status + ').'); }
+        return response.json();
+      })
+      .then(function (data) {
+        if (!Array.isArray(data.health) || !data.health.length) {
+          throw new Error('System status response was empty.');
+        }
+        render(data.health);
+        if (updated) {
+          updated.textContent = 'Live · ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+          updated.classList.remove('is-error');
+        }
+      })
+      .catch(function (error) {
+        if (updated) {
+          updated.textContent = 'Refresh failed';
+          updated.classList.add('is-error');
+        }
+        console.error('Dashboard system status refresh failed.', error);
+      })
+      .then(function () { pending = false; });
+  }
+
+  refresh();
+  setInterval(refresh, 30000);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) { refresh(); }
+  });
+})();

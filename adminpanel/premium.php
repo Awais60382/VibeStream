@@ -233,7 +233,7 @@ include "header.php";
 .pa-hero-copy{flex:1;min-width:240px}
 .pa-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border:1px solid var(--ln);border-radius:999px;background:rgba(168,85,247,.22);font-size:13px;font-weight:700}
 .pa-hero h1{margin:8px 0 6px;font-size:clamp(30px,4vw,46px);font-weight:900;font-style:italic;letter-spacing:-.02em;line-height:1.05;color:#fff}
-.pa-hero h1 span{background:linear-gradient(90deg,#c77dff,#ff2e93);-webkit-background-clip:text;background-clip:text;color:transparent}
+.pa-hero h1 span{background:linear-gradient(90deg,#c77dff,#ff2a32);-webkit-background-clip:text;background-clip:text;color:transparent}
 .pa-hero p{margin:0;color:#d9ceff}
 .pa-actions{display:flex;gap:10px;flex-wrap:wrap}
 .pa-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 18px;border:1px solid var(--ln);border-radius:10px;background:transparent;color:var(--tx);font:inherit;font-size:14px;font-weight:700;text-decoration:none;cursor:pointer}

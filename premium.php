@@ -38,9 +38,19 @@ $formatPlanLimit = static function (string $tier, string $key): string {
 .pm-perks li:first-child{padding-left:0;border-left:0}
 .pm-perks svg{width:24px;height:24px;flex:0 0 24px}
 .pm-art{justify-self:center;width:min(100%,330px);height:auto;filter:drop-shadow(0 0 24px rgba(255,50,180,.55))}
-.pm-status{display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px;border-radius:14px;margin-bottom:24px;background:linear-gradient(135deg,#f5b942,#ff8a3d);color:#2a1700;font-weight:600}
+.pm-status{display:none;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px 18px;border-radius:18px;margin-bottom:22px;background:radial-gradient(260px 130px at 0 0,rgba(255,195,70,.15),transparent 75%),linear-gradient(120deg,#171326,#11172c);color:#fff;border:1px solid rgba(255,200,75,.38);box-shadow:0 12px 30px -22px rgba(255,186,45,.8),inset 0 0 22px -18px #ffcd55}
 .vs-premium .pm-status{display:flex}
-.pm-status button{background:#2a1700;color:#fff;border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
+.pm-status-content{display:flex;align-items:center;gap:13px;min-width:0;flex:1}
+.pm-status-icon{display:grid;place-items:center;width:44px;height:44px;flex:0 0 44px;border:1px solid rgba(255,210,90,.5);border-radius:14px;background:linear-gradient(145deg,rgba(255,194,61,.2),rgba(255,194,61,.06));color:#ffd45a;box-shadow:0 0 18px -8px rgba(255,194,61,.8)}
+.pm-status-icon svg{width:24px;height:24px}
+.pm-status-copy{display:grid;gap:2px;min-width:0}
+.pm-status-eyebrow{color:#ffd45a;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.pm-status-copy strong{font-size:clamp(14px,1.4vw,17px);line-height:1.35;overflow-wrap:anywhere}
+.pm-status-note{color:rgba(255,255,255,.68);font-size:12px;line-height:1.4}
+.pm-status-active{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid rgba(74,222,128,.38);border-radius:999px;background:rgba(34,197,94,.1);color:#b7f7ca;font-size:12px;font-weight:800;white-space:nowrap}
+.pm-status-active:before{content:"";width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 9px rgba(74,222,128,.8)}
+.pm-status button{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.18);border-radius:11px;padding:9px 13px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:background .16s,border-color .16s}
+.pm-status button:hover{background:rgba(255,63,74,.14);border-color:rgba(255,93,100,.55)}
 .pm-toggle{display:flex;width:max-content;max-width:100%;margin:14px auto 16px;padding:4px;border:1px solid rgba(82,110,220,.45);border-radius:999px;background:#101a3b;box-shadow:0 5px 22px -14px #4167ff;color:#eaf0ff}
 .pm-toggle button{display:inline-flex;align-items:center;gap:8px;border:0;background:none;color:inherit;opacity:.8;padding:10px 24px;border-radius:999px;font:inherit;font-weight:700;cursor:pointer}
 .pm-toggle button[aria-pressed=true]{background:linear-gradient(100deg,#a500ff,#5d24ff);color:#fff;opacity:1}
@@ -84,6 +94,7 @@ $formatPlanLimit = static function (string $tier, string $key): string {
 @media(max-width:1050px){.pm-rewards{grid-template-columns:repeat(4,minmax(0,1fr));row-gap:8px}.pm-rewards-intro{grid-column:span 2}.pm-rewards-link{grid-column:1/-1;justify-self:center;margin:4px 0 0}}
 @media(max-width:900px){.pm-hero{grid-template-columns:1fr;padding:22px 18px}.pm-art{display:none}.pm-plans{grid-template-columns:1fr;gap:30px}}
 @media(max-width:620px){.pm-rewards{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px}.pm-rewards-intro{grid-column:1/-1}.pm-reward-perk:nth-of-type(2){border-left:0}.pm-trust{border-radius:20px}.pm-trust span{padding:6px 14px}}
+@media(max-width:620px){.pm-status{gap:12px;padding:13px}.pm-status-content{flex-basis:100%}.pm-status-active{margin-left:57px}.pm-status button{margin-left:auto}}
 .pm-toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:#f3f0fa;color:#17141f;padding:12px 20px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:80;max-width:90vw;text-align:center}
 .pm-toast.show{opacity:1;transform:translate(-50%,0)}
 .pm-modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px;z-index:70}
@@ -113,28 +124,28 @@ $formatPlanLimit = static function (string $tier, string $key): string {
 html:not([data-theme="light"]){
   --bg:#050918;--surface:#0b1533;--surface-2:#121d43;--surface-3:#182654;
   --text:#eaf0ff;--muted:#a2afd7;--border:#1d2b63;
-  --accent:#ff2e93;--accent-hover:#171c42;--accent-soft:rgba(255,46,147,.18);--blue:#00e5ff;
-  --neon-cyan:#00e5ff;--neon-pink:#ff2e93;--neon-violet:#8a5cff;
-  --nx-cyan:#00e5ff;--nx-pink:#ff2e93;--nx-violet:#8a5cff;
+  --accent:#ff2a32;--accent-hover:#171c42;--accent-soft:rgba(255,46,147,.18);--blue:#ff2a32;
+  --neon-cyan:#ff2a32;--neon-pink:#ff2a32;--neon-violet:#b50d16;
+  --nx-cyan:#ff2a32;--nx-pink:#ff2a32;--nx-violet:#b50d16;
   --nx-cyan-rgb:0,229,255;--nx-pink-rgb:255,46,147;--nx-violet-rgb:138,92,255;
-  --nx-cyan-ink:#00e5ff;--nx-pink-ink:#ff7ac0;
+  --nx-cyan-ink:#ff2a32;--nx-pink-ink:#ff7ac0;
   --nx-text:#eaf0ff;--nx-card:rgba(13,22,50,.92);--nx-solid:#080e23;--nx-field:rgba(10,18,42,.95);
   --nx-nav:#050918;--nx-side:linear-gradient(180deg,#0b1533,#050918);
   --nx-track:#050918;--nx-sun:#b9c9ff;--nx-active:#fff;--nx-backdrop:rgba(5,9,24,.82);
-  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(32,85,255,.15),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,229,255,.08),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.07),transparent 70%),#050918;
+  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(32,85,255,.15),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(255,42,50,.08),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.07),transparent 70%),#050918;
 }
 html[data-theme="light"]{
   --bg:#f4f6ff;--surface:#ffffff;--surface-2:#eceffd;--surface-3:#e3e8fc;
   --text:#0b1030;--muted:#55608f;--border:#cfd6f7;
-  --accent:#ff2e93;--accent-hover:#e3e8fc;--accent-soft:rgba(255,46,147,.12);--blue:#00b8e6;
-  --neon-cyan:#00b8e6;--neon-pink:#ff2e93;--neon-violet:#7c4dff;
-  --nx-cyan:#00b8e6;--nx-pink:#ff2e93;--nx-violet:#7c4dff;
+  --accent:#ff2a32;--accent-hover:#e3e8fc;--accent-soft:rgba(255,46,147,.12);--blue:#ff2a32;
+  --neon-cyan:#ff2a32;--neon-pink:#ff2a32;--neon-violet:#b50d16;
+  --nx-cyan:#ff2a32;--nx-pink:#ff2a32;--nx-violet:#b50d16;
   --nx-cyan-rgb:0,184,230;--nx-pink-rgb:255,46,147;--nx-violet-rgb:124,77,255;
-  --nx-cyan-ink:#0086b3;--nx-pink-ink:#d4147a;
+  --nx-cyan-ink:#d80e18;--nx-pink-ink:#d4147a;
   --nx-text:#0b1030;--nx-card:#ffffff;--nx-solid:#ffffff;--nx-field:#ffffff;
   --nx-nav:rgba(255,255,255,.85);--nx-side:linear-gradient(180deg,#ffffff,#f4f6ff);
-  --nx-track:#eceffd;--nx-sun:#7c4dff;--nx-active:#0b1030;--nx-backdrop:rgba(11,16,48,.55);
-  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(124,77,255,.14),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,184,230,.14),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.10),transparent 70%),#f4f6ff;
+  --nx-track:#eceffd;--nx-sun:#b50d16;--nx-active:#0b1030;--nx-backdrop:rgba(11,16,48,.55);
+  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(124,77,255,.14),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(255,42,50,.14),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.10),transparent 70%),#f4f6ff;
 }
 
 /* page + top bar */
@@ -174,9 +185,11 @@ html body .pm-layout .sidebar-link.active{background:linear-gradient(90deg,rgba(
 html body .pm-page h1{text-shadow:0 0 18px rgba(var(--nx-violet-rgb),.7)}
 html body .pm-plan h2{text-shadow:0 0 12px rgba(var(--nx-violet-rgb),.5)}
 html body .pm-hero{border-color:rgba(82,115,255,.7);box-shadow:0 12px 32px -18px rgba(0,94,255,.8),0 0 26px -16px rgba(205,0,255,.8)}
-html body .pm-status{background:linear-gradient(135deg,rgba(var(--nx-pink-rgb),.92),rgba(var(--nx-violet-rgb),.92));color:#fff;border:1px solid rgba(var(--nx-pink-rgb),.7);box-shadow:0 0 24px -4px rgba(var(--nx-pink-rgb),.6)}
-html body .pm-status button{background:var(--nx-solid);color:var(--nx-cyan-ink);border:1px solid var(--nx-cyan);box-shadow:0 0 12px -2px rgba(var(--nx-cyan-rgb),.55);transition:box-shadow .18s ease}
-html body .pm-status button:hover{box-shadow:0 0 20px rgba(var(--nx-cyan-rgb),.8)}
+html:not([data-theme="light"]) body .pm-status{background:radial-gradient(260px 130px at 0 0,rgba(255,195,70,.15),transparent 75%),linear-gradient(120deg,#171326,#11172c);color:#fff;border-color:rgba(255,200,75,.38);box-shadow:0 12px 30px -22px rgba(255,186,45,.8),inset 0 0 22px -18px #ffcd55}
+html[data-theme="light"] body .pm-status{background:radial-gradient(260px 130px at 0 0,rgba(255,195,70,.2),transparent 75%),linear-gradient(120deg,#fff,#fbf8ff);color:#241b39;border-color:rgba(189,137,28,.32);box-shadow:0 12px 30px -22px rgba(161,110,12,.3)}
+html[data-theme="light"] body .pm-status-note{color:#6c607e}
+html[data-theme="light"] body .pm-status button{background:rgba(36,27,57,.04);color:#513f54;border-color:rgba(70,50,80,.2)}
+html[data-theme="light"] body .pm-status button:hover{background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.35)}
 
 html body .pm-modal{background:var(--nx-backdrop);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
 html body .pm-box{background:var(--nx-solid);color:var(--nx-text);border:1px solid rgba(var(--nx-cyan-rgb),.6);box-shadow:0 0 36px -6px rgba(var(--nx-cyan-rgb),.55),0 0 70px -24px rgba(var(--nx-violet-rgb),.7)}
@@ -194,8 +207,16 @@ html body .pm-hrow a{color:var(--nx-cyan-ink);text-shadow:0 0 10px rgba(var(--nx
 <?php vs_render_sidebar('premium'); ?>
 <main class="pm-page">
   <div class="pm-status">
-    <span id="pmStatusText">Premium is active</span>
-    <button type="button" id="pmCancel">Cancel Premium</button>
+    <div class="pm-status-content">
+      <span class="pm-status-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 4.5 4L12 5l4.5 7L21 8l-2 11H5L3 8Z"/><path d="M5 22h14"/></svg></span>
+      <span class="pm-status-copy">
+        <span class="pm-status-eyebrow">Membership status</span>
+        <strong id="pmStatusText">Premium is active</strong>
+        <span class="pm-status-note">Your ad-free experience and Premium benefits are ready.</span>
+      </span>
+    </div>
+    <span class="pm-status-active">Active</span>
+    <button type="button" id="pmCancel"><i class="bi bi-x-circle" aria-hidden="true"></i>Cancel Premium</button>
   </div>
   <section class="pm-hero">
     <div>

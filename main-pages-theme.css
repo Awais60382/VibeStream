@@ -1,0 +1,233 @@
+:root {
+  --main-accent: #ff2a32;
+  --main-accent-strong: #d80e18;
+  --main-accent-soft: rgba(255, 42, 50, 0.14);
+  --main-accent-glow: rgba(255, 42, 50, 0.36);
+  --main-gold: #f5b83d;
+}
+
+html:not([data-theme="light"]) {
+  --bg: #09090b;
+  --surface: #141418;
+  --surface-2: #202027;
+  --surface-3: #292930;
+  --text: #f5f5f7;
+  --text-primary: #f5f5f7;
+  --text-secondary: #b0b0ba;
+  --muted: #a2a2ac;
+  --border: #303036;
+  --surface-base: #09090b;
+  --surface-raised: #141418;
+  --surface-overlay: #1b1b20;
+  --surface-hover: #25252c;
+  --accent: var(--main-accent);
+  --accent-hover: #202027;
+  --accent-soft: var(--main-accent-soft);
+}
+
+html[data-theme="light"] {
+  --accent: #df171f;
+  --accent-hover: #e8e8ed;
+  --accent-soft: rgba(223, 23, 31, 0.1);
+  --main-accent-glow: rgba(223, 23, 31, 0.22);
+}
+
+html[data-theme] body {
+  background-image:
+    radial-gradient(900px 500px at 100% -10%, var(--main-accent-soft), transparent 62%),
+    radial-gradient(700px 420px at 0 100%, rgba(255, 42, 50, 0.06), transparent 68%);
+  background-attachment: fixed;
+}
+
+html[data-theme="light"] body {
+  background-image:
+    radial-gradient(900px 500px at 100% -10%, rgba(223, 23, 31, 0.07), transparent 62%);
+}
+
+html[data-theme] .app-navbar,
+html[data-theme] .navbar {
+  border-bottom-color: rgba(255, 42, 50, 0.36);
+  box-shadow: 0 10px 28px -24px var(--main-accent-glow);
+}
+
+html[data-theme] .brand,
+html[data-theme] .site-brand {
+  color: var(--main-accent);
+  text-shadow: 0 0 14px var(--main-accent-soft);
+}
+
+html[data-theme] .nav-toggle:hover,
+html[data-theme] .vs-theme-toggle:hover,
+html[data-theme] #themeToggle:hover {
+  border-color: rgba(255, 42, 50, 0.55);
+  box-shadow: 0 0 14px -6px var(--main-accent-glow);
+}
+
+html[data-theme] .nav-link.active,
+html[data-theme] .sidebar-link.active,
+html[data-theme] .sidebar-link.is-active {
+  background: linear-gradient(135deg, var(--main-accent), var(--main-accent-strong));
+  border-color: var(--main-accent);
+  color: #fff;
+  box-shadow: 0 7px 18px -10px var(--main-accent-glow);
+}
+
+html[data-theme] .create-btn,
+html[data-theme] .sign-in-btn,
+html[data-theme] .upload-btn,
+html[data-theme] .nav-right .upload-btn.vs-create-btn {
+  border-color: rgba(255, 42, 50, 0.7);
+}
+
+html[data-theme] .create-btn,
+html[data-theme] .sign-in-btn,
+html[data-theme] .nav-right .upload-btn.vs-create-btn {
+  color: var(--main-accent);
+}
+
+html[data-theme] .nav-right .upload-btn.vs-create-btn:hover,
+html[data-theme] .create-btn:hover,
+html[data-theme] .sign-in-btn:hover {
+  border-color: var(--main-accent);
+  box-shadow: 0 0 16px -6px var(--main-accent-glow);
+}
+
+html[data-theme] .app-main,
+html[data-theme] .page,
+html[data-theme] .watch-container,
+html[data-theme] .shorts-shell,
+html[data-theme] .content-wrap {
+  color: var(--text-primary);
+}
+
+html[data-theme] .panel,
+html[data-theme] .profile-head,
+html[data-theme] .video-card,
+html[data-theme] .short-card,
+html[data-theme] .player-card,
+html[data-theme] .description-box,
+html[data-theme] .comments-section,
+html[data-theme] .comment-item,
+html[data-theme] .comments-box,
+html[data-theme] .login-container,
+html[data-theme] .watch-container,
+html[data-theme] .short-card {
+  border-color: var(--border);
+}
+
+html[data-theme] .panel,
+html[data-theme] .profile-head,
+html[data-theme] .video-card,
+html[data-theme] .short-card,
+html[data-theme] .player-card,
+html[data-theme] .description-box,
+html[data-theme] .comments-section,
+html[data-theme] .comment-item,
+html[data-theme] .comments-box,
+html[data-theme] .login-container {
+  box-shadow: 0 16px 36px -30px var(--main-accent-glow);
+}
+
+html[data-theme] .video-card:hover,
+html[data-theme] .short-card:hover,
+html[data-theme] .panel:hover {
+  border-color: rgba(255, 42, 50, 0.48);
+  box-shadow: 0 14px 28px -22px var(--main-accent-glow);
+}
+
+html[data-theme] .btn,
+html[data-theme] .primary-btn,
+html[data-theme] button.primary,
+html[data-theme] .btn-pill,
+html[data-theme] .action-btn {
+  border-color: rgba(255, 42, 50, 0.48);
+}
+
+html[data-theme] .btn-primary,
+html[data-theme] button[type="submit"]:not(.nav-search button),
+html[data-theme] .primary-action {
+  background: linear-gradient(135deg, var(--main-accent), var(--main-accent-strong));
+  border: 0;
+  color: #fff;
+  box-shadow: 0 8px 20px -12px var(--main-accent-glow);
+}
+
+html[data-theme] input:focus,
+html[data-theme] textarea:focus,
+html[data-theme] select:focus {
+  border-color: var(--main-accent);
+  box-shadow: 0 0 0 3px var(--main-accent-soft);
+  outline: none;
+}
+
+html[data-theme] ::selection {
+  background: var(--main-accent);
+  color: #fff;
+}
+
+/* Red-only, neon-free override. This also neutralizes neon styles embedded by older pages. */
+:root,
+html[data-theme],
+html[data-theme="light"],
+html:not([data-theme="light"]) {
+  --blue: #ff2a32 !important;
+  --accent: #ff2a32 !important;
+  --accent-hover: #d80e18 !important;
+  --accent-soft: rgba(255, 42, 50, 0.14) !important;
+  --neon-cyan: #ff2a32 !important;
+  --neon-pink: #ff2a32 !important;
+  --neon-violet: #b50d16 !important;
+  --nx-cyan: #ff2a32 !important;
+  --nx-pink: #ff2a32 !important;
+  --nx-violet: #b50d16 !important;
+  --nx-cyan-rgb: 255,42,50 !important;
+  --nx-pink-rgb: 255,42,50 !important;
+  --nx-violet-rgb: 181,13,22 !important;
+  --nx-cyan-ink: #ff2a32 !important;
+  --nx-pink-ink: #ff2a32 !important;
+}
+
+[data-vs-neon-toggle],
+.vs-neon-toggle {
+  display: none !important;
+}
+
+html.vs-neon-off *:not(:focus):not(:focus-within),
+html.vs-neon-off *::before,
+html.vs-neon-off *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+html.vs-neon-off .brand,
+html.vs-neon-off .site-brand {
+  background: none !important;
+  -webkit-text-fill-color: initial !important;
+  color: var(--main-accent) !important;
+  filter: none !important;
+}
+
+html.vs-neon-off :focus-visible,
+html.vs-neon-off input:focus,
+html.vs-neon-off textarea:focus,
+html.vs-neon-off select:focus {
+  border-color: #ff2a32 !important;
+  outline-color: #ff2a32 !important;
+  box-shadow: 0 0 0 3px rgba(255,42,50,.14) !important;
+}
+
+html.vs-neon-off .sidebar-heading,
+html.vs-neon-off .comment-author,
+html.vs-neon-off .vs-cm-ts,
+html.vs-neon-off .actions-column .icon-btn.on .circle {
+  color: #ff2a32 !important;
+  background-color: rgba(255,42,50,.12) !important;
+  border-color: #ff2a32 !important;
+}
+
+html.vs-neon-off .nav-toggle span {
+  color: #ff2a32 !important;
+  background-color: #ff2a32 !important;
+  border-color: #ff2a32 !important;
+  opacity: 1 !important;
+}

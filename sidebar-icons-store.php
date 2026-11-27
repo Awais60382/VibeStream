@@ -37,6 +37,7 @@ function vs_si_items(): array
             'premium'     => ['Premium', 'bi bi-gem'],
             'profile'     => ['Profile', 'bi bi-person-badge'],
             'settings'    => ['App settings', 'bi bi-sliders'],
+            'maintenance' => ['Maintenance', 'bi bi-power'],
             'activity'    => ['Admin activity', 'bi bi-activity'],
             'mainsite'    => ['Main Site', 'bi bi-house'],
             'insights'    => ['Live Insights', 'bi bi-activity'],

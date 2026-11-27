@@ -63,7 +63,6 @@ try {
 
 include "header.php";
 ?>
-      <link rel="stylesheet" href="./assets/css/vs-neon.css?v=4">
       <link rel="stylesheet" href="./assets/css/vs-dashboard.css?v=6">
       <link rel="stylesheet" href="./assets/css/vs-dashboard-theme.css?v=1">
 

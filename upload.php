@@ -2,6 +2,8 @@
 require_once __DIR__ . '/layout.php';  
 include __DIR__ . '/connection.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/category-presets.php';
+require_once __DIR__ . '/category-icons.php';
 require_once __DIR__ . '/upload-failure-store.php';
 require_once __DIR__ . '/premium-store.php';
 require_once __DIR__ . '/live-store.php';
@@ -74,23 +76,6 @@ function upload_error_text($code) {
     }
 }
 
-function up_save_thumbnail($f, &$error) {
-    $error = '';
-    if (!is_array($f) || ($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) return null;
-    if ($f['error'] !== UPLOAD_ERR_OK) { $error = 'The thumbnail could not be uploaded. ' . upload_error_text($f['error']); return null; }
-    if ((int)$f['size'] > 5 * 1024 * 1024) { $error = 'The thumbnail is bigger than 5 MB.'; return null; }
-    $ext = strtolower(pathinfo((string)$f['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true) || @getimagesize($f['tmp_name']) === false) {
-        $error = 'Thumbnails must be JPG, PNG, WebP or GIF images.';
-        return null;
-    }
-    $dir = __DIR__ . '/uploads/thumbnails';
-    if (!is_dir($dir) && !mkdir($dir, 0777, true)) { $error = 'Could not create the uploads/thumbnails folder.'; return null; }
-    $name = bin2hex(random_bytes(8)) . '.' . ($ext === 'jpeg' ? 'jpg' : $ext);
-    if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) { $error = 'Could not save the thumbnail.'; return null; }
-    return 'uploads/thumbnails/' . $name;
-}
-
 if (empty($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(16));
 
 $username = isset($_SESSION['username']) ? trim((string)$_SESSION['username']) : '';
@@ -120,7 +105,6 @@ try {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $savedFile = null;
-    $savedThumb = null;
 
     if (!$uploadsOn) {
         $errors[] = 'Uploads are turned off right now. Please try again later.';
@@ -175,11 +159,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($old['thumbnail_url'] === '' && $youtubeId !== '') {
                         $old['thumbnail_url'] = 'https://i.ytimg.com/vi/' . rawurlencode($youtubeId) . '/hqdefault.jpg';
                     }
-                    $thumbError = '';
-                    $liveThumb = up_save_thumbnail($_FILES['thumbnail_file'] ?? null, $thumbError);
-                    if ($thumbError !== '') throw new RuntimeException($thumbError);
-                    if ($liveThumb !== null) $old['thumbnail_url'] = $liveThumb;
-
                     $stmt = $pdo->prepare(
                         'INSERT INTO live_streams
                          (username, title, description, stream_url, thumbnail_url, status, scheduled_at, started_at)
@@ -325,11 +304,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                $thumbError = '';
-                $thumbRel = up_save_thumbnail($_FILES['thumbnail_file'] ?? null, $thumbError);
-                if ($thumbError !== '') throw new RuntimeException($thumbError);
-                if ($thumbRel !== null) $savedThumb = __DIR__ . '/' . $thumbRel;
-
                 $poster = $username !== '' ? $username : 'Guest';
                 $data = [];
                 $put = function ($key, $val) use (&$data, $cols) {
@@ -357,11 +331,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                if (!empty($thumbRel)) {
-                    foreach (['thumbnail', 'thumbnail_url', 'thumb', 'thumb_url', 'poster'] as $t) {
-                        if (isset($cols[$t])) { $put($t, $thumbRel); break; }
-                    }
-                }
                 if ($videoScheduledAt !== null) $put('scheduled_at', $videoScheduledAt);
 
                 $put($srcCol, $sourceValue);
@@ -414,7 +383,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             } catch (Throwable $e) {
                 if ($savedFile && is_file($savedFile)) @unlink($savedFile);
-                if ($savedThumb && is_file($savedThumb)) @unlink($savedThumb);
                 $errors[] = 'Could not save: ' . $e->getMessage();
             }
         }
@@ -438,8 +406,8 @@ $srcRealName = $srcCol !== null ? $cols[$srcCol]['Field'] : '';
 
 $extraCss = <<<'CSS'
 .page.upload-page{max-width:1340px;padding-top:22px}
-.upload-wrap{--pink:#ff2e93;--violet:#8a5cff;--cyan:#00e5ff;--card:linear-gradient(165deg,rgba(14,18,46,.96),rgba(8,10,28,.97));--solid:#0a0d1f;--line:rgba(138,92,255,.34);--line2:rgba(0,229,255,.6);--tx:#f2f5ff;--mut:#9aa6d6;--faint:#7480b4;--inp:rgba(8,11,30,.85);--chip:rgba(255,255,255,.07);--grad:linear-gradient(90deg,#ff2e93,#8a5cff 55%,#00e5ff);--grad-blue:linear-gradient(90deg,#1f6bff,#00c8ff);--glow:rgba(138,92,255,.5);color:var(--tx)}
-html[data-theme="light"] .upload-wrap{--card:linear-gradient(165deg,#fff,#f6f4ff);--solid:#fff;--line:rgba(124,77,255,.28);--line2:rgba(0,184,230,.65);--tx:#0b1030;--mut:#55608f;--faint:#7a84ad;--inp:#fff;--chip:rgba(124,77,255,.1);--glow:rgba(124,77,255,.28)}
+.upload-wrap{--pink:#ff2a32;--violet:#b50d16;--cyan:#ff2a32;--card:linear-gradient(165deg,rgba(14,18,46,.96),rgba(8,10,28,.97));--solid:#0a0d1f;--line:rgba(138,92,255,.34);--line2:rgba(255,42,50,.6);--tx:#f2f5ff;--mut:#9aa6d6;--faint:#7480b4;--inp:rgba(8,11,30,.85);--chip:rgba(255,255,255,.07);--grad:linear-gradient(90deg,#ff2a32,#b50d16 55%,#ff2a32);--grad-blue:linear-gradient(90deg,#1f6bff,#00c8ff);--glow:rgba(138,92,255,.5);color:var(--tx)}
+html[data-theme="light"] .upload-wrap{--card:linear-gradient(165deg,#fff,#f6f4ff);--solid:#fff;--line:rgba(124,77,255,.28);--line2:rgba(255,42,50,.65);--tx:#0b1030;--mut:#55608f;--faint:#7a84ad;--inp:#fff;--chip:rgba(124,77,255,.1);--glow:rgba(124,77,255,.28)}
 .upload-wrap [hidden]{display:none!important}
 .upload-wrap *{box-sizing:border-box}
 
@@ -471,12 +439,14 @@ html[data-theme="light"] .upload-wrap{--card:linear-gradient(165deg,#fff,#f6f4ff
 .upload-wrap .up-input,.upload-wrap .up-textarea,.upload-wrap .up-select{display:block;width:100%;min-height:46px;padding:0 16px;border:1px solid var(--line);border-radius:13px;background:var(--inp);color:var(--tx);font-size:15px;outline:none;transition:border-color .16s,box-shadow .16s}
 .upload-wrap .up-textarea{min-height:92px;padding:12px 16px;resize:vertical;line-height:1.5}
 .upload-wrap .up-input::placeholder,.upload-wrap .up-textarea::placeholder{color:var(--faint)}
-.upload-wrap .up-input:focus,.upload-wrap .up-textarea:focus,.upload-wrap .up-select:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(0,229,255,.18),0 0 18px -4px rgba(0,229,255,.5)}
+.upload-wrap .up-input:focus,.upload-wrap .up-textarea:focus,.upload-wrap .up-select:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(255,42,50,.18),0 0 18px -4px rgba(255,42,50,.5)}
 .upload-wrap input[type=datetime-local]{color-scheme:dark}
 html[data-theme="light"] .upload-wrap input[type=datetime-local]{color-scheme:light}
 .up-count{margin:5px 0 12px;text-align:right;font-size:12px;color:var(--faint)}
 .up-ic{position:relative}
 .up-ic>svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--mut);pointer-events:none}
+.up-category-icon{position:absolute;left:14px;top:50%;display:grid;width:18px;height:18px;place-items:center;transform:translateY(-50%);color:var(--mut);pointer-events:none}
+.up-category-icon svg,.up-category-icon img{display:block;width:18px;height:18px;object-fit:contain}
 .upload-wrap .up-ic .up-input,.upload-wrap .up-ic .up-select{padding-left:44px}
 .upload-wrap .up-select{appearance:none;-webkit-appearance:none;padding-right:40px;cursor:pointer}
 .upload-wrap .up-select option{background:#0a0d1f;color:#f2f5ff}
@@ -500,7 +470,7 @@ html[data-theme="light"] .upload-wrap input[type=datetime-local]{color-scheme:li
 #categoryField .up-ic{flex:1;min-width:0}
 
 /* dropzone */
-.upload-dropzone{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:136px;padding:18px;border:2px dashed var(--cyan);border-radius:16px;background:radial-gradient(ellipse at 50% 130%,rgba(138,92,255,.28),transparent 62%),var(--inp);box-shadow:0 0 0 1px rgba(138,92,255,.45),0 0 26px -8px rgba(0,229,255,.55);text-align:center;cursor:pointer}
+.upload-dropzone{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:136px;padding:18px;border:2px dashed var(--cyan);border-radius:16px;background:radial-gradient(ellipse at 50% 130%,rgba(138,92,255,.28),transparent 62%),var(--inp);box-shadow:0 0 0 1px rgba(138,92,255,.45),0 0 26px -8px rgba(255,42,50,.55);text-align:center;cursor:pointer}
 .upload-dropzone:hover,.upload-dropzone.is-dragging{border-color:#fff;box-shadow:0 0 0 1px var(--violet),0 0 32px -4px var(--cyan)}
 .upload-dropzone svg{width:46px;height:46px;color:#18b8ff;filter:drop-shadow(0 0 10px rgba(0,200,255,.7))}
 .upload-dropzone strong{font-size:18px;word-break:break-word}
@@ -568,7 +538,7 @@ html[data-theme="light"] .upload-wrap input[type=datetime-local]{color-scheme:li
 /* notices */
 .notice{border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.5;margin-bottom:16px;border:1px solid var(--line);background:rgba(138,92,255,.1)}
 .notice.error{border-color:rgba(255,93,122,.6);background:rgba(255,93,122,.12)}
-.notice.ok{border-color:rgba(0,229,255,.5)}
+.notice.ok{border-color:rgba(255,42,50,.5)}
 .notice.warn{border-color:rgba(230,170,60,.5);background:rgba(230,170,60,.1)}
 .notice a{color:var(--cyan);text-decoration:underline}
 .notice ul{margin:0;padding-left:18px}
@@ -584,60 +554,60 @@ html[data-theme="light"] .upload-wrap input[type=datetime-local]{color-scheme:li
 html:not([data-theme="light"]) {
             --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
             --text: #eaf0ff; --muted: #8f9bd0; --border: #1d2557;
-            --accent: #ff2e93; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #00e5ff;
-            --neon-cyan: #00e5ff; --neon-pink: #ff2e93; --neon-violet: #8a5cff;
+            --accent: #ff2a32; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #ff2a32;
+            --neon-cyan: #ff2a32; --neon-pink: #ff2a32; --neon-violet: #b50d16;
         }
         html:not([data-theme="light"]) body { background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.16), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50,.10), transparent 70%),
                 radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.08), transparent 70%), #05060f; background-attachment: fixed; }
-        html:not([data-theme="light"]) body .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(0,229,255,.35); box-shadow: 0 1px 24px -4px rgba(0,229,255,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
-        html:not([data-theme="light"]) body .brand { background: linear-gradient(90deg, #00e5ff, #8a5cff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
-        html:not([data-theme="light"]) body .nav-toggle span { background: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.7); }
-        html:not([data-theme="light"]) body .nav-toggle:hover, html:not([data-theme="light"]) body .theme-toggle:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) body .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(255,42,50,.35); box-shadow: 0 1px 24px -4px rgba(255,42,50,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
+        html:not([data-theme="light"]) body .brand { background: linear-gradient(90deg, #ff2a32, #b50d16 55%, #ff2a32); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
+        html:not([data-theme="light"]) body .nav-toggle span { background: #ff2a32; box-shadow: 0 0 6px rgba(255,42,50,.7); }
+        html:not([data-theme="light"]) body .nav-toggle:hover, html:not([data-theme="light"]) body .theme-toggle:hover { background: rgba(255,42,50,.14); box-shadow: 0 0 14px rgba(255,42,50,.4); }
         html:not([data-theme="light"]) body .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(138,92,255,.6)); }
         html:not([data-theme="light"]) body .nav-link.active { background: rgba(255,46,147,.16); color: #ff7ac0; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
         html:not([data-theme="light"]) body .create-btn, html:not([data-theme="light"]) body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
         html:not([data-theme="light"]) body #search-input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.55); color: #eaf0ff; box-shadow: 0 0 10px -2px rgba(138,92,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
-        html:not([data-theme="light"]) body #search-input:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 20px rgba(0,229,255,.55); }
+        html:not([data-theme="light"]) body #search-input:focus { outline: none; border-color: #ff2a32; box-shadow: 0 0 0 1px #ff2a32, 0 0 20px rgba(255,42,50,.55); }
         html:not([data-theme="light"]) body .user-badge-pill { background: linear-gradient(180deg, rgba(23,28,66,.9), rgba(10,13,31,.95)); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
-        html:not([data-theme="light"]) body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html:not([data-theme="light"]) body .logout-link:hover { color: #ff2a32; text-shadow: 0 0 10px rgba(255,46,147,.7); }
         html:not([data-theme="light"]) body .app-sidebar { background: linear-gradient(180deg, rgba(10,13,31,.97), rgba(5,6,15,.98)); border-right: 1px solid rgba(138,92,255,.4); box-shadow: 4px 0 28px -10px rgba(138,92,255,.45); }
         html:not([data-theme="light"]) body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
-        html:not([data-theme="light"]) body .sidebar-link:hover { background: rgba(0,229,255,.10); box-shadow: inset 3px 0 0 #00e5ff, 0 0 16px -4px rgba(0,229,255,.5); }
-        html:not([data-theme="light"]) body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
-        html:not([data-theme="light"]) body .sidebar-heading { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) body .sidebar-link:hover { background: rgba(255,42,50,.10); box-shadow: inset 3px 0 0 #ff2a32, 0 0 16px -4px rgba(255,42,50,.5); }
+        html:not([data-theme="light"]) body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2a32, 0 0 18px -4px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) body .sidebar-heading { color: #ff2a32; text-shadow: 0 0 8px rgba(255,42,50,.45); }
         html:not([data-theme="light"]) body ::-webkit-scrollbar { width: 10px; height: 10px; }
         html:not([data-theme="light"]) body ::-webkit-scrollbar-track { background: #05060f; }
-        html:not([data-theme="light"]) body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
+        html:not([data-theme="light"]) body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #b50d16, #ff2a32); border-radius: 8px; }
         html:not([data-theme="light"]) body ::selection { background: rgba(255,46,147,.4); color: #fff; }
 html[data-theme="light"] {
             --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
             --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
-            --accent: #ff2e93; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #00b8e6;
-            --neon-cyan: #00b8e6; --neon-pink: #ff2e93; --neon-violet: #7c4dff;
+            --accent: #ff2a32; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #ff2a32;
+            --neon-cyan: #ff2a32; --neon-pink: #ff2a32; --neon-violet: #b50d16;
         }
         html[data-theme="light"] body { background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.14), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50,.14), transparent 70%),
                 radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.10), transparent 70%), #f4f6ff; background-attachment: fixed; }
-        html[data-theme="light"] body .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(0,184,230,.55); box-shadow: 0 1px 22px -4px rgba(0,184,230,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
-        html[data-theme="light"] body .brand { background: linear-gradient(90deg, #00b8e6, #7c4dff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
-        html[data-theme="light"] body .nav-toggle span { background: #7c4dff; box-shadow: 0 0 6px rgba(124,77,255,.7); }
-        html[data-theme="light"] body .nav-toggle:hover, html[data-theme="light"] body .theme-toggle:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 14px rgba(0,184,230,.4); }
-        html[data-theme="light"] body .theme-toggle svg { color: #7c4dff; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
+        html[data-theme="light"] body .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(255,42,50,.55); box-shadow: 0 1px 22px -4px rgba(255,42,50,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
+        html[data-theme="light"] body .brand { background: linear-gradient(90deg, #ff2a32, #b50d16 55%, #ff2a32); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
+        html[data-theme="light"] body .nav-toggle span { background: #b50d16; box-shadow: 0 0 6px rgba(124,77,255,.7); }
+        html[data-theme="light"] body .nav-toggle:hover, html[data-theme="light"] body .theme-toggle:hover { background: rgba(255,42,50,.14); box-shadow: 0 0 14px rgba(255,42,50,.4); }
+        html[data-theme="light"] body .theme-toggle svg { color: #b50d16; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
         html[data-theme="light"] body .nav-link.active { background: rgba(255,46,147,.16); color: #d4147a; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
         html[data-theme="light"] body .create-btn, html[data-theme="light"] body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
         html[data-theme="light"] body #search-input { background: #ffffff; border: 1px solid rgba(124,77,255,.55); color: #0b1030; box-shadow: 0 0 10px -2px rgba(124,77,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
-        html[data-theme="light"] body #search-input:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 20px rgba(0,184,230,.55); }
+        html[data-theme="light"] body #search-input:focus { outline: none; border-color: #ff2a32; box-shadow: 0 0 0 1px #ff2a32, 0 0 20px rgba(255,42,50,.55); }
         html[data-theme="light"] body .user-badge-pill { background: linear-gradient(180deg, #ffffff, #f1f3ff); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
-        html[data-theme="light"] body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html[data-theme="light"] body .logout-link:hover { color: #ff2a32; text-shadow: 0 0 10px rgba(255,46,147,.7); }
         html[data-theme="light"] body .app-sidebar { background: linear-gradient(180deg, #ffffff, #f4f6ff); border-right: 1px solid rgba(124,77,255,.35); box-shadow: 4px 0 28px -10px rgba(124,77,255,.45); }
         html[data-theme="light"] body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
-        html[data-theme="light"] body .sidebar-link:hover { background: rgba(0,184,230,.12); box-shadow: inset 3px 0 0 #00b8e6, 0 0 16px -4px rgba(0,184,230,.5); }
-        html[data-theme="light"] body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
-        html[data-theme="light"] body .sidebar-heading { color: #7c4dff; text-shadow: 0 0 8px rgba(124,77,255,.45); }
+        html[data-theme="light"] body .sidebar-link:hover { background: rgba(255,42,50,.12); box-shadow: inset 3px 0 0 #ff2a32, 0 0 16px -4px rgba(255,42,50,.5); }
+        html[data-theme="light"] body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2a32, 0 0 18px -4px rgba(255,46,147,.55); }
+        html[data-theme="light"] body .sidebar-heading { color: #b50d16; text-shadow: 0 0 8px rgba(124,77,255,.45); }
         html[data-theme="light"] body ::-webkit-scrollbar { width: 10px; height: 10px; }
         html[data-theme="light"] body ::-webkit-scrollbar-track { background: #eceffd; }
-        html[data-theme="light"] body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
+        html[data-theme="light"] body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #b50d16, #ff2a32); border-radius: 8px; }
         html[data-theme="light"] body ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
 html:not([data-theme="light"]) body .up-card,html:not([data-theme="light"]) body .upload-side-card{border-color:rgba(138,92,255,.5);box-shadow:0 0 30px -10px rgba(138,92,255,.55)}
 
@@ -741,11 +711,15 @@ vs_page_start('Upload', 'upload', $extraCss);
                     <div id="categoryField">
                         <label class="up-label" for="category">Category</label>
                         <div class="up-ic up-sel">
-                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z"/></svg>
+                            <span class="up-category-icon" id="categoryIcon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z"/></svg></span>
                             <select class="up-select" id="category" name="category" required>
                                 <option value="">Select a category</option>
-                                <?php foreach ($categoryChoices as $choice): $cv = strtolower(trim((string)$choice)); ?>
-                                    <option value="<?= htmlspecialchars($cv) ?>"<?= $old['category'] === $cv ? ' selected' : '' ?>><?= htmlspecialchars($choice) ?></option>
+                                <?php foreach ($categoryChoices as $choice):
+                                    $cv = strtolower(trim((string)$choice));
+                                    $categoryIconUrl = vs_cat_icon_url((string)$choice);
+                                    $categoryIconSvg = $categoryIconUrl === null ? vs_category_icon_svg($cv, 18) : '';
+                                ?>
+                                    <option value="<?= htmlspecialchars($cv, ENT_QUOTES, 'UTF-8') ?>" data-icon-url="<?= htmlspecialchars((string)$categoryIconUrl, ENT_QUOTES, 'UTF-8') ?>" data-icon-svg="<?= htmlspecialchars($categoryIconSvg, ENT_QUOTES, 'UTF-8') ?>"<?= $old['category'] === $cv ? ' selected' : '' ?>><?= htmlspecialchars($choice, ENT_QUOTES, 'UTF-8') ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -774,33 +748,16 @@ vs_page_start('Upload', 'upload', $extraCss);
                             <label class="up-label" for="stream_url">Stream or YouTube Live link</label>
                             <input class="up-input" type="url" id="stream_url" name="stream_url" placeholder="https://www.youtube.com/live/..." value="<?= htmlspecialchars($old['stream_url']) ?>">
                             <label class="up-label" for="thumbnail_url">Thumbnail URL <small>(Optional)</small></label>
-                            <input class="up-input" type="url" id="thumbnail_url" name="thumbnail_url" placeholder="Or upload a thumbnail below" value="<?= htmlspecialchars($old['thumbnail_url']) ?>">
+                            <input class="up-input" type="url" id="thumbnail_url" name="thumbnail_url" placeholder="Optional image URL" value="<?= htmlspecialchars($old['thumbnail_url']) ?>">
                             <div class="up-hint" id="urlTypeHint">Add a YouTube Live, HLS, MP4, WebM, or embed URL.</div>
-                            <div class="up-hint">Leave Scheduled Publish empty to go live right away.</div>
                         </div>
                     </div>
 
-                    <div>
-                        <span class="up-label">Thumbnail <small>(Optional)</small></span>
-                        <div class="up-thumb">
-                            <label class="up-thumb-box" for="thumbnail_file">
-                                <svg id="thumbPlaceholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 16 5-5 5 5 3-3 5 5"/><circle cx="8.5" cy="8.5" r="1.5"/></svg>
-                                <img id="thumbPreview" alt="" hidden>
-                            </label>
-                            <label class="up-ghost" for="thumbnail_file"><span id="thumbBtnText">Choose Thumbnail</span></label>
-                            <span class="up-filename" id="thumbName">No file chosen</span>
-                            <input class="up-hide" type="file" id="thumbnail_file" name="thumbnail_file" accept="image/jpeg,image/png,image/webp,image/gif">
-                        </div>
-                    </div>
-                    <div class="up-sched">
-                        <label class="up-label" for="scheduled_at"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4m8-4v4"/></svg>Scheduled Publish <small>(Optional)</small></label>
-                        <input class="up-input" type="datetime-local" id="scheduled_at" name="scheduled_at" value="<?= htmlspecialchars($old['scheduled_at']) ?>">
-                    </div>
                 </div>
 
                 <div class="upload-actions">
                     <button type="submit" class="up-submit" id="submitBtn"<?= ($srcCol === null || !$uploadsOn) ? ' disabled' : '' ?>><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.6 2.4a1 1 0 0 0-1.05-.2L2.7 9.6a1 1 0 0 0 .08 1.9l6.1 2 2 6.1a1 1 0 0 0 1.9.08l7.4-17.8a1 1 0 0 0-.58-1.48zM10.2 12.4l7.1-4.9-5 6.3z"/></svg><span id="submitLabel">Publish</span></button>
-                    <div class="notice upload-draft-status" id="draftStatus" role="status" aria-live="polite">Unfinished details save in this browser. You may need to reselect a video file if browser storage is unavailable.</div>
+                    <div class="notice upload-draft-status" id="draftStatus" role="status" aria-live="polite">Upload details are saved in this browser. Video files over 16 MB are not cached; keep this page open or reselect the file if you return.</div>
                     <div class="up-meta">
                         <button type="button" class="up-clear" id="clearDraftBtn">Clear saved draft</button>
                         <?php if ($username !== ''): ?>
@@ -818,15 +775,15 @@ vs_page_start('Upload', 'upload', $extraCss);
                     <svg class="up-scene" viewBox="0 0 320 150" aria-hidden="true">
                         <defs><linearGradient id="sceneBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3a1a8c"/><stop offset="1" stop-color="#0b1a52"/></linearGradient></defs>
                         <rect width="320" height="150" rx="12" fill="url(#sceneBg)"/>
-                        <path d="M246 24l62-12M258 42l52-6" stroke="#ff2e93" stroke-width="3" stroke-linecap="round" opacity=".85"/>
-                        <rect x="100" y="42" width="130" height="78" rx="8" fill="#101a46" stroke="#00e5ff" stroke-width="2"/>
+                        <path d="M246 24l62-12M258 42l52-6" stroke="#ff2a32" stroke-width="3" stroke-linecap="round" opacity=".85"/>
+                        <rect x="100" y="42" width="130" height="78" rx="8" fill="#101a46" stroke="#ff2a32" stroke-width="2"/>
                         <path d="M150 62l32 18-32 18z" fill="#6d9cff"/>
                         <rect x="150" y="28" width="46" height="20" rx="5" fill="#e5173f"/>
                         <text x="173" y="43" text-anchor="middle" font-size="13" font-weight="800" fill="#fff" font-family="Arial,sans-serif">LIVE</text>
                         <rect x="160" y="120" width="26" height="8" fill="#1a2260"/><rect x="146" y="128" width="54" height="5" rx="2" fill="#1a2260"/>
-                        <rect x="22" y="58" width="52" height="30" rx="5" fill="#1b1f3c" stroke="#8a5cff" stroke-width="2"/><circle cx="82" cy="73" r="10" fill="#0b0f26" stroke="#00e5ff" stroke-width="2"/>
-                        <path d="M48 88l-14 44M48 88l14 44M48 88v44" stroke="#8a5cff" stroke-width="3" stroke-linecap="round"/>
-                        <circle cx="268" cy="72" r="16" fill="#241a5c"/><path d="M242 132c0-22 12-36 26-36s26 14 26 36z" fill="#241a5c"/><path d="M254 66a14 14 0 0 1 28 0" stroke="#00e5ff" stroke-width="4" fill="none" stroke-linecap="round"/>
+                        <rect x="22" y="58" width="52" height="30" rx="5" fill="#1b1f3c" stroke="#b50d16" stroke-width="2"/><circle cx="82" cy="73" r="10" fill="#0b0f26" stroke="#ff2a32" stroke-width="2"/>
+                        <path d="M48 88l-14 44M48 88l14 44M48 88v44" stroke="#b50d16" stroke-width="3" stroke-linecap="round"/>
+                        <circle cx="268" cy="72" r="16" fill="#241a5c"/><path d="M242 132c0-22 12-36 26-36s26 14 26 36z" fill="#241a5c"/><path d="M254 66a14 14 0 0 1 28 0" stroke="#ff2a32" stroke-width="4" fill="none" stroke-linecap="round"/>
                     </svg>
                     <p>Start a live stream and connect with your audience!</p>
                     <button type="button" class="up-golive" id="goLiveBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8 8a5.7 5.7 0 0 0 0 8m8-8a5.7 5.7 0 0 1 0 8M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14"/></svg>Go Live</button>
@@ -837,7 +794,6 @@ vs_page_start('Upload', 'upload', $extraCss);
                         <li>Use a catchy title</li>
                         <li>Add a detailed description</li>
                         <li>Choose the right category</li>
-                        <li>Use a thumbnail</li>
                         <li>Follow our community guidelines</li>
                     </ul>
                 </section>
@@ -983,6 +939,38 @@ document.addEventListener('DOMContentLoaded', function () {
     var urlInput = document.getElementById('video_url');
     var streamUrlInput = document.getElementById('stream_url');
     var urlTypeHint = document.getElementById('urlTypeHint');
+    var categorySelect = document.getElementById('category');
+    var categoryIcon = document.getElementById('categoryIcon');
+    function syncCategoryIcon() {
+        if (!categorySelect || !categoryIcon) return;
+        while (categoryIcon.firstChild) categoryIcon.removeChild(categoryIcon.firstChild);
+        var option = categorySelect.options[categorySelect.selectedIndex];
+        var iconUrl = option && option.getAttribute('data-icon-url');
+        var iconSvg = option && option.getAttribute('data-icon-svg');
+        if (iconUrl) {
+            var image = document.createElement('img');
+            image.src = iconUrl;
+            image.alt = '';
+            categoryIcon.appendChild(image);
+        } else if (iconSvg) {
+            var iconMarkup = document.createElement('span');
+            iconMarkup.innerHTML = iconSvg;
+            var svg = iconMarkup.querySelector('svg');
+            if (svg) categoryIcon.appendChild(svg);
+        } else {
+            var fallback = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            fallback.setAttribute('viewBox', '0 0 24 24');
+            fallback.setAttribute('fill', 'currentColor');
+            var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z');
+            fallback.appendChild(path);
+            categoryIcon.appendChild(fallback);
+        }
+    }
+    if (categorySelect) {
+        categorySelect.addEventListener('change', syncCategoryIcon);
+        syncCategoryIcon();
+    }
     function syncUploadType() {
         var type = form.querySelector('input[name="type"]:checked')?.value || 'video';
         var label = type === 'short' ? 'Shorts' : (type === 'live' ? 'Live Stream' : 'Video');
@@ -1003,7 +991,7 @@ document.addEventListener('DOMContentLoaded', function () {
     fileInput.addEventListener('change', function () {
         setUploadMode('file');
         filePrompt.textContent = fileInput.files && fileInput.files[0] ? fileInput.files[0].name : 'Drag & Drop your video here';
-        scheduleSave();
+        saveDraft(true);
     });
     urlInput.addEventListener('focus', function () { setUploadMode('link'); });
     var dropzone = document.querySelector('.upload-dropzone');
@@ -1100,6 +1088,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var type = form.querySelector('input[name="type"]:checked');
         var mode = form.querySelector('input[name="mode"]:checked');
         var category = document.getElementById('category');
+        var selectedFile = fileInput.files && fileInput.files[0];
         return {
             type: type ? type.value : 'short',
             mode: mode ? mode.value : 'link',
@@ -1109,11 +1098,23 @@ document.addEventListener('DOMContentLoaded', function () {
             live_status: document.querySelector('input[name="live_status"]:checked')?.value || 'live',
             stream_url: document.getElementById('stream_url').value,
             thumbnail_url: document.getElementById('thumbnail_url').value,
-            scheduled_at: document.getElementById('scheduled_at').value,
-            category: category ? category.value : ''
+            scheduled_at: document.getElementById('scheduled_at')?.value || '',
+            category: category ? category.value : '',
+            file: selectedFile ? {
+                name: selectedFile.name,
+                size: selectedFile.size,
+                lastModified: selectedFile.lastModified
+            } : null
         };
     }
-    function saveDraft() {
+    function deleteDraftFile() {
+        return withDraftStore('readwrite', function (store, resolve, reject) {
+            var request = store.delete(draftKey);
+            request.onsuccess = resolve;
+            request.onerror = function () { reject(request.error || new Error('Draft file could not be deleted')); };
+        });
+    }
+    function saveDraft(saveSelectedFile) {
         var data = readMetadata();
         try {
             localStorage.setItem(draftKey, JSON.stringify(data));
@@ -1126,11 +1127,23 @@ document.addEventListener('DOMContentLoaded', function () {
             setStatus('Draft details saved in this browser.');
             return Promise.resolve();
         }
+        if (!saveSelectedFile) {
+            setStatus('Draft details saved in this browser.');
+            return Promise.resolve();
+        }
+        if (selected.size > 16 * 1024 * 1024) {
+            return deleteDraftFile().then(function () {
+                setStatus('Draft details saved. Large video files are not copied into browser storage; keep this page open or reselect the file if you return.');
+            }).catch(function () {
+                setStatus('Draft details saved, but the cached video could not be cleared. Keep this page open and reselect the file if you return.', true);
+            });
+        }
         withDraftStore('readwrite', function (store, resolve, reject) {
             var request = store.put({
                 blob: selected,
                 name: selected.name,
                 type: selected.type,
+                size: selected.size,
                 lastModified: selected.lastModified
             }, draftKey);
             request.onsuccess = resolve;
@@ -1141,9 +1154,9 @@ document.addEventListener('DOMContentLoaded', function () {
             setStatus('Draft details are saved, but browser storage could not keep the video file. You will need to select it again before retrying.', true);
         });
     }
-    function scheduleSave() {
+    function scheduleSave(saveSelectedFile) {
         window.clearTimeout(saveTimer);
-        saveTimer = window.setTimeout(saveDraft, 300);
+        saveTimer = window.setTimeout(function () { saveDraft(saveSelectedFile === true); }, 300);
     }
     function restoreDraft() {
         var saved;
@@ -1159,7 +1172,8 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('description').value = typeof saved.description === 'string' ? saved.description : '';
         document.getElementById('stream_url').value = typeof saved.stream_url === 'string' ? saved.stream_url : '';
         document.getElementById('thumbnail_url').value = typeof saved.thumbnail_url === 'string' ? saved.thumbnail_url : '';
-        document.getElementById('scheduled_at').value = typeof saved.scheduled_at === 'string' ? saved.scheduled_at : '';
+        var scheduledAt = document.getElementById('scheduled_at');
+        if (scheduledAt) scheduledAt.value = typeof saved.scheduled_at === 'string' ? saved.scheduled_at : '';
         var savedType = ['video', 'short', 'live'].includes(saved.type) ? saved.type : 'video';
         var typeRadio = form.querySelector('input[name="type"][value="' + savedType + '"]');
         var modeRadio = form.querySelector('input[name="mode"][value="' + (saved.mode === 'file' ? 'file' : 'link') + '"]');
@@ -1171,12 +1185,22 @@ document.addEventListener('DOMContentLoaded', function () {
         if (category && typeof saved.category === 'string') category.value = saved.category;
         syncUploadType();
         if (saved.mode === 'file') {
+            var savedFile = saved.file;
+            if (!savedFile || typeof savedFile.name !== 'string'
+                || !Number.isFinite(Number(savedFile.size))
+                || !Number.isFinite(Number(savedFile.lastModified))) {
+                setStatus('Draft details restored. Select the video file again to retry this upload.');
+                return;
+            }
             withDraftStore('readonly', function (store, resolve, reject) {
                 var request = store.get(draftKey);
                 request.onsuccess = function () { resolve(request.result); };
                 request.onerror = function () { reject(request.error || new Error('Saved file could not be read')); };
             }).then(function (record) {
-                if (!record || !record.blob || !window.DataTransfer || !window.File) {
+                if (!record || !record.blob || record.name !== savedFile.name
+                    || Number(record.size) !== Number(savedFile.size)
+                    || Number(record.lastModified) !== Number(savedFile.lastModified)
+                    || !window.DataTransfer || !window.File) {
                     setStatus('Draft details restored. Select the video file again to retry this upload.');
                     return;
                 }
@@ -1221,11 +1245,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     form.addEventListener('input', scheduleSave);
     form.addEventListener('change', function (event) {
-        if (event.target === fileInput) {
-            scheduleSave();
-        } else {
-            scheduleSave();
-        }
+        if (event.target !== fileInput) scheduleSave();
     });
     clearDraftBtn.addEventListener('click', clearDraft);
     var submitting = false;
@@ -1234,11 +1254,10 @@ document.addEventListener('DOMContentLoaded', function () {
         event.preventDefault();
         submitting = true;
         btn.disabled = true;
-        submitLabel.textContent = 'Publishing...';
+        submitLabel.textContent = fileInput.files && fileInput.files[0] ? 'Uploading...' : 'Publishing...';
         window.clearTimeout(saveTimer);
-        saveDraft().finally(function () {
-            form.submit();
-        });
+        saveDraft(false);
+        form.submit();
     });
 
     var titleInput = document.getElementById('title');
@@ -1250,24 +1269,6 @@ document.addEventListener('DOMContentLoaded', function () {
     titleInput.addEventListener('input', updateCounts);
     descInput.addEventListener('input', updateCounts);
     updateCounts();
-
-    var thumbInput = document.getElementById('thumbnail_file');
-    var thumbImg = document.getElementById('thumbPreview');
-    var thumbPh = document.getElementById('thumbPlaceholder');
-    var thumbText = document.getElementById('thumbBtnText');
-    var thumbName = document.getElementById('thumbName');
-    var thumbUrl = null;
-    thumbInput.addEventListener('change', function () {
-        if (thumbUrl) { URL.revokeObjectURL(thumbUrl); thumbUrl = null; }
-        var f = thumbInput.files && thumbInput.files[0];
-        var ok = f && /^image\//.test(f.type);
-        if (!ok) thumbInput.value = '';
-        if (ok) { thumbUrl = URL.createObjectURL(f); thumbImg.src = thumbUrl; }
-        thumbImg.hidden = !ok;
-        thumbPh.style.display = ok ? 'none' : '';
-        thumbText.textContent = ok ? 'Change Thumbnail' : 'Choose Thumbnail';
-        if (thumbName) thumbName.textContent = ok ? f.name : 'No file chosen';
-    });
 
     document.getElementById('modeLink').addEventListener('change', function () { if (this.checked) urlInput.focus(); });
     document.getElementById('goLiveBtn').addEventListener('click', function () {

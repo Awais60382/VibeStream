@@ -1,0 +1,141 @@
+/* VibeStream: neon is permanently disabled across the site. */
+:root,
+html[data-theme],
+html[data-theme="dark"],
+html[data-theme="light"] {
+  --accent: #ff2a32;
+  --accent-hover: #d80e18;
+  --accent-soft: rgba(255, 42, 50, 0.14);
+  --blue: #ff2a32;
+  --neon-cyan: #ff2a32;
+  --neon-pink: #ff2a32;
+  --neon-violet: #b50d16;
+  --nx-cyan: #ff2a32;
+  --nx-pink: #ff2a32;
+  --nx-violet: #b50d16;
+  --nx-cyan-rgb: 255,42,50;
+  --nx-pink-rgb: 255,42,50;
+  --nx-violet-rgb: 181,13,22;
+  --nx-cyan-ink: #ff2a32;
+  --nx-pink-ink: #ff2a32;
+}
+
+[data-vs-neon],
+[data-vs-neon-toggle],
+.vs-neon-toggle {
+  display: none !important;
+}
+
+html,
+html body,
+html body * {
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+html,
+html body,
+html body *,
+html body *::before,
+html body *::after {
+  box-shadow: none !important;
+  animation: none !important;
+  transition: border-color .12s ease, background-color .12s ease, color .12s ease !important;
+}
+
+:focus-visible,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid #ff2a32 !important;
+  outline-offset: 2px;
+  border-color: #ff2a32 !important;
+  box-shadow: none !important;
+}
+
+::selection {
+  background: #ff2a32;
+  color: #fff;
+}
+
+/* Final red-only UI overrides (after page/theme styles) */
+html[data-theme] body {
+  background-image: none !important;
+  background-color: var(--surface-base, #0f0f0f) !important;
+}
+html[data-theme="light"] body {
+  background-color: #f5f6fa !important;
+}
+
+html[data-theme] .app-navbar,
+html[data-theme] .navbar {
+  background: var(--surface-raised, #16161a) !important;
+  border-bottom: 1px solid rgba(255,42,50,.35) !important;
+}
+html[data-theme="light"] .app-navbar,
+html[data-theme="light"] .navbar {
+  background: #ffffff !important;
+  border-bottom-color: rgba(223,23,31,.35) !important;
+}
+
+html[data-theme] .brand,
+html[data-theme] .site-brand,
+html[data-theme] .brand-title {
+  background: none !important;
+  -webkit-text-fill-color: initial !important;
+  color: #ff2a32 !important;
+}
+
+.nav-right .create-btn,
+.nav-right .sign-in-btn,
+.nav-right .upload-btn,
+.nav-right .create-btn:visited,
+.nav-right .sign-in-btn:visited {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 40px !important;
+  min-width: 92px !important;
+  padding: 8px 16px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: #ff2a32 !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  opacity: 1 !important;
+}
+
+.nav-right .create-btn svg,
+.nav-right .upload-btn svg {
+  width: 20px !important;
+  height: 20px !important;
+  margin-right: 7px;
+  flex: 0 0 20px;
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
+.app-sidebar .sidebar-link.active,
+.app-sidebar .sidebar-link.active:hover,
+.admin-shell .sidebar-nav .nav-link.active,
+.admin-shell .sidebar-nav .nav-link.active:hover,
+.admin-shell .sidebar-nav .nav-link.active:focus {
+  border-color: #ff2a32 !important;
+  background: #ff2a32 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+.app-sidebar .sidebar-link.active::before,
+.admin-shell .sidebar-nav .nav-link.active::before {
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+.app-sidebar .sidebar-link.active .sidebar-icon,
+.app-sidebar .sidebar-link.active .sidebar-label,
+.app-sidebar .sidebar-link.active .sidebar-chevron,
+.admin-shell .sidebar-nav .nav-link.active .nav-icon,
+.admin-shell .sidebar-nav .nav-link.active .nav-text {
+  color: #ffffff !important;
+}

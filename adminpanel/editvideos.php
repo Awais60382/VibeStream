@@ -59,15 +59,15 @@ $e = static function ($v): string { return htmlspecialchars((string)$v, ENT_QUOT
         .ev-update:hover{filter:brightness(1.1)}
         @media (max-width:767.98px){.ev-hero{padding:18px}.ev-hero-ico{width:56px;height:56px;font-size:28px}.ev-hero-right{margin-left:0}.ev-card{padding:16px}}
       </style>
-      <style data-vs-neon>
+      <style>
         /* neon glow layer: the lightning button switches this block off */
-        .ev-hero{box-shadow:0 0 38px -10px rgba(138,92,255,.75),inset 0 0 60px -30px rgba(0,229,255,.35)}
-        .ev-hero:before{content:"";position:absolute;inset:0;background:radial-gradient(520px 220px at 84% 15%,rgba(255,46,147,.26),transparent 70%),radial-gradient(420px 200px at 6% 100%,rgba(0,229,255,.16),transparent 70%);pointer-events:none}
+        .ev-hero{box-shadow:0 0 38px -10px rgba(138,92,255,.75),inset 0 0 60px -30px rgba(255,42,50,.35)}
+        .ev-hero:before{content:"";position:absolute;inset:0;background:radial-gradient(520px 220px at 84% 15%,rgba(255,46,147,.26),transparent 70%),radial-gradient(420px 200px at 6% 100%,rgba(255,42,50,.16),transparent 70%);pointer-events:none}
         .ev-hero-ico{box-shadow:0 0 26px -2px rgba(124,77,255,.9)}
         .ev-hero h1 span{background:linear-gradient(90deg,#c084fc,#f0abfc);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;filter:drop-shadow(0 0 12px rgba(192,132,252,.65))}
         .ev-back{box-shadow:0 0 18px -4px rgba(34,211,238,.6);border-color:rgba(34,211,238,.7)}
         .ev-card{box-shadow:0 0 30px -12px rgba(112,104,255,.65),inset 0 1px 0 rgba(255,255,255,.04)}
-        .ev-card:before{content:"";display:block;height:2px;margin:-22px -24px 20px;border-radius:2px;background:linear-gradient(90deg,transparent,#8a5cff 30%,#22d3ee 50%,#8a5cff 70%,transparent);opacity:.8}
+        .ev-card:before{content:"";display:block;height:2px;margin:-22px -24px 20px;border-radius:2px;background:linear-gradient(90deg,transparent,#b50d16 30%,#22d3ee 50%,#b50d16 70%,transparent);opacity:.8}
         .ev-label i{filter:drop-shadow(0 0 6px rgba(167,139,250,.8))}
         .ev-field input,.ev-field select{box-shadow:0 0 14px -6px rgba(112,104,255,.7)}
         .ev-field input:focus,.ev-field select:focus{box-shadow:0 0 0 1px #22d3ee,0 0 18px rgba(34,211,238,.4)}

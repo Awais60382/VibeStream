@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS `video_view_events` (
     `content_type` VARCHAR(16) NOT NULL,
     `content_id` VARCHAR(191) NOT NULL,
     `creator` VARCHAR(191) NOT NULL DEFAULT '',
+    `country_code` CHAR(2) NULL DEFAULT NULL,
     `viewed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_video_view_events_recent` (`viewed_at`),
@@ -126,6 +127,22 @@ CREATE TABLE IF NOT EXISTS `site_announcements` (
     `updated_by` VARCHAR(191) NOT NULL DEFAULT '',
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `site_updates` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `title` VARCHAR(160) NOT NULL,
+    `body` TEXT NOT NULL,
+    `kind` VARCHAR(24) NOT NULL DEFAULT 'announcement',
+    `status` VARCHAR(16) NOT NULL DEFAULT 'draft',
+    `publish_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `event_at` DATETIME NULL DEFAULT NULL,
+    `created_by` VARCHAR(191) NOT NULL DEFAULT '',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_site_updates_public` (`status`, `publish_at`),
+    KEY `idx_site_updates_event` (`event_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `admin_summary_settings` (

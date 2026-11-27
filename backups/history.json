@@ -1,5 +1,17 @@
 [
     {
+        "file": "vibestream-backup-2026-11-25_090302.zip",
+        "created": "2026-11-25 09:03:04",
+        "by": "automatic",
+        "size": 22019840,
+        "sha256": "c4e8c7b2df3721f653f4bcdc079588be2afb44b95b3115dd690c70db154adee5",
+        "format": "zip",
+        "tables": 81,
+        "rows": 16941,
+        "files": 55,
+        "kept": true
+    },
+    {
         "file": "vibestream-backup-2026-11-18_070304.zip",
         "created": "2026-11-18 07:03:05",
         "by": "automatic",

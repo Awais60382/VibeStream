@@ -398,7 +398,7 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
             transition: background .15s ease;
         }
         .vs-sub-item:hover, .vs-sub-item:focus-visible { background: var(--sb-hover-bg, rgba(255,255,255,.1)); }
-        .vs-sub-item:focus-visible { outline: 2px solid #3ea6ff; outline-offset: -2px; }
+        .vs-sub-item:focus-visible { outline: 2px solid #ff2a32; outline-offset: -2px; }
         .vs-sub-item.active { background: var(--sb-active-bg, rgba(255,255,255,.14)); font-weight: 600; }
         .vs-sub-av {
             position: relative; overflow: hidden;
@@ -410,7 +410,7 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
         .vs-sub-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .vs-sub-vip { flex: 0 0 auto; line-height: 0; }
         .vs-sub-extra[hidden] { display: none; }
-        .vs-sub-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #3ea6ff; margin-left: 4px; }
+        .vs-sub-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #ff2a32; margin-left: 4px; }
         .vs-sub-toggle { width: 100%; background: none; border: 0; cursor: pointer; font: inherit; font-size: 14px; text-align: left; }
         .vs-sub-toggle .vs-sub-ic { width: 24px; display: grid; place-items: center; flex: 0 0 24px; }
         .vs-sub-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -419,7 +419,7 @@ function vs_sidebar_subscriptions_html(int $visible = 7, int $max = 40, int $new
         .vs-sub-hint, .vs-sub-guest { margin: 0; padding: 4px 12px 8px; color: var(--sb-text, #aaa); font-size: 13px; line-height: 1.45; }
         .vs-sub-signin {
             display: inline-flex; align-items: center; margin: 2px 12px 0; padding: 7px 16px; border: 1px solid var(--sb-divider, #303030);
-            border-radius: 999px; color: var(--blue, #3ea6ff); font-size: 14px; font-weight: 600; text-decoration: none;
+            border-radius: 999px; color: var(--blue, #ff2a32); font-size: 14px; font-weight: 600; text-decoration: none;
         }
         .vs-sub-signin:hover { background: rgba(62,166,255,.12); }
         @media (prefers-reduced-motion: reduce) { .vs-sub-item { transition: none; } }

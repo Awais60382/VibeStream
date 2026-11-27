@@ -96,7 +96,7 @@
   display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0; height: 40px;
   border: 1px solid rgba(128,128,128,.4); border-radius: 999px; overflow: hidden; box-sizing: border-box;
 }
-.navbar .vs-search-box:focus-within { border-color: #3ea6ff; }
+.navbar .vs-search-box:focus-within { border-color: #ff2a32; }
 .navbar .vs-search-box input {
   flex: 1 1 auto; min-width: 0; width: 100%; height: 100% !important; margin: 0;
   border: 0 !important; border-radius: 0 !important; outline: none; box-shadow: none !important;

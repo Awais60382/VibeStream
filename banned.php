@@ -7,7 +7,11 @@ require_once __DIR__ . '/ban-guard.php';
 require_once __DIR__ . '/site-branding.php';
 
 // A signed-in admin/owner/CEO (or any fresh login) must never see a stale ban card from this browser.
-if (vs_bg_is_privileged_session() || vs_bg_session_logged_in()) {
+[$sessionUserId, $sessionUsername] = vs_bg_session_user();
+$sessionRole = strtolower(trim((string)($_SESSION['role'] ?? '')));
+$isPrivilegedSession = !empty($_SESSION['AdminSession'])
+    || preg_match('/(^|[^a-z])(admin|owner|ceo|founder)([^a-z]|$)/i', $sessionRole) === 1;
+if ($isPrivilegedSession || $sessionUserId !== '' || $sessionUsername !== '') {
     unset($_SESSION['vs_ban_card']);
     header('Location: index.php');   // ban-guard re-checks the account on the next page
     exit;

@@ -266,23 +266,23 @@ $unreadCount = (isset($conn) && $conn instanceof mysqli && $uid > 0) ? vs_notifi
 
 $css = vs_notification_css() . <<<'CSS'
 /* VibeStream - neon look for notifications.php.
-   Same palette as neon-auth.css: dark by default, neon-light when the site is in light mode. */
+   Non-neon red palette: dark by default and light in light mode. */
 
 html:not([data-theme="light"]) {
     --na-bg: #05060f; --na-card: rgba(10, 13, 31, 0.88);
     --na-text: #eaf0ff; --na-muted: #8f9bd0;
-    --na-cyan: #00e5ff; --na-cyan-text: #00e5ff; --na-pink: #ff2e93; --na-violet: #8a5cff;
+    --na-cyan: #ff2a32; --na-cyan-text: #ff2a32; --na-pink: #ff2a32; --na-violet: #b50d16;
     --na-line: rgba(138, 92, 255, 0.55);
     --na-off: #171c42; --na-chip: rgba(23, 28, 66, 0.55);
-    --na-glow-text: 0 0 10px rgba(0, 229, 255, 0.55);
-    --yt-bg: #05060f; --yt-text: #eaf0ff; --yt-muted: #8f9bd0; --yt-blue: #00e5ff; --yt-switch-off: #171c42;
+    --na-glow-text: 0 0 10px rgba(255,42,50, 0.55);
+    --yt-bg: #05060f; --yt-text: #eaf0ff; --yt-muted: #8f9bd0; --yt-blue: #ff2a32; --yt-switch-off: #171c42;
 }
 html[data-theme="light"] {
     --na-bg: #f4f6ff; --na-card: rgba(255, 255, 255, 0.92);
     --na-text: #0b1030; --na-muted: #55608f;
-    --na-cyan: #00b8e6; --na-cyan-text: #00758f; --na-pink: #ff2e93; --na-violet: #7c4dff;
+    --na-cyan: #ff2a32; --na-cyan-text: #00758f; --na-pink: #ff2a32; --na-violet: #b50d16;
     --na-line: rgba(124, 77, 255, 0.5);
-    --na-off: #d9defa; --na-chip: rgba(0, 184, 230, 0.08);
+    --na-off: #d9defa; --na-chip: rgba(255,42,50, 0.08);
     --na-glow-text: none;
     --yt-bg: #f4f6ff; --yt-text: #0b1030; --yt-muted: #55608f; --yt-blue: #00758f; --yt-switch-off: #d9defa;
 }
@@ -292,7 +292,7 @@ html body { color: var(--na-text); background-attachment: fixed; }
 html:not([data-theme="light"]) body {
     background:
         radial-gradient(900px 480px at 8% -8%, rgba(138, 92, 255, 0.20), transparent 70%),
-        radial-gradient(800px 420px at 100% 0, rgba(0, 229, 255, 0.12), transparent 70%),
+        radial-gradient(800px 420px at 100% 0, rgba(255,42,50, 0.12), transparent 70%),
         radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
         #05060f;
     background-attachment: fixed;
@@ -300,7 +300,7 @@ html:not([data-theme="light"]) body {
 html[data-theme="light"] body {
     background:
         radial-gradient(900px 480px at 8% -8%, rgba(124, 77, 255, 0.14), transparent 70%),
-        radial-gradient(800px 420px at 100% 0, rgba(0, 184, 230, 0.14), transparent 70%),
+        radial-gradient(800px 420px at 100% 0, rgba(255,42,50, 0.14), transparent 70%),
         radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
         #f4f6ff;
     background-attachment: fixed;
@@ -358,7 +358,7 @@ html[data-theme="light"] body {
     background: var(--na-chip);
     color: var(--na-cyan-text);
     border-color: var(--na-cyan);
-    box-shadow: 0 0 18px -2px rgba(0, 229, 255, 0.55);
+    box-shadow: 0 0 18px -2px rgba(255,42,50, 0.55);
 }
 .yt-tab-btn.active,
 .yt-tab-btn.active:hover {
@@ -380,12 +380,12 @@ html[data-theme="light"] body {
     background: var(--na-card);
     border: 1px solid var(--na-line);
     border-radius: 20px;
-    box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.10), 0 0 34px -6px rgba(138, 92, 255, 0.55), 0 0 70px -20px rgba(0, 229, 255, 0.45), inset 0 0 40px -24px rgba(0, 229, 255, 0.5);
+    box-shadow: 0 0 0 1px rgba(255,42,50, 0.10), 0 0 34px -6px rgba(138, 92, 255, 0.55), 0 0 70px -20px rgba(255,42,50, 0.45), inset 0 0 40px -24px rgba(255,42,50, 0.5);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
 }
 html[data-theme="light"] .yt-section {
-    box-shadow: 0 0 0 1px rgba(0, 184, 230, 0.10), 0 8px 30px -10px rgba(124, 77, 255, 0.35);
+    box-shadow: 0 0 0 1px rgba(255,42,50, 0.10), 0 8px 30px -10px rgba(124, 77, 255, 0.35);
 }
 .yt-section::before {                      /* glowing top edge */
     content: ""; position: absolute; left: 18px; right: 18px; top: -1px; height: 2px; border-radius: 2px;
@@ -445,7 +445,7 @@ html[data-theme="light"] .yt-section {
 }
 .yt-toggle input:checked + .yt-track::after {
     transform: translateX(18px);
-    box-shadow: 0 0 8px rgba(0, 229, 255, 0.9);
+    box-shadow: 0 0 8px rgba(255,42,50, 0.9);
 }
 .yt-toggle input:focus-visible + .yt-track { outline: 2px solid var(--na-cyan); outline-offset: 3px; }
 
@@ -474,7 +474,7 @@ html[data-theme="light"] .yt-desc a:hover { text-shadow: none; }
     font-weight: 700;
     color: var(--na-text);
 }
-.yt-browser-row svg { filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.55)); }
+.yt-browser-row svg { filter: drop-shadow(0 0 6px rgba(255,42,50, 0.55)); }
 
 .yt-status-msg {
     min-height: 20px;
@@ -503,7 +503,7 @@ html[data-theme="light"] .yt-desc a:hover { text-shadow: none; }
     cursor: pointer;
     font-size: 13px;
     font-weight: 700;
-    box-shadow: 0 0 14px -4px rgba(0, 229, 255, 0.6);
+    box-shadow: 0 0 14px -4px rgba(255,42,50, 0.6);
     transition: box-shadow .2s ease, background .2s ease, color .2s ease, transform .2s ease;
 }
 .yt-readall:hover {
@@ -522,12 +522,12 @@ html[data-theme="light"] .yt-desc a:hover { text-shadow: none; }
     border: 1px solid var(--na-line);
     border-radius: 20px;
     overflow: hidden;
-    box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.10), 0 0 34px -6px rgba(138, 92, 255, 0.55), 0 0 70px -20px rgba(0, 229, 255, 0.45), inset 0 0 40px -24px rgba(0, 229, 255, 0.5);
+    box-shadow: 0 0 0 1px rgba(255,42,50, 0.10), 0 0 34px -6px rgba(138, 92, 255, 0.55), 0 0 70px -20px rgba(255,42,50, 0.45), inset 0 0 40px -24px rgba(255,42,50, 0.5);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
 }
 html[data-theme="light"] .notif-feed-card {
-    box-shadow: 0 0 0 1px rgba(0, 184, 230, 0.10), 0 8px 30px -10px rgba(124, 77, 255, 0.35);
+    box-shadow: 0 0 0 1px rgba(255,42,50, 0.10), 0 8px 30px -10px rgba(124, 77, 255, 0.35);
 }
 .notif-feed-card::before {
     content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 1;

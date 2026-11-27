@@ -217,7 +217,31 @@
         item.setAttribute('role', 'option');
         item.setAttribute('aria-selected', option.selected ? 'true' : 'false');
         item.setAttribute('aria-disabled', option.disabled ? 'true' : 'false');
-        item.textContent = optionLabel(option);
+        var iconUrl = option.getAttribute('data-icon-url');
+        var iconSvg = option.getAttribute('data-icon-svg');
+        if (iconUrl || iconSvg) {
+          var icon = document.createElement('span');
+          icon.className = 'vs-searchable-select-option-icon';
+          icon.setAttribute('aria-hidden', 'true');
+          if (iconUrl) {
+            var image = document.createElement('img');
+            image.src = iconUrl;
+            image.alt = '';
+            icon.appendChild(image);
+          } else {
+            var iconMarkup = document.createElement('span');
+            iconMarkup.innerHTML = iconSvg;
+            var svg = iconMarkup.querySelector('svg');
+            if (svg) icon.appendChild(svg);
+          }
+          item.classList.add('has-icon');
+          item.appendChild(icon);
+          var text = document.createElement('span');
+          text.textContent = optionLabel(option);
+          item.appendChild(text);
+        } else {
+          item.textContent = optionLabel(option);
+        }
         if (option.disabled) item.classList.add('is-disabled');
         if (option.selected) item.classList.add('is-selected');
         item.addEventListener('mouseenter', function () {

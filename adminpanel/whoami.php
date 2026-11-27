@@ -1,6 +1,7 @@
 <?php
 // Temporary check page: shows which account the admin panel thinks you are. Delete it when done.
 require_once __DIR__ . '/admin-bootstrap.php';
+require_once __DIR__ . '/../page-loader-render.php';
 
 $e = static function ($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); };
 
@@ -35,12 +36,13 @@ $hide = static function (array $row): array {
 };
 ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Who am I</title>
+<?php vs_page_loader_assets(); ?>
 <style>
 body{font-family:Arial,sans-serif;padding:24px;background:#f4f5f7}
 table{border-collapse:collapse;background:#fff;margin:8px 0 22px}
 td,th{border:1px solid #ccc;padding:6px 10px;font-size:14px;text-align:left}
 th{background:#eee}
-</style></head><body>
+</style></head><body><?php vs_page_loader_markup(); ?>
 <h2>Login session</h2>
 <table><?php foreach ($sessionRows as $k => $v): ?><tr><th><?php echo $e($k); ?></th><td><?php echo $e($v); ?></td></tr><?php endforeach; ?></table>
 

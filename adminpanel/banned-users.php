@@ -276,91 +276,256 @@ include __DIR__ . '/header.php';
 vs_print_styles();
 ?>
 <style>
-  .vs-ban-table { width: 100%; }
-  .vs-ban-table td, .vs-ban-table th { vertical-align: middle; }
-  .vs-ban-list { border-top: 1px solid var(--admin-border); }
-  .vs-ban-row { display:grid; grid-template-columns:minmax(180px,1fr) 150px 180px 110px; gap:1rem; align-items:center; padding:1rem 0; border-bottom:1px solid var(--admin-border); }
-  .vs-ban-history { border-top: 1px solid var(--admin-border); }
-  .vs-ban-history-row { display:grid; grid-template-columns:minmax(180px,1fr) 180px 170px; gap:1rem; padding:.85rem 0; border-bottom:1px solid var(--admin-border); }
-  .vs-ban-history-row:last-child { border-bottom: 0; }
-  @media (max-width: 767px) {
-    .vs-ban-history-row { grid-template-columns:1fr; gap:.25rem; }
-  }
-  @media (max-width: 767px) { .vs-ban-row { grid-template-columns:1fr; gap:.5rem; } }
+:root {
+  --bu-page:radial-gradient(850px 460px at 85% 0%,rgba(81,44,220,.18),transparent 68%),#0c1020;
+  --bu-card:#121729;
+  --bu-card-soft:#171d33;
+  --bu-input:#0e1426;
+  --bu-line:rgba(143,157,211,.15);
+  --bu-text:#f2f4ff;
+  --bu-muted:#9ba6c5;
+  --bu-purple:#7446ff;
+  --bu-blue:#48a9ff;
+  --bu-shadow:0 16px 38px rgba(0,0,0,.2);
+}
+html[data-theme="light"],html[data-bs-theme="light"] {
+  --bu-page:radial-gradient(850px 460px at 85% 0%,rgba(116,70,255,.09),transparent 68%),#f4f6fc;
+  --bu-card:#fff;
+  --bu-card-soft:#f5f6fc;
+  --bu-input:#f9faff;
+  --bu-line:rgba(72,86,130,.16);
+  --bu-text:#1b2238;
+  --bu-muted:#68738f;
+  --bu-shadow:0 12px 30px rgba(37,47,83,.08);
+}
+main.dashboard-content.bu-page {
+  min-height:100vh;
+  color:var(--bu-text)!important;
+  background:var(--bu-page)!important;
+}
+.bu-container { max-width:1480px; }
+.bu-back-row { margin-bottom:10px; }
+.bu-back-link {
+  display:inline-flex; align-items:center; gap:8px; padding:6px 12px;
+  border:1px solid var(--bu-line); border-radius:10px; background:var(--bu-card);
+  color:var(--bu-muted); font-size:.82rem; font-weight:650; text-decoration:none;
+  transition:background .18s,border-color .18s,color .18s;
+}
+.bu-back-link:hover { border-color:var(--bu-purple); background:var(--bu-card-soft); color:var(--bu-text); }
+.bu-hero {
+  position:relative; display:flex; align-items:center; justify-content:space-between;
+  gap:20px; min-height:92px; margin-bottom:20px; overflow:hidden;
+}
+.bu-hero-copy { position:relative; z-index:1; display:flex; align-items:center; gap:16px; }
+.bu-hero-icon {
+  display:grid; place-items:center; flex:0 0 56px; width:56px; height:56px;
+  border-radius:17px; background:linear-gradient(145deg,#885dff,#4b25d7);
+  color:#fff; font-size:1.75rem; box-shadow:0 8px 24px rgba(103,63,255,.3);
+}
+.bu-eyebrow { margin:0 0 3px; color:var(--bu-purple); font-size:.72rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+.bu-hero h1 { margin:0; color:var(--bu-text); font-size:clamp(1.7rem,3vw,2.1rem); font-weight:800; letter-spacing:-.035em; }
+.bu-hero p { margin:3px 0 0; color:var(--bu-muted); font-size:.92rem; }
+.bu-hero-mark { position:absolute; top:-42px; right:22px; color:rgba(99,66,231,.13); font-size:9rem; line-height:1; transform:rotate(-8deg); }
+.bu-alert { padding:12px 15px; margin:0 0 14px; border:1px solid var(--bu-line); border-radius:12px; }
+.bu-alert-danger { border-color:rgba(255,77,100,.32); background:rgba(255,77,100,.1); color:#ff9baa; }
+.bu-alert-info { border-color:rgba(72,169,255,.3); background:rgba(72,169,255,.09); color:var(--bu-text); }
+.bu-card {
+  margin-top:16px; padding:17px; border:1px solid var(--bu-line); border-radius:16px;
+  background:var(--bu-card); box-shadow:var(--bu-shadow);
+}
+.bu-card-heading { display:flex; align-items:center; gap:10px; margin:0 0 14px; }
+.bu-section-icon {
+  display:grid; place-items:center; flex:0 0 30px; width:30px; height:30px;
+  border-radius:10px; background:rgba(116,70,255,.16); color:#9b7aff; font-size:1rem;
+}
+.bu-section-icon.history { background:rgba(72,169,255,.14); color:var(--bu-blue); }
+.bu-card-heading h2 { margin:0; color:var(--bu-text); font-size:1rem; font-weight:750; }
+.bu-count { color:var(--bu-muted); font-weight:600; }
+.bu-ban-form {
+  display:grid; grid-template-columns:minmax(190px,1.05fr) minmax(155px,.8fr) minmax(220px,1.8fr) auto;
+  align-items:end; gap:12px;
+}
+.bu-field { min-width:0; }
+.bu-label { display:block; margin:0 0 6px; color:var(--bu-muted)!important; font-size:.82rem; font-weight:600; }
+.bu-control { position:relative; }
+.bu-control > i { position:absolute; top:50%; left:13px; z-index:2; color:var(--bu-muted); font-size:1rem; pointer-events:none; transform:translateY(-50%); }
+.bu-control .form-control,.bu-control .form-select {
+  min-height:41px; padding:8px 12px 8px 39px; border:1px solid var(--bu-line)!important;
+  border-radius:9px; background-color:var(--bu-input)!important; color:var(--bu-text)!important;
+  box-shadow:none; font-size:.86rem;
+}
+.bu-control .form-control::placeholder { color:var(--bu-muted); opacity:.8; }
+.bu-control .form-control:focus,.bu-control .form-select:focus {
+  border-color:var(--bu-purple)!important; box-shadow:0 0 0 3px rgba(116,70,255,.17);
+}
+.bu-control .form-select option { background:var(--bu-card); color:var(--bu-text); }
+.bu-submit {
+  min-height:41px; padding:8px 17px; border:0; border-radius:9px;
+  background:linear-gradient(120deg,#ef2349,#d41238); color:#fff;
+  font-size:.86rem; font-weight:750; white-space:nowrap; box-shadow:0 6px 16px rgba(220,25,61,.2);
+  transition:filter .15s,transform .15s;
+}
+.bu-submit:hover { filter:brightness(1.1); transform:translateY(-1px); }
+.bu-ban-list { border-top:1px solid var(--bu-line); }
+.bu-ban-row {
+  display:grid; grid-template-columns:minmax(175px,1.15fr) minmax(120px,1fr) 115px minmax(145px,1fr) auto;
+  align-items:center; gap:14px; min-height:62px; padding:8px 5px;
+  border-bottom:1px solid var(--bu-line);
+}
+.bu-ban-row:last-child { border-bottom:0; }
+.bu-user-cell { display:flex; align-items:center; gap:11px; min-width:0; }
+.bu-avatar {
+  display:grid; place-items:center; flex:0 0 38px; width:38px; height:38px;
+  border:2px solid rgba(126,91,255,.35); border-radius:50%;
+  background:linear-gradient(145deg,#7446ff,#318de8); color:#fff; font-size:1.25rem;
+}
+.bu-user-copy { min-width:0; }
+.bu-user-copy strong { display:block; overflow:hidden; color:var(--bu-text); font-size:.88rem; text-overflow:ellipsis; white-space:nowrap; }
+.bu-user-copy small,.bu-meta { display:block; color:var(--bu-muted); font-size:.75rem; }
+.bu-reason { overflow:hidden; color:var(--bu-text); font-size:.83rem; text-overflow:ellipsis; white-space:nowrap; }
+.bu-reason.empty { color:var(--bu-muted); }
+.bu-status {
+  display:inline-flex; justify-content:center; align-items:center; gap:6px;
+  width:max-content; max-width:100%; padding:5px 10px; border-radius:8px;
+  font-size:.75rem; font-weight:750; white-space:nowrap;
+}
+.bu-status::before { width:8px; height:8px; border-radius:50%; background:currentColor; content:""; }
+.bu-status.permanent { background:rgba(234,40,69,.19); color:#ff6478; }
+.bu-status.temporary { background:rgba(238,164,22,.18); color:#ffc34f; }
+.bu-expiry strong { display:block; color:var(--bu-text); font-size:.82rem; }
+.bu-unban { justify-self:end; }
+.bu-unban button {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px; min-width:89px;
+  padding:7px 12px; border:0; border-radius:8px; background:#11a960; color:#fff;
+  font-size:.8rem; font-weight:700; transition:filter .15s;
+}
+.bu-unban button:hover { background:#0f9956; color:#fff; filter:brightness(1.08); }
+.bu-empty { padding:14px 4px; color:var(--bu-muted); font-size:.86rem; }
+.bu-table-wrap { overflow-x:auto; }
+.bu-table { width:100%; margin:0; border-collapse:separate; border-spacing:0; color:var(--bu-text)!important; font-size:.82rem; }
+.bu-table th {
+  padding:9px 12px; border:0!important; background:var(--bu-card-soft)!important;
+  color:var(--bu-muted)!important; font-size:.74rem; font-weight:750; text-align:left; white-space:nowrap;
+}
+.bu-table th:first-child { border-radius:9px 0 0 9px; }
+.bu-table th:last-child { border-radius:0 9px 9px 0; }
+.bu-table td { padding:10px 12px; border-bottom:1px solid var(--bu-line)!important; background:transparent!important; color:var(--bu-text)!important; vertical-align:middle; }
+.bu-table tbody tr:last-child td { border-bottom:0!important; }
+.bu-table tbody tr:hover td { background:rgba(116,70,255,.045)!important; }
+.bu-history-detail { min-width:320px; }
+.bu-history-detail strong { display:block; font-size:.81rem; font-weight:600; }
+.bu-history-admin,.bu-history-date { white-space:nowrap; }
+@media (max-width: 1100px) {
+  .bu-ban-form { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .bu-field.reason { grid-column:1/-1; }
+  .bu-submit { justify-self:start; }
+  .bu-ban-row { grid-template-columns:minmax(160px,1.2fr) minmax(100px,1fr) 110px minmax(130px,1fr); }
+  .bu-unban { grid-column:4; justify-self:start; }
+}
+@media (max-width: 700px) {
+  .bu-hero { min-height:78px; }
+  .bu-hero-icon { flex-basis:48px; width:48px; height:48px; font-size:1.5rem; }
+  .bu-hero-mark { right:-8px; font-size:7rem; }
+  .bu-card { padding:14px; }
+  .bu-ban-form { grid-template-columns:1fr; }
+  .bu-field.reason { grid-column:auto; }
+  .bu-submit { width:100%; }
+  .bu-ban-row { grid-template-columns:minmax(0,1fr) auto; gap:8px 12px; padding:12px 4px; }
+  .bu-user-cell,.bu-reason { grid-column:1/-1; }
+  .bu-status { grid-column:1; }
+  .bu-expiry { grid-column:1; }
+  .bu-unban { grid-column:2; grid-row:3/5; justify-self:end; align-self:center; }
+  .bu-history-detail { min-width:260px; }
+}
 </style>
-<main class="dashboard-content">
-  <div class="container-fluid px-3 px-lg-4 py-4">
-    <div class="page-heading">
-      <div class="page-heading-copy">
-        <span class="page-icon"><i class="bi bi-person-fill-slash" aria-hidden="true"></i></span>
-        <div><p class="eyebrow mb-1">Moderation</p><h1 class="h3 mb-1">Banned Users</h1><p class="text-muted mb-0">View temporary and permanent account bans.</p></div>
+<main class="dashboard-content bu-page">
+  <div class="container-fluid px-3 px-lg-4 py-4 bu-container">
+    <div class="bu-back-row"><a class="bu-back-link" href="Users.php"><i class="bi bi-arrow-left" aria-hidden="true"></i>All users</a></div>
+    <header class="bu-hero">
+      <div class="bu-hero-copy">
+        <span class="bu-hero-icon"><i class="bi bi-shield-check" aria-hidden="true"></i></span>
+        <div><p class="bu-eyebrow">Moderation</p><h1>Banned Users</h1><p>View temporary and permanent account bans.</p></div>
       </div>
-      <div class="heading-actions"><a class="btn btn-outline-secondary btn-sm" href="Users.php"><i class="bi bi-arrow-left" aria-hidden="true"></i> All users</a></div>
-    </div>
+      <i class="bi bi-play-fill bu-hero-mark" aria-hidden="true"></i>
+    </header>
 
-    <?php if ($fatal !== ''): ?><div class="alert alert-danger mt-3"><?php echo vs_e($fatal); ?></div><?php endif; ?>
-    <?php if ($message !== ''): ?><div class="alert alert-info mt-3"><?php echo vs_e($message); ?></div><?php endif; ?>
+    <?php if ($fatal !== ''): ?><div class="bu-alert bu-alert-danger" role="alert"><?php echo vs_e($fatal); ?></div><?php endif; ?>
+    <?php if ($message !== ''): ?><div class="bu-alert bu-alert-info" role="status"><?php echo vs_e($message); ?></div><?php endif; ?>
 
-    <section class="panel mt-3">
-      <div class="panel-header"><div><h2 class="h5 mb-1 section-title"><i class="bi bi-shield-exclamation" aria-hidden="true"></i><span>Add ban</span></h2></div></div>
-      <form method="post" action="banned-users.php" class="row g-3">
+    <section class="bu-card">
+      <h2 class="bu-card-heading"><span class="bu-section-icon"><i class="bi bi-plus-lg" aria-hidden="true"></i></span>Add ban</h2>
+      <form method="post" action="banned-users.php" class="bu-ban-form">
         <input type="hidden" name="csrf" value="<?php echo vs_e($csrf); ?>">
         <input type="hidden" name="action" value="ban">
-        <div class="col-12 col-md-4">
-          <label class="form-label" for="ban-user">User</label>
-          <select class="form-select" id="ban-user" name="user_id" required>
-            <option value="">Select a user</option>
-            <?php foreach ($users as $user): ?>
-              <option value="<?php echo vs_e($user['id']); ?>"><?php echo vs_e($user['name'] . ($user['email'] ? ' - ' . $user['email'] : '')); ?></option>
-            <?php endforeach; ?>
-          </select>
+        <div class="bu-field">
+          <label class="bu-label" for="ban-user">Select User</label>
+          <div class="bu-control"><i class="bi bi-person-fill" aria-hidden="true"></i>
+            <select class="form-select" id="ban-user" name="user_id" required>
+              <option value="" selected disabled hidden>Choose a user...</option>
+              <?php foreach ($users as $user): ?>
+                <option value="<?php echo vs_e($user['id']); ?>"><?php echo vs_e($user['name'] . ($user['email'] ? ' - ' . $user['email'] : '')); ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
         </div>
-        <div class="col-12 col-md-3">
-          <label class="form-label" for="ban-duration">Ban lasts</label>
-          <select class="form-select" id="ban-duration" name="duration">
-            <option value="1m">1 minute</option>
-            <option value="1h">1 hour</option>
-            <option value="2h">2 hours</option>
-            <option value="3h">3 hours</option>
-            <option value="24h" selected>24 hours</option>
-            <option value="7d">7 days</option>
-            <option value="30d">30 days</option>
-            <option value="permanent">Permanent</option>
-          </select>
+        <div class="bu-field">
+          <label class="bu-label" for="ban-duration">Ban Duration</label>
+          <div class="bu-control"><i class="bi bi-clock-history" aria-hidden="true"></i>
+            <select class="form-select" id="ban-duration" name="duration">
+              <option value="1m">1 minute</option>
+              <option value="1h">1 hour</option>
+              <option value="2h">2 hours</option>
+              <option value="3h">3 hours</option>
+              <option value="24h" selected>24 hours</option>
+              <option value="7d">7 days</option>
+              <option value="30d">30 days</option>
+              <option value="permanent">Permanent</option>
+            </select>
+          </div>
         </div>
-        <div class="col-12 col-md-5">
-          <label class="form-label" for="ban-reason">Reason (optional)</label>
-          <input class="form-control" id="ban-reason" name="reason" maxlength="500" placeholder="Reason shown in moderation records">
+        <div class="bu-field reason">
+          <label class="bu-label" for="ban-reason">Reason (Optional)</label>
+          <div class="bu-control"><i class="bi bi-pencil-fill" aria-hidden="true"></i>
+            <input class="form-control" id="ban-reason" name="reason" maxlength="500" placeholder="Enter reason...">
+          </div>
         </div>
-        <div class="col-12"><button class="btn btn-danger" type="submit"><i class="bi bi-person-fill-slash" aria-hidden="true"></i> Ban user</button></div>
+        <button class="bu-submit" type="submit"><i class="bi bi-slash-circle" aria-hidden="true"></i> Ban user</button>
       </form>
     </section>
 
-    <section class="panel mt-3">
-      <div class="panel-header"><div><h2 class="h5 mb-1 section-title"><i class="bi bi-person-fill-lock" aria-hidden="true"></i><span>Active bans (<?php echo count($bans); ?>)</span></h2></div></div>
+    <section class="bu-card">
+      <h2 class="bu-card-heading"><span class="bu-section-icon"><i class="bi bi-slash-circle" aria-hidden="true"></i></span>Active bans <span class="bu-count">(<?php echo count($bans); ?>)</span></h2>
       <?php if (!$bans): ?>
-        <p class="text-muted mb-0 py-3">No users are currently banned.</p>
+        <p class="bu-empty">No users are currently banned.</p>
       <?php else: ?>
-        <div class="vs-ban-list">
+        <div class="bu-ban-list">
           <?php foreach ($bans as $ban):
             $permanent = (int)$ban['is_permanent'] === 1;
             $expires = !$permanent && !empty($ban['expires_epoch']) ? (int)$ban['expires_epoch'] : null;
             $remaining = $expires ? max(0, $expires - time()) : 0;
             $remainingText = $remaining <= 0 ? 'Expired' : (
               $remaining >= 86400 ? floor($remaining / 86400) . 'd ' . floor(($remaining % 86400) / 3600) . 'h' :
-              ($remaining >= 3600 ? floor($remaining / 3600) . 'h ' . floor(($remaining % 3600) / 60) . 'm' :
-              floor($remaining / 60) . 'm ' . ($remaining % 60) . 's')
+              ($remaining >= 3600 ? floor($remaining / 3600) . 'h ' . floor($remaining % 3600 / 60) . 'm' :
+              floor($remaining / 60) . 'm ' . $remaining % 60 . 's')
             );
           ?>
-            <div class="vs-ban-row">
-              <div><strong><?php echo vs_e($ban['account_name'] ?: $ban['username'] ?: 'User #' . $ban['user_id']); ?></strong><div class="text-muted small">User ID: <?php echo vs_e($ban['user_id']); ?></div><?php if (!empty($ban['reason'])): ?><div class="small mt-1"><?php echo vs_e($ban['reason']); ?></div><?php endif; ?></div>
-              <div><?php if ($permanent): ?><span class="badge text-bg-danger">Permanent</span><?php else: ?><span class="badge text-bg-warning">Temporary</span><?php endif; ?></div>
-              <div><div class="small text-muted"><?php echo $permanent ? 'No expiry' : 'Time remaining'; ?></div><strong<?php echo (!$permanent && $expires) ? ' class="vs-countdown" data-expires="' . (int)$expires . '"' : ''; ?>><?php echo $permanent ? 'Permanent ban' : vs_e($remainingText); ?></strong><?php if (!$permanent && $expires): ?><div class="small text-muted">Until <?php echo vs_e(date('M j, Y g:i A', $expires)); ?></div><?php endif; ?></div>
-              <form method="post" action="banned-users.php" onsubmit="return confirm('Remove this ban?');">
+            <div class="bu-ban-row">
+              <div class="bu-user-cell">
+                <span class="bu-avatar"><i class="bi bi-person-fill" aria-hidden="true"></i></span>
+                <div class="bu-user-copy"><strong><?php echo vs_e($ban['account_name'] ?: $ban['username'] ?: 'User #' . $ban['user_id']); ?></strong><small>ID: #<?php echo vs_e($ban['user_id']); ?></small></div>
+              </div>
+              <div class="bu-reason<?php echo empty($ban['reason']) ? ' empty' : ''; ?>" title="<?php echo vs_e($ban['reason'] ?: 'No reason provided'); ?>"><?php echo vs_e($ban['reason'] ?: 'No reason provided'); ?></div>
+              <div><span class="bu-status <?php echo $permanent ? 'permanent' : 'temporary'; ?>"><?php echo $permanent ? 'Permanent' : 'Temporary'; ?></span></div>
+              <div class="bu-expiry">
+                <div class="bu-meta"><?php echo $permanent ? 'No expiry date' : 'Expires'; ?></div>
+                <strong<?php echo (!$permanent && $expires) ? ' class="vs-countdown" data-expires="' . (int)$expires . '"' : ''; ?>><?php echo $permanent ? 'Permanent ban' : vs_e($remainingText); ?></strong>
+                <?php if (!$permanent && $expires): ?><div class="bu-meta">Until <?php echo vs_e(date('M j, Y g:i A', $expires)); ?></div><?php endif; ?>
+              </div>
+              <form class="bu-unban" method="post" action="banned-users.php" onsubmit="return confirm('Remove this ban?');">
                 <input type="hidden" name="csrf" value="<?php echo vs_e($csrf); ?>">
                 <input type="hidden" name="action" value="unban">
                 <input type="hidden" name="user_id" value="<?php echo vs_e($ban['user_id']); ?>">
-                <button type="submit" class="btn btn-success btn-sm">Unban</button>
+                <button type="submit"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>Unban</button>
               </form>
             </div>
           <?php endforeach; ?>
@@ -368,19 +533,24 @@ vs_print_styles();
       <?php endif; ?>
     </section>
 
-    <section class="panel mt-3">
-      <div class="panel-header"><div><h2 class="h5 mb-1 section-title"><i class="bi bi-clock-history" aria-hidden="true"></i><span>Ban history</span></h2></div></div>
+    <section class="bu-card">
+      <h2 class="bu-card-heading"><span class="bu-section-icon history"><i class="bi bi-clock-history" aria-hidden="true"></i></span>Ban history</h2>
       <?php if (!$banHistory): ?>
-        <p class="text-muted mb-0 py-3">No ban actions have been recorded yet.</p>
+        <p class="bu-empty">No ban actions have been recorded yet.</p>
       <?php else: ?>
-        <div class="vs-ban-history">
-          <?php foreach ($banHistory as $event): ?>
-            <div class="vs-ban-history-row">
-              <div><strong><?php echo vs_e($event['details']); ?></strong></div>
-              <div><span class="text-muted small">Admin</span><div><?php echo vs_e($event['admin_username']); ?></div></div>
-              <div><span class="text-muted small">Date</span><div><?php echo vs_e(date('M j, Y g:i A', strtotime((string)$event['created_at']))); ?></div></div>
-            </div>
-          <?php endforeach; ?>
+        <div class="bu-table-wrap">
+          <table class="bu-table">
+            <thead><tr><th>Activity</th><th>Banned by</th><th>Date</th></tr></thead>
+            <tbody>
+              <?php foreach ($banHistory as $event): ?>
+                <tr>
+                  <td class="bu-history-detail"><strong><?php echo vs_e($event['details']); ?></strong></td>
+                  <td class="bu-history-admin"><?php echo vs_e($event['admin_username']); ?></td>
+                  <td class="bu-history-date"><?php echo vs_e(date('M j, Y - H:i', strtotime((string)$event['created_at']))); ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
         </div>
       <?php endif; ?>
     </section>

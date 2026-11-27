@@ -135,7 +135,7 @@ body.sidebar-collapsed .app-main { margin-left: 0; }
 }
 
 .app-sidebar .sidebar-link:focus-visible {
-    box-shadow: 0 0 0 2px #5b8cff;
+    box-shadow: 0 0 0 2px #ff2a32;
 }
 
 .app-sidebar .sidebar-link:hover {
@@ -144,10 +144,10 @@ body.sidebar-collapsed .app-main { margin-left: 0; }
 
 .app-sidebar .sidebar-link.active,
 .app-sidebar .sidebar-link.active:hover {
-    border-color: rgba(119, 108, 255, 0.28);
-    background: linear-gradient(100deg, #0878f9 0%, #7152eb 56%, #a32bd2 100%);
+    border-color: #ff2a32;
+    background: #ff2a32;
     color: #ffffff;
-    box-shadow: 0 6px 18px rgba(56, 79, 211, 0.24);
+    box-shadow: none;
 }
 
 .app-sidebar .sidebar-link.active::before {
@@ -157,7 +157,7 @@ body.sidebar-collapsed .app-main { margin-left: 0; }
     left: -9px;
     width: 3px;
     border-radius: 0 3px 3px 0;
-    background: #91c6ff;
+    background: #ffffff;
     content: "";
 }
 
@@ -333,7 +333,7 @@ body.sidebar-collapsed .app-main { margin-left: 0; }
 .app-sidebar .sidebar-link.active,
 .app-sidebar .sidebar-link.active:hover {
     border: 0;
-    background: linear-gradient(90deg, #ff2e93, #8a5cff);
+    background: linear-gradient(90deg, #ff2a32, #b50d16);
     box-shadow: 0 0 20px -4px rgba(255, 46, 147, 0.6);
     color: #ffffff;
     font-weight: 700;

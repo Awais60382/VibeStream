@@ -10,20 +10,20 @@
 
 /* ---------- palette: dark (default) + light, same tokens as index.php ---------- */
 html:not([data-bs-theme="light"]):not([data-theme="light"]){
-  --nx-cyan:#00e5ff;--nx-pink:#ff2e93;--nx-violet:#8a5cff;--nx-green:#22e58a;--nx-amber:#ffd23f;--nx-red:#ff4d6d;
+  --nx-cyan:#ff2a32;--nx-pink:#ff2a32;--nx-violet:#b50d16;--nx-green:#22e58a;--nx-amber:#ffd23f;--nx-red:#ff4d6d;
   --nx-cyan-rgb:0,229,255;--nx-pink-rgb:255,46,147;--nx-violet-rgb:138,92,255;--nx-green-rgb:34,229,138;--nx-amber-rgb:255,210,63;--nx-red-rgb:255,77,109;
-  --nx-cyan-ink:#00e5ff;--nx-pink-ink:#ff7ac0;--nx-muted:#8f9bd0;
+  --nx-cyan-ink:#ff2a32;--nx-pink-ink:#ff7ac0;--nx-muted:#8f9bd0;
   --nx-text:#eaf0ff;--nx-card:rgba(10,13,31,.88);--nx-solid:#0a0d1f;--nx-field:rgba(10,13,31,.9);
   --nx-track:#05060f;--nx-active:#fff;
-  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(138,92,255,.16),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,229,255,.10),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.08),transparent 70%),#05060f;
+  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(138,92,255,.16),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(255,42,50,.10),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.08),transparent 70%),#05060f;
 }
 html[data-bs-theme="light"],html[data-theme="light"]{
-  --nx-cyan:#00b8e6;--nx-pink:#ff2e93;--nx-violet:#7c4dff;--nx-green:#0fb86a;--nx-amber:#f59e0b;--nx-red:#e11d63;
+  --nx-cyan:#ff2a32;--nx-pink:#ff2a32;--nx-violet:#b50d16;--nx-green:#0fb86a;--nx-amber:#f59e0b;--nx-red:#e11d63;
   --nx-cyan-rgb:0,184,230;--nx-pink-rgb:255,46,147;--nx-violet-rgb:124,77,255;--nx-green-rgb:15,184,106;--nx-amber-rgb:245,158,11;--nx-red-rgb:225,29,99;
-  --nx-cyan-ink:#0086b3;--nx-pink-ink:#d4147a;--nx-muted:#55608f;
+  --nx-cyan-ink:#d80e18;--nx-pink-ink:#d4147a;--nx-muted:#55608f;
   --nx-text:#0b1030;--nx-card:#ffffff;--nx-solid:#ffffff;--nx-field:#ffffff;
   --nx-track:#eceffd;--nx-active:#0b1030;
-  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(124,77,255,.14),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,184,230,.14),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.10),transparent 70%),#f4f6ff;
+  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(124,77,255,.14),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(255,42,50,.14),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.10),transparent 70%),#f4f6ff;
 }
 
 /* ---------- page, scrollbar, selection ---------- */

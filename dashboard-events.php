@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/geoip-country.php';
 
 function vs_dashboard_table_exists(mysqli $conn, string $table): bool
 {
@@ -15,16 +16,73 @@ function vs_dashboard_table_exists(mysqli $conn, string $table): bool
     return $cache[$table] = $exists;
 }
 
+function vs_dashboard_country_column_ready(mysqli $conn): bool
+{
+    static $ready = null;
+    if ($ready !== null) {
+        return $ready;
+    }
+
+    $hasColumn = static function () use ($conn): bool {
+        $stmt = $conn->prepare(
+            "SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_schema = DATABASE() AND table_name = 'video_view_events' AND column_name = 'country_code'"
+        );
+        if (!$stmt) {
+            throw new RuntimeException($conn->error);
+        }
+        $stmt->execute();
+        $exists = (int)$stmt->get_result()->fetch_row()[0] > 0;
+        $stmt->close();
+        return $exists;
+    };
+
+    try {
+        if ($hasColumn()) {
+            return $ready = true;
+        }
+        if ($conn->query('ALTER TABLE `video_view_events` ADD COLUMN `country_code` CHAR(2) NULL DEFAULT NULL AFTER `creator`')) {
+            return $ready = true;
+        }
+        if ($hasColumn()) {
+            return $ready = true;
+        }
+        error_log('Viewer country tracking schema could not be updated: ' . $conn->error);
+    } catch (Throwable $error) {
+        error_log('Viewer country tracking schema could not be updated: ' . $error->getMessage());
+    }
+
+    return $ready = false;
+}
+
 function vs_dashboard_log_view(mysqli $conn, string $contentType, string $contentId, string $creator): void
 {
     try {
         if (!vs_dashboard_table_exists($conn, 'video_view_events')) {
             return;
         }
+        if (vs_dashboard_country_column_ready($conn)) {
+            $countryCode = vs_geoip_country_code();
+            $stmt = $conn->prepare(
+                'INSERT INTO `video_view_events` (`content_type`, `content_id`, `creator`, `viewed_at`, `country_code`)
+                 VALUES (?, ?, ?, NOW(), ?)'
+            );
+            if (!$stmt) {
+                throw new RuntimeException($conn->error);
+            }
+            $stmt->bind_param('ssss', $contentType, $contentId, $creator, $countryCode);
+            $stmt->execute();
+            $stmt->close();
+            return;
+        }
+
         $stmt = $conn->prepare(
             'INSERT INTO `video_view_events` (`content_type`, `content_id`, `creator`, `viewed_at`)
              VALUES (?, ?, ?, NOW())'
         );
+        if (!$stmt) {
+            throw new RuntimeException($conn->error);
+        }
         $stmt->bind_param('sss', $contentType, $contentId, $creator);
         $stmt->execute();
         $stmt->close();

@@ -77,4 +77,20 @@
   html.vs-rail .app-sidebar .sidebar-gopremium p,
   html.vs-rail .app-sidebar .sidebar-gopremium .gp-btn { display: none !important; }
   html.vs-rail .app-sidebar .sidebar-gopremium .gp-crown-link { width: 100%; }
+
+  /* Premium members' card shrinks to just its crown as well */
+  html.vs-rail .app-sidebar .sidebar-premiumstatus {
+    box-sizing: border-box;
+    width: 48px;
+    min-height: 48px;
+    margin: 8px auto 6px;
+    padding: 8px;
+    gap: 0;
+    border-radius: 14px;
+  }
+  html.vs-rail .app-sidebar .sidebar-premiumstatus strong,
+  html.vs-rail .app-sidebar .sidebar-premiumstatus p,
+  html.vs-rail .app-sidebar .sidebar-premiumstatus span,
+  html.vs-rail .app-sidebar .sidebar-premiumstatus .gp-btn { display: none !important; }
+  html.vs-rail .app-sidebar .sidebar-premiumstatus .gp-crown-link { width: 100%; }
 }

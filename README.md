@@ -19,6 +19,18 @@ The site owner can change the app logo, name, description, and default appearanc
 
 Signed-in users can see followed creators and unsubscribe from **Subscriptions** in the main navigation. The page can filter subscribed creators who uploaded within the last 7 days, as well as sort the list. Subscription relationships are stored per user in `user_subscriptions` and follow them across sessions and devices. For databases created before this feature, run `database/migrations/20261008_create_user_subscriptions.sql` once.
 
+## Viewer countries in Insights
+
+Insights can group recent video and Shorts view events by country using a local MaxMind GeoLite2 Country database. Run `composer install`, place `GeoLite2-Country.mmdb` at `storage/GeoLite2-Country.mmdb`, or set the PHP environment variable `VIBESTREAM_GEOIP_COUNTRY_DB` to the database file's absolute path. The database file is not included in this repository. Only the two-letter country code is stored with a view event; viewer IP addresses are not saved or sent to a geolocation service. Private/reserved IP addresses are not geolocated. The dashboard percentages represent tracked video views, not unique people or all site visits.
+
+## Announcements and product updates
+
+Visitors can read public posts at `announcements.php`. Full admins can create drafts, publish immediately, or schedule posts and planned update dates from **Admin Panel → Announcements**. New posts appear as an in-app popup; visitors may opt into browser notifications, which are delivered only while VibeStream is open. Closed-app push notifications are not configured. Posts support announcements, upcoming updates, release notes, and maintenance notices; the existing short site-wide banner remains separate.
+
+## Channel memberships
+
+Creators can require approval for a free membership tier. Any signed-in user can request that tier without Premium; the creator can approve or decline the request. Paid point-based tiers remain separate.
+
 ## Continue watching
 
 Signed-in viewers can resume unfinished videos from the **Continue watching** section on the home page or from **Watch history**. Playback position is saved to the viewer's watch history and resumes automatically on the next visit. Pausing watch history also stops playback progress from being recorded. The history table adds its progress columns automatically; no separate migration is required.
@@ -27,7 +39,7 @@ Signed-in viewers can resume unfinished videos from the **Continue watching** se
 
 Active Premium and Premium Plus accounts do not receive configured ad code on the home feed, video watch pages, or Shorts. They can also view private Creator Analytics for their own published content. Analytics reports recorded video/Short page opens, current likes and subscribers; it does not claim unique viewers or watch time. Playlist, Watch Later, download, VIP badge, and daily upload benefits are enforced by the application.
 
-The upload form saves unfinished draft details in the current browser, with file recovery when browser storage supports it. Large files may exceed browser storage limits; in that case the draft details remain saved and the file must be selected again.
+The upload form saves unfinished draft details in the current browser. Small video files (up to 16 MB) may also be cached for draft recovery; larger video files are not copied into browser storage, and uploading never waits for a draft-file copy to finish.
 
 ## Playlists and discovery
 

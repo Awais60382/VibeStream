@@ -728,7 +728,6 @@ $dP = vs_pp_smooth($ptsP);
 $xFirst = round($ptsP[0][0], 1);
 $xLast = round($ptsP[count($ptsP) - 1][0], 1);
 ?>
-<link rel="stylesheet" href="./assets/css/neon-theme.css?v=1">
 <style>
   /* ===== premium look (admin-pay only) ===== */
   /* icon tiles: ".vx-stat span" in page-theme.php was shrinking/greying them; these out-rank it */

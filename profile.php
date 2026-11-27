@@ -6,7 +6,11 @@ if (is_file(__DIR__ . '/premium-perks.php')) {
 require_once __DIR__ . '/icons.php';
 require_once __DIR__ . '/avatar.php';
 require_once __DIR__ . '/subscription-store.php';
+if (is_file(__DIR__ . '/premium-store.php')) { require_once __DIR__ . '/premium-store.php'; }
 include __DIR__ . '/connection.php';
+
+// Page that shows points / rewards (used by the Rewards tab button). Change it if yours has another name.
+$rewardsPage = 'premium-points.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -41,9 +45,14 @@ if (empty($_SESSION['csrf'])) {
 }
 $csrf = $_SESSION['csrf'];
 
-/** Channel description lives in its own small table (created on first use). The `username` column is renamed together with the user. */
+/** Channel details live in their own small table (created / extended on first use). The `username` column is renamed together with the user. */
 function vs_channel_profile_ensure(mysqli $conn): void
 {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
     $conn->query(
         'CREATE TABLE IF NOT EXISTS `channel_profiles` (
             `username` VARCHAR(100) NOT NULL,
@@ -52,6 +61,65 @@ function vs_channel_profile_ensure(mysqli $conn): void
             PRIMARY KEY (`username`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci'
     );
+    $extra = [
+        'location' => 'VARCHAR(80)',
+        'link_youtube' => 'VARCHAR(255)',
+        'link_discord' => 'VARCHAR(255)',
+        'link_x' => 'VARCHAR(255)',
+        'link_website' => 'VARCHAR(255)',
+    ];
+    foreach ($extra as $column => $type) {
+        $res = $conn->query("SHOW COLUMNS FROM `channel_profiles` LIKE '" . $conn->real_escape_string($column) . "'");
+        $missing = $res && $res->num_rows === 0;
+        if ($res) {
+            $res->free();
+        }
+        if ($missing) {
+            $conn->query("ALTER TABLE `channel_profiles` ADD COLUMN `$column` $type NOT NULL DEFAULT ''");
+        }
+    }
+}
+
+/** Checks a social / website link. Returns '' (empty), the cleaned https URL, or null when it is not acceptable. */
+function vs_clean_link(string $raw, array $hosts): ?string
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return '';
+    }
+    if (mb_strlen($raw) > 200) {
+        return null;
+    }
+    if (!preg_match('#^https?://#i', $raw)) {
+        $raw = 'https://' . $raw;
+    }
+    if (!filter_var($raw, FILTER_VALIDATE_URL)) {
+        return null;
+    }
+    $parts = parse_url($raw);
+    $scheme = strtolower((string)($parts['scheme'] ?? ''));
+    $host = strtolower((string)($parts['host'] ?? ''));
+    if (!in_array($scheme, ['http', 'https'], true) || $host === '') {
+        return null;
+    }
+    if ($hosts) {
+        $ok = false;
+        foreach ($hosts as $allowed) {
+            if ($host === $allowed || str_ends_with($host, '.' . $allowed)) {
+                $ok = true;
+                break;
+            }
+        }
+        if (!$ok) {
+            return null;
+        }
+    }
+    return $raw;
+}
+
+function vs_link_label(string $url): string
+{
+    return rtrim((string)preg_replace('#^https?://(www\.)?#i', '', $url), '/');
 }
 
 /**
@@ -226,22 +294,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 banner_delete($viewer);
                 $flash = ['type' => 'ok', 'text' => 'Banner removed.'];
 
-            } elseif ($action === 'description') {
+            } elseif ($action === 'details') {
                 $desc = trim((string)($_POST['description'] ?? ''));
                 $desc = (string)preg_replace('/(\r\n|\r|\n){3,}/', "\n\n", $desc);
+                $loc = trim((string)preg_replace('/\s+/', ' ', (string)($_POST['location'] ?? '')));
+                $links = [
+                    'link_youtube' => vs_clean_link((string)($_POST['link_youtube'] ?? ''), ['youtube.com', 'youtu.be']),
+                    'link_discord' => vs_clean_link((string)($_POST['link_discord'] ?? ''), ['discord.gg', 'discord.com']),
+                    'link_x'       => vs_clean_link((string)($_POST['link_x'] ?? ''), ['x.com', 'twitter.com']),
+                    'link_website' => vs_clean_link((string)($_POST['link_website'] ?? ''), []),
+                ];
                 if (mb_strlen($desc) > 500) {
                     $flash = ['type' => 'err', 'text' => 'The description can be at most 500 characters.'];
+                } elseif (mb_strlen($loc) > 60) {
+                    $flash = ['type' => 'err', 'text' => 'The location can be at most 60 characters.'];
+                } elseif (in_array(null, $links, true)) {
+                    $flash = ['type' => 'err', 'text' => 'One of the links is not valid. Use a YouTube, Discord or X link, or any website address.'];
                 } else {
                     try {
                         vs_channel_profile_ensure($conn);
-                        $st = $conn->prepare('INSERT INTO `channel_profiles` (`username`, `description`, `updated_at`) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE `description` = VALUES(`description`), `updated_at` = NOW()');
-                        $st->bind_param('ss', $viewer, $desc);
+                        $st = $conn->prepare(
+                            'INSERT INTO `channel_profiles` (`username`, `description`, `location`, `link_youtube`, `link_discord`, `link_x`, `link_website`, `updated_at`)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                             ON DUPLICATE KEY UPDATE `description` = VALUES(`description`), `location` = VALUES(`location`),
+                                 `link_youtube` = VALUES(`link_youtube`), `link_discord` = VALUES(`link_discord`),
+                                 `link_x` = VALUES(`link_x`), `link_website` = VALUES(`link_website`), `updated_at` = NOW()'
+                        );
+                        $st->bind_param('sssssss', $viewer, $desc, $loc, $links['link_youtube'], $links['link_discord'], $links['link_x'], $links['link_website']);
                         $st->execute();
                         $st->close();
-                        $flash = ['type' => 'ok', 'text' => 'Description saved.'];
+                        $flash = ['type' => 'ok', 'text' => 'Profile details saved.'];
                     } catch (Throwable $e) {
-                        error_log('Description save failed: ' . $e->getMessage());
-                        $flash = ['type' => 'err', 'text' => 'Could not save the description right now.'];
+                        error_log('Profile details save failed: ' . $e->getMessage());
+                        $flash = ['type' => 'err', 'text' => 'Could not save your profile details right now.'];
                     }
                 }
 
@@ -355,7 +440,7 @@ foreach (array_merge($videos, $shorts) as $row) {
     $totalViews += (int)($row['views'] ?? 0);
     $totalLikes += (int)($row['likes'] ?? 0);
 }
-$defaultTab = (count($videos) === 0 && count($shorts) > 0) ? 'shorts' : 'videos';
+$totalUploads = count($videos) + count($shorts);
 
 // "Popular" = most views, likes and comments together. A like counts 5 views and a comment counts 10 views.
 $commentCounts = [];
@@ -381,15 +466,21 @@ $avatarUrl = $accountFound ? avatar_url($profileUser) : '';
 $bannerUrl = $accountFound ? banner_url($profileUser) : '';
 
 $description = '';
+$location = '';
+$links = ['youtube' => '', 'discord' => '', 'x' => '', 'website' => ''];
 $joinedAt = '';
 if ($accountFound) {
     try {
         vs_channel_profile_ensure($conn);
-        if ($st = $conn->prepare('SELECT `description` FROM `channel_profiles` WHERE `username` = ? LIMIT 1')) {
+        if ($st = $conn->prepare('SELECT `description`, `location`, `link_youtube`, `link_discord`, `link_x`, `link_website` FROM `channel_profiles` WHERE `username` = ? LIMIT 1')) {
             $st->bind_param('s', $profileUser);
             $st->execute();
             $r = $st->get_result()->fetch_row();
-            $description = $r ? (string)$r[0] : '';
+            if ($r) {
+                $description = (string)$r[0];
+                $location = (string)$r[1];
+                $links = ['youtube' => (string)$r[2], 'discord' => (string)$r[3], 'x' => (string)$r[4], 'website' => (string)$r[5]];
+            }
             $st->close();
         }
         if ($st = $conn->prepare('SELECT `created_at` FROM `users` WHERE LOWER(`username`) = LOWER(?) LIMIT 1')) {
@@ -403,6 +494,7 @@ if ($accountFound) {
         error_log('Profile extras unavailable: ' . $e->getMessage());
     }
 }
+$hasLinks = ($links['youtube'] . $links['discord'] . $links['x'] . $links['website']) !== '';
 
 $isSubscribed = false;
 $subscriberCount = null;
@@ -415,299 +507,343 @@ if ($accountFound) {
             error_log('Profile subscriptions unavailable: ' . $e->getMessage());
         }
     }
-    if ($isMe && ($uploaderCol ?? '') !== '' && isset($vCols['subscribers'])) {
-        $st = $conn->prepare("SELECT COALESCE(MAX(`subscribers`), 0) FROM `videos` WHERE LOWER(`$uploaderCol`) = LOWER(?)");
-        if ($st) {
-            $st->bind_param('s', $profileUser);
-            if ($st->execute()) {
-                $subscriberCount = (int)$st->get_result()->fetch_row()[0];
-            }
-            $st->close();
+    try {
+        if (function_exists('vs_subscription_channel_count')) {
+            $subscriberCount = (int)vs_subscription_channel_count($conn, $profileUser, $profileUser, 0);
         }
+    } catch (Throwable $e) {
+        error_log('Profile subscriber count unavailable: ' . $e->getMessage());
     }
 }
+
+/* Premium status, rewards level, playlists */
+$isPremium = false;
+$earned = 0;
+$level = null;
+$nextLevel = null;
+$playlists = [];
+if ($accountFound) {
+    try {
+        if (function_exists('vs_premium_pdo') && function_exists('vs_premium_get') && function_exists('vs_premium_is_active')) {
+            $premiumPdo = vs_premium_pdo();
+            if ($premiumPdo) {
+                $isPremium = (bool)vs_premium_is_active(vs_premium_get($premiumPdo, $profileUser));
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('Profile premium status unavailable: ' . $e->getMessage());
+    }
+    try {
+        if (function_exists('vs_rewards_level_prefetch') && defined('VS_REWARDS_LEVELS')) {
+            vs_rewards_level_prefetch([$profileUser]);
+            $levelStore = &vs_rewards_level_store();
+            $earned = (int)($levelStore[strtolower($profileUser)] ?? 0);
+            foreach (VS_REWARDS_LEVELS as $i => $candidate) {
+                if ($earned >= $candidate[1]) {
+                    $level = $candidate;
+                    $nextLevel = VS_REWARDS_LEVELS[$i + 1] ?? null;
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('Profile rewards level unavailable: ' . $e->getMessage());
+    }
+    try {
+        $uid = 0;
+        if ($st = $conn->prepare('SELECT `id` FROM `users` WHERE LOWER(`username`) = LOWER(?) LIMIT 1')) {
+            $st->bind_param('s', $profileUser);
+            $st->execute();
+            $r = $st->get_result()->fetch_row();
+            $uid = $r ? (int)$r[0] : 0;
+            $st->close();
+        }
+        if ($uid > 0) {
+            $plSql = 'SELECT p.`id`, p.`name`, p.`visibility`, COUNT(pv.`video_id`) AS n
+                      FROM `playlists` p LEFT JOIN `playlist_videos` pv ON pv.`playlist_id` = p.`id`
+                      WHERE p.`user_id` = ?' . ($isMe ? '' : " AND p.`visibility` = 'public'") . '
+                      GROUP BY p.`id`, p.`name`, p.`visibility` ORDER BY p.`id` DESC LIMIT 24';
+            $st = $conn->prepare($plSql);
+            if ($st) {
+                $st->bind_param('i', $uid);
+                $st->execute();
+                $playlists = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+                $st->close();
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('Profile playlists unavailable: ' . $e->getMessage());
+    }
+}
+
 $h = static function ($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); };
+$brandName = function_exists('vs_branding_app_name') ? (string)vs_branding_app_name() : 'VibeStream';
+$descShort = mb_strlen($description) > 110 ? mb_substr($description, 0, 110) . '…' : $description;
+$topVideos = array_slice($videos, 0, 5);
+$levelPct = ($level && $nextLevel) ? max(0, min(100, ($earned - $level[1]) / max(1, $nextLevel[1] - $level[1]) * 100)) : 100;
 
 $extraCss = <<<'CSS'
-.profile-page { max-width: 1284px; margin: 0 auto; padding: 16px 24px 56px; }
 body { overflow-x: clip; }
-.flash { margin: 0 0 18px; padding: 12px 16px; border-radius: 14px; font-size: 14px; font-weight: 600; }
-.flash.ok  { background: rgba(60, 170, 90, 0.15); border: 1px solid rgba(60, 170, 90, 0.45); color: #2e9e5b; }
-.flash.err { background: rgba(220, 60, 60, 0.15); border: 1px solid rgba(220, 60, 60, 0.45); color: #d94a4a; }
-.channel-banner {
-    position: relative; overflow: hidden;
-    width: 100%; margin: 0 0 16px; border-radius: 16px;
-    aspect-ratio: 6.2 / 1; min-height: 96px; max-height: 220px;
-    background: linear-gradient(120deg, #23253a, #1b2436 45%, #2c2140);
-}
-.channel-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.banner-actions { position: absolute; right: 16px; bottom: 12px; display: flex; gap: 8px; z-index: 5; }
-.banner-actions form { margin: 0; }
-.banner-actions .btn { cursor: pointer; pointer-events: auto; }
-.banner-actions .btn { background: #ffffff; color: #0f0f0f; border: 1px solid rgba(255, 255, 255, 0.7); box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); }
-.banner-actions .btn:hover { background: #e9e9ee; filter: none; }
-.banner-actions .btn svg { color: #0f0f0f; }
-.channel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; }
-.channel-avatar-lg {
-    width: 160px; height: 160px; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
-    background: var(--surface-2); display: flex; align-items: center; justify-content: center;
-    font-size: 64px; font-weight: 700; color: var(--text);
-}
-.channel-info { flex: 1 1 320px; min-width: 0; }
-.channel-name { margin: 0 0 4px; font-size: 36px; line-height: 1.2; font-weight: 700; word-break: break-word; }
-.channel-meta { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 0 14px; }
-.channel-handle { color: var(--text); font-weight: 600; }
-.channel-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.btn {
-    display: inline-flex; align-items: center; gap: 6px; border: 0; cursor: pointer;
-    background: var(--surface-2); color: var(--text); height: 36px; padding: 0 16px; border-radius: 999px;
-    font-size: 14px; font-weight: 600; white-space: nowrap;
-}
-.btn:hover { filter: brightness(0.96); }
-.btn.primary { background: var(--accent); color: #ffffff; }
-.btn.subscribe { background: var(--text); color: var(--bg); }
-.btn svg { flex: 0 0 auto; }
-.name-form {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0 0;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 18px 22px;
-}
-.name-form[hidden] { display: none; }
-.name-form input[type=text] {
-    flex: 1 1 220px; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--border);
-    background: var(--bg); color: var(--text);
-}
-.name-form small { flex: 1 1 100%; color: var(--muted); }
-.name-form textarea {
-    flex: 1 1 100%; min-height: 90px; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--border);
-    background: var(--bg); color: var(--text); font: inherit; resize: vertical;
-}
-.channel-desc { margin: 0 0 14px; font-size: 14px; line-height: 1.5; max-width: 760px; white-space: pre-line; }
-.link-more { background: none; border: 0; padding: 0; margin-left: 4px; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
-.link-more:hover { color: var(--text); }
-.sort-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
-.chip {
-    border: 0; cursor: pointer; height: 32px; padding: 0 14px; border-radius: 8px;
-    background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600;
-}
-.chip.active { background: var(--text); color: var(--bg); }
-.about-box { max-width: 720px; }
-.about-box h2 { margin: 0 0 10px; font-size: 18px; }
-.about-desc { margin: 0 0 24px; font-size: 14px; line-height: 1.6; white-space: pre-line; }
-.about-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px 24px; margin: 0; }
-.about-list div { border-top: 1px solid var(--border); padding-top: 10px; }
-.about-list dt { color: var(--muted); font-size: 13px; margin: 0 0 2px; }
-.about-list dd { margin: 0; font-size: 16px; font-weight: 600; }
-.tabs { display: flex; gap: 0; margin: 16px 0 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
-.tab {
-    background: none; border: 0; border-bottom: 2px solid transparent; padding: 0 16px; height: 48px; cursor: pointer;
-    font-size: 14px; font-weight: 600; color: var(--muted); white-space: nowrap;
-}
-.tab:hover { color: var(--text); }
-.tab.active { color: var(--text); border-bottom-color: var(--text); }
-.tab .count { margin-left: 6px; font-weight: 400; color: var(--muted); font-size: 13px; }
-.tab-panel { display: none; padding-top: 20px; }
-.tab-panel.active { display: block; }
-.video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px 16px; }
-.short-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 24px 14px; }
-.p-thumb { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: var(--surface-2); }
-.p-thumb img, .p-short-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.p-short-thumb { aspect-ratio: 9 / 16; border-radius: 12px; overflow: hidden; background: var(--surface-2); }
-.p-duration { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.8); color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 6px; }
-.p-title { margin: 10px 0 4px; font-size: 14px; font-weight: 600; line-height: 1.4; }
-.p-meta { margin: 0; color: var(--muted); font-size: 12px; }
-.empty-state {
-    text-align: center; padding: 56px 16px; color: var(--muted);
-    border: 1px dashed var(--border); border-radius: 20px;
-}
-.empty-state .btn { margin-top: 16px; }
-@media (max-width: 760px) {
-    .profile-page { padding: 12px 12px 48px; }
-    .channel-banner { margin-bottom: 14px; border-radius: 12px; aspect-ratio: 16 / 4; }
-    .banner-actions { right: 10px; bottom: 10px; }
-    .channel-head { gap: 16px; }
-    .channel-avatar-lg { width: 80px; height: 80px; font-size: 34px; }
-    .channel-name { font-size: 24px; }
-}
-/* ===== CHANNEL LAYOUT (profile redesign) ===== */
-.channel-banner { max-height: 260px; margin-bottom: 0; }
-.channel-head { align-items: flex-start; gap: 26px; margin-top: -68px; padding: 0 12px; position: relative; z-index: 2; }
-.channel-avatar-lg { width: 168px; height: 168px; border: 5px solid var(--bg); position: relative; z-index: 2; }
-.channel-info { padding-top: 78px; flex: 1 1 420px; }
-.channel-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.channel-handle-line { margin: 0 0 8px; color: var(--muted); font-size: 15px; }
-.channel-stats { display: flex; flex-wrap: wrap; gap: 14px 30px; margin: 4px 0 8px; }
-.channel-stats-note { display: block; margin: 0 0 16px; color: var(--muted); font-size: 12px; }
-.ch-stat { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.ch-stat svg { width: 26px; height: 26px; flex: 0 0 auto; color: var(--muted); }
-.ch-stat b { display: block; font-size: 22px; line-height: 1.1; font-weight: 700; }
-.ch-stat span { display: block; font-size: 13px; color: var(--muted); }
-.tabs { gap: 8px; padding: 8px; margin: 10px 0 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
-.tab { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px; border: 0; border-radius: 12px; }
-.tab svg { width: 18px; height: 18px; flex: 0 0 auto; }
-.tab.active { background: linear-gradient(135deg, #6d5ffd, #4a3fe0); color: #fff; border-bottom-color: transparent; }
-.tab.active .count { color: rgba(255,255,255,.8); }
-.panel-cols { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
-.panel-main { min-width: 0; }
-.about-side { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); padding: 20px; position: sticky; top: calc(var(--navbar-height) + 14px); }
-.about-side h2 { margin: 0 0 10px; font-size: 18px; }
-.about-side .about-desc { margin: 0 0 16px; font-size: 14px; line-height: 1.55; }
-.about-side .about-list { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
-.about-side .about-list dd { font-size: 15px; }
-.p-card { display: block; transition: transform .18s ease; }
-.p-card:hover { transform: translateY(-3px); }
-.p-thumb, .p-short-thumb { border-radius: 14px; }
-.video-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
-@media (max-width: 1100px) { .panel-cols { grid-template-columns: minmax(0, 1fr); } .about-side { position: static; } }
-@media (max-width: 760px) {
-    .channel-head { margin-top: -44px; gap: 14px; padding: 0 4px; }
-    .channel-avatar-lg { width: 92px; height: 92px; border-width: 4px; }
-    .channel-info { padding-top: 52px; flex-basis: 100%; }
-    .ch-stat b { font-size: 18px; }
-    .tab { padding: 0 14px; }
-}
-@media (prefers-reduced-motion: reduce) { .p-card { transition: none; } .p-card:hover { transform: none; } }
-/* ===== NEON THEME (dark + light) ===== */
-html:not([data-theme="light"]) {
-            --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
-            --text: #eaf0ff; --muted: #8f9bd0; --border: #1d2557;
-            --accent: #ff2e93; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #00e5ff;
-            --neon-cyan: #00e5ff; --neon-pink: #ff2e93; --neon-violet: #8a5cff;
-        }
-        html:not([data-theme="light"]) body { background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.16), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
-                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.08), transparent 70%), #05060f; background-attachment: fixed; }
-        html:not([data-theme="light"]) body .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(0,229,255,.35); box-shadow: 0 1px 24px -4px rgba(0,229,255,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
-        html:not([data-theme="light"]) body .brand { background: linear-gradient(90deg, #00e5ff, #8a5cff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
-        html:not([data-theme="light"]) body .nav-toggle span { background: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.7); }
-        html:not([data-theme="light"]) body .nav-toggle:hover, html:not([data-theme="light"]) body .theme-toggle:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 14px rgba(0,229,255,.4); }
-        html:not([data-theme="light"]) body .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(138,92,255,.6)); }
-        html:not([data-theme="light"]) body .nav-link.active { background: rgba(255,46,147,.16); color: #ff7ac0; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
-        html:not([data-theme="light"]) body .create-btn, html:not([data-theme="light"]) body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
-        html:not([data-theme="light"]) body #search-input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.55); color: #eaf0ff; box-shadow: 0 0 10px -2px rgba(138,92,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
-        html:not([data-theme="light"]) body #search-input:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 20px rgba(0,229,255,.55); }
-        html:not([data-theme="light"]) body .user-badge-pill { background: linear-gradient(180deg, rgba(23,28,66,.9), rgba(10,13,31,.95)); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
-        html:not([data-theme="light"]) body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
-        html:not([data-theme="light"]) body .app-sidebar { background: linear-gradient(180deg, rgba(10,13,31,.97), rgba(5,6,15,.98)); border-right: 1px solid rgba(138,92,255,.4); box-shadow: 4px 0 28px -10px rgba(138,92,255,.45); }
-        html:not([data-theme="light"]) body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
-        html:not([data-theme="light"]) body .sidebar-link:hover { background: rgba(0,229,255,.10); box-shadow: inset 3px 0 0 #00e5ff, 0 0 16px -4px rgba(0,229,255,.5); }
-        html:not([data-theme="light"]) body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
-        html:not([data-theme="light"]) body .sidebar-heading { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.45); }
-        html:not([data-theme="light"]) body ::-webkit-scrollbar { width: 10px; height: 10px; }
-        html:not([data-theme="light"]) body ::-webkit-scrollbar-track { background: #05060f; }
-        html:not([data-theme="light"]) body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
-        html:not([data-theme="light"]) body ::selection { background: rgba(255,46,147,.4); color: #fff; }
 
-/* ---- profile page ---- */
-html:not([data-theme="light"]) body .channel-banner { border: 1px solid rgba(138,92,255,.55); box-shadow: 0 0 30px -6px rgba(0,229,255,.5), 0 0 70px -20px rgba(255,46,147,.45); }
-html:not([data-theme="light"]) body .channel-avatar-lg { box-shadow: 0 0 0 3px rgba(255,46,147,.85), 0 0 22px rgba(255,46,147,.6); }
-html:not([data-theme="light"]) body .channel-name { text-shadow: 0 0 16px rgba(138,92,255,.6); }
-html:not([data-theme="light"]) body .channel-handle { color: #00e5ff; }
-html:not([data-theme="light"]) body .btn { transition: box-shadow .18s ease, transform .18s ease, filter .18s ease; }
-html:not([data-theme="light"]) body .btn:hover { transform: translateY(-1px); }
-html:not([data-theme="light"]) body .btn.primary { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); }
-html:not([data-theme="light"]) body .btn.subscribe { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; box-shadow: 0 0 18px rgba(255,46,147,.5); }
-html:not([data-theme="light"]) body .banner-actions .btn { background: rgba(5,6,15,.8); color: #fff; border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 14px rgba(0,229,255,.45); }
-html:not([data-theme="light"]) body .banner-actions .btn svg { color: #00e5ff; }
-html:not([data-theme="light"]) body .name-form input[type=text], html:not([data-theme="light"]) body .name-form textarea { background: rgba(10,13,31,.9); color: #eaf0ff; border: 1px solid rgba(138,92,255,.5); }
-html:not([data-theme="light"]) body .name-form input[type=text]:focus, html:not([data-theme="light"]) body .name-form textarea:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 16px rgba(0,229,255,.5); }
-html:not([data-theme="light"]) body .chip { background: rgba(23,28,66,.7); color: #eaf0ff; border: 1px solid rgba(138,92,255,.35); transition: box-shadow .18s ease, border-color .18s ease; }
-html:not([data-theme="light"]) body .chip:hover { border-color: #00e5ff; box-shadow: 0 0 14px rgba(0,229,255,.5); }
-html:not([data-theme="light"]) body .chip.active { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border-color: transparent; box-shadow: 0 0 18px rgba(255,46,147,.55); }
-html:not([data-theme="light"]) body .tabs { border-bottom: 1px solid rgba(138,92,255,.45); }
-html:not([data-theme="light"]) body .tab:hover { color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.6); }
-html:not([data-theme="light"]) body .tab.active { color: #00e5ff; border-bottom-color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.6); box-shadow: 0 8px 14px -10px rgba(0,229,255,.9); }
-html:not([data-theme="light"]) body .p-thumb, html:not([data-theme="light"]) body .p-short-thumb { border: 1px solid rgba(138,92,255,.28); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
-html:not([data-theme="light"]) body a:hover .p-thumb, html:not([data-theme="light"]) body a:hover .p-short-thumb { border-color: #00e5ff; box-shadow: 0 0 22px rgba(0,229,255,.55), 0 0 44px -8px rgba(138,92,255,.5); transform: translateY(-3px); }
-html:not([data-theme="light"]) body a:hover .p-title { color: #00e5ff; text-shadow: 0 0 10px rgba(0,229,255,.5); }
-html:not([data-theme="light"]) body .p-duration { background: rgba(5,6,15,.88); color: #00e5ff; border: 1px solid rgba(0,229,255,.5); }
-html:not([data-theme="light"]) body .about-list div { border-top: 1px solid rgba(138,92,255,.45); }
-html:not([data-theme="light"]) body .flash.ok { box-shadow: 0 0 18px -4px rgba(60,220,130,.55); }
-html:not([data-theme="light"]) body .flash.err { box-shadow: 0 0 18px -4px rgba(255,46,147,.55); }
-html:not([data-theme="light"]) body .empty-state { background: rgba(10,13,31,.88); border: 1px dashed rgba(0,229,255,.5); box-shadow: 0 0 24px -8px rgba(0,229,255,.4); }
+/* ===== PROFILE (red creator dashboard) ===== */
+.pf {
+    --pf-card: #101015; --pf-card2: #16161d; --pf-line: rgba(255,255,255,.10);
+    --pf-text: #f4f4f7; --pf-muted: #a3a3ad; --pf-red: #ff2a3a; --pf-red2: #c4121f;
+    --pf-gold: #ffc23d; --pf-blue: #3ea6ff; --pf-green: #2fe08a; --pf-purple: #a855f7;
+    max-width: 1320px; margin: 0 auto; padding: 14px clamp(12px, 2vw, 26px) 60px; color: var(--pf-text);
+}
+html[data-theme="light"] .pf {
+    --pf-card: #ffffff; --pf-card2: #f3f1f6; --pf-line: rgba(20,10,40,.14);
+    --pf-text: #17101f; --pf-muted: #5f5870; --pf-red: #d4121f; --pf-red2: #a80c18;
+    --pf-gold: #8a5a00; --pf-blue: #0b6bcb; --pf-green: #168a50; --pf-purple: #7b2fd6;
+}
+.pf a { color: inherit; text-decoration: none; }
+.pf-flash { margin: 0 0 16px; padding: 12px 16px; border-radius: 14px; font-size: 14px; font-weight: 600; }
+.pf-flash.ok  { background: rgba(60,170,90,.15); border: 1px solid rgba(60,170,90,.45); color: #2e9e5b; }
+.pf-flash.err { background: rgba(220,60,60,.15); border: 1px solid rgba(220,60,60,.45); color: #e24a4a; }
 
-html[data-theme="light"] {
-            --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
-            --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
-            --accent: #ff2e93; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #00b8e6;
-            --neon-cyan: #00b8e6; --neon-pink: #ff2e93; --neon-violet: #7c4dff;
-        }
-        html[data-theme="light"] body { background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.14), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.14), transparent 70%),
-                radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.10), transparent 70%), #f4f6ff; background-attachment: fixed; }
-        html[data-theme="light"] body .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(0,184,230,.55); box-shadow: 0 1px 22px -4px rgba(0,184,230,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
-        html[data-theme="light"] body .brand { background: linear-gradient(90deg, #00b8e6, #7c4dff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
-        html[data-theme="light"] body .nav-toggle span { background: #7c4dff; box-shadow: 0 0 6px rgba(124,77,255,.7); }
-        html[data-theme="light"] body .nav-toggle:hover, html[data-theme="light"] body .theme-toggle:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 14px rgba(0,184,230,.4); }
-        html[data-theme="light"] body .theme-toggle svg { color: #7c4dff; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
-        html[data-theme="light"] body .nav-link.active { background: rgba(255,46,147,.16); color: #d4147a; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
-        html[data-theme="light"] body .create-btn, html[data-theme="light"] body .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
-        html[data-theme="light"] body #search-input { background: #ffffff; border: 1px solid rgba(124,77,255,.55); color: #0b1030; box-shadow: 0 0 10px -2px rgba(124,77,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
-        html[data-theme="light"] body #search-input:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 20px rgba(0,184,230,.55); }
-        html[data-theme="light"] body .user-badge-pill { background: linear-gradient(180deg, #ffffff, #f1f3ff); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
-        html[data-theme="light"] body .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
-        html[data-theme="light"] body .app-sidebar { background: linear-gradient(180deg, #ffffff, #f4f6ff); border-right: 1px solid rgba(124,77,255,.35); box-shadow: 4px 0 28px -10px rgba(124,77,255,.45); }
-        html[data-theme="light"] body .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
-        html[data-theme="light"] body .sidebar-link:hover { background: rgba(0,184,230,.12); box-shadow: inset 3px 0 0 #00b8e6, 0 0 16px -4px rgba(0,184,230,.5); }
-        html[data-theme="light"] body .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
-        html[data-theme="light"] body .sidebar-heading { color: #7c4dff; text-shadow: 0 0 8px rgba(124,77,255,.45); }
-        html[data-theme="light"] body ::-webkit-scrollbar { width: 10px; height: 10px; }
-        html[data-theme="light"] body ::-webkit-scrollbar-track { background: #eceffd; }
-        html[data-theme="light"] body ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
-        html[data-theme="light"] body ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
+/* banner */
+.pf-banner { position: relative; overflow: hidden; border-radius: 18px; aspect-ratio: 6.2 / 1; min-height: 110px; max-height: 250px; background: #12060a;
+    border: 1px solid rgba(255,42,58,.6); box-shadow: 0 0 0 1px rgba(255,42,58,.12), 0 18px 50px -26px rgba(255,42,58,.75); }
+.pf-banner > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pf-banner-default { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: clamp(10px, 3vw, 44px); padding: 0 4%;
+    background:
+        repeating-linear-gradient(115deg, transparent 0 46px, rgba(255,42,58,.07) 46px 48px),
+        radial-gradient(520px 220px at 18% 0, rgba(255,42,58,.55), transparent 65%),
+        radial-gradient(520px 240px at 100% 100%, rgba(200,12,30,.6), transparent 70%),
+        linear-gradient(110deg, #1a0508 0%, #3a0b14 42%, #12040a 100%); }
+.pf-b-play { width: clamp(46px, 9vw, 110px); height: auto; flex: 0 0 auto; filter: drop-shadow(0 0 18px rgba(255,42,58,.8)); }
+.pf-b-word { text-align: center; color: #fff; min-width: 0; }
+.pf-b-word b { display: block; font-size: clamp(24px, 5vw, 62px); line-height: 1; font-style: italic; letter-spacing: -.03em; font-weight: 800; }
+.pf-b-word b span { color: #ff2a3a; }
+.pf-b-word em { display: block; margin-top: 6px; font-size: clamp(11px, 1.6vw, 22px); font-style: italic; opacity: .95; white-space: nowrap; }
+.pf-b-word em i { color: #ff2a3a; font-style: normal; margin: 0 .6em; }
+.pf-b-crown { width: clamp(36px, 6.5vw, 96px); height: auto; flex: 0 0 auto; filter: drop-shadow(0 0 12px rgba(255,42,58,.7)); }
+.pf-banner-actions { position: absolute; right: 12px; bottom: 10px; display: flex; gap: 8px; z-index: 3; }
+.pf-banner-actions form { margin: 0; }
 
-/* ---- profile page ---- */
-html[data-theme="light"] body .channel-banner { border: 1px solid rgba(124,77,255,.55); box-shadow: 0 0 30px -6px rgba(0,184,230,.5), 0 0 70px -20px rgba(255,46,147,.45); }
-html[data-theme="light"] body .channel-avatar-lg { box-shadow: 0 0 0 3px rgba(255,46,147,.85), 0 0 22px rgba(255,46,147,.6); }
-html[data-theme="light"] body .channel-name { text-shadow: 0 0 16px rgba(124,77,255,.3); }
-html[data-theme="light"] body .channel-handle { color: #0086b3; }
-html[data-theme="light"] body .btn { transition: box-shadow .18s ease, transform .18s ease, filter .18s ease; }
-html[data-theme="light"] body .btn:hover { transform: translateY(-1px); }
-html[data-theme="light"] body .btn.primary { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 18px rgba(255,46,147,.5); }
-html[data-theme="light"] body .btn.subscribe { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; box-shadow: 0 0 18px rgba(255,46,147,.5); }
-html[data-theme="light"] body .banner-actions .btn { background: rgba(5,6,15,.8); color: #fff; border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 14px rgba(0,184,230,.45); }
-html[data-theme="light"] body .banner-actions .btn svg { color: #00b8e6; }
-html[data-theme="light"] body .name-form input[type=text], html[data-theme="light"] body .name-form textarea { background: #ffffff; color: #0b1030; border: 1px solid rgba(124,77,255,.5); }
-html[data-theme="light"] body .name-form input[type=text]:focus, html[data-theme="light"] body .name-form textarea:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 16px rgba(0,184,230,.5); }
-html[data-theme="light"] body .chip { background: #ffffff; color: #0b1030; border: 1px solid rgba(124,77,255,.35); transition: box-shadow .18s ease, border-color .18s ease; }
-html[data-theme="light"] body .chip:hover { border-color: #00b8e6; box-shadow: 0 0 14px rgba(0,184,230,.5); }
-html[data-theme="light"] body .chip.active { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border-color: transparent; box-shadow: 0 0 18px rgba(255,46,147,.55); }
-html[data-theme="light"] body .tabs { border-bottom: 1px solid rgba(124,77,255,.45); }
-html[data-theme="light"] body .tab:hover { color: #0086b3; text-shadow: 0 0 10px rgba(0,184,230,.6); }
-html[data-theme="light"] body .tab.active { color: #0086b3; border-bottom-color: #00b8e6; text-shadow: 0 0 10px rgba(0,184,230,.6); box-shadow: 0 8px 14px -10px rgba(0,184,230,.9); }
-html[data-theme="light"] body .p-thumb, html[data-theme="light"] body .p-short-thumb { border: 1px solid rgba(124,77,255,.28); transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease; }
-html[data-theme="light"] body a:hover .p-thumb, html[data-theme="light"] body a:hover .p-short-thumb { border-color: #00b8e6; box-shadow: 0 0 22px rgba(0,184,230,.55), 0 0 44px -8px rgba(124,77,255,.5); transform: translateY(-3px); }
-html[data-theme="light"] body a:hover .p-title { color: #0086b3; text-shadow: 0 0 10px rgba(0,184,230,.5); }
-html[data-theme="light"] body .p-duration { background: rgba(5,6,15,.88); color: #7defff; border: 1px solid rgba(0,184,230,.5); }
-html[data-theme="light"] body .about-list div { border-top: 1px solid rgba(124,77,255,.45); }
-html[data-theme="light"] body .flash.ok { box-shadow: 0 0 18px -4px rgba(60,220,130,.55); }
-html[data-theme="light"] body .flash.err { box-shadow: 0 0 18px -4px rgba(255,46,147,.55); }
-html[data-theme="light"] body .empty-state { background: #ffffff; border: 1px dashed rgba(0,184,230,.5); box-shadow: 0 0 24px -8px rgba(0,184,230,.4); }
-html:not([data-theme="light"]) body .channel-avatar-lg { border-color: #05060f; box-shadow: 0 0 0 3px #8a5cff, 0 0 26px rgba(0,229,255,.55), 0 0 60px -10px rgba(255,46,147,.5); }
-html:not([data-theme="light"]) body .channel-name { text-shadow: 0 0 18px rgba(138,92,255,.55); }
-html:not([data-theme="light"]) body .ch-stat svg { color: #8a5cff; filter: drop-shadow(0 0 6px rgba(138,92,255,.7)); }
-html:not([data-theme="light"]) body .tabs { border-color: rgba(138,92,255,.45); background: rgba(10,13,31,.85); box-shadow: 0 0 22px -10px rgba(138,92,255,.6); }
-html:not([data-theme="light"]) body .tab.active { background: linear-gradient(135deg, #8a5cff, #5b3fe8); box-shadow: 0 0 18px rgba(138,92,255,.7); }
-html:not([data-theme="light"]) body .about-side { border-color: rgba(138,92,255,.45); background: linear-gradient(180deg, rgba(14,18,44,.88), rgba(8,10,28,.94)); box-shadow: 0 0 26px -10px rgba(138,92,255,.55); }
-html:not([data-theme="light"]) body .p-card:hover .p-thumb { box-shadow: 0 0 22px -4px rgba(0,229,255,.6); }
-html[data-theme="light"] body .channel-avatar-lg { border-color: #f4f6ff; box-shadow: 0 0 0 3px #7c4dff, 0 0 22px rgba(0,184,230,.45), 0 0 50px -10px rgba(255,46,147,.4); }
-html[data-theme="light"] body .ch-stat svg { color: #7c4dff; }
-html[data-theme="light"] body .tabs { border-color: rgba(124,77,255,.45); background: #ffffff; box-shadow: 0 0 20px -10px rgba(124,77,255,.5); }
-html[data-theme="light"] body .tab.active { background: linear-gradient(135deg, #7c4dff, #5b3fe8); box-shadow: 0 0 16px rgba(124,77,255,.55); }
-html[data-theme="light"] body .about-side { border-color: rgba(124,77,255,.45); background: #ffffff; box-shadow: 0 0 22px -10px rgba(124,77,255,.45); }
-html[data-theme="light"] body .p-card:hover .p-thumb { box-shadow: 0 0 20px -4px rgba(0,184,230,.55); }
+/* header */
+.pf-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 26px; align-items: start; padding: 0 clamp(8px, 2vw, 22px); margin-top: -76px; position: relative; z-index: 2; }
+.pf-avatar { position: relative; width: 176px; height: 176px; border-radius: 50%; padding: 6px; flex: 0 0 auto;
+    background: conic-gradient(from 200deg, #ff2a3a, #7a0b14, #ff5a5a, #ff2a3a); box-shadow: 0 0 30px rgba(255,42,58,.55); }
+.pf-avatar-in { width: 100%; height: 100%; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: #0b0b0f; border: 5px solid #0b0b0f; color: #fff; font-size: 74px; font-weight: 800; }
+html[data-theme="light"] .pf-avatar-in { border-color: #fff; background: #1a1220; }
+.pf-avatar-in img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pf-cam { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #1b1b22; color: #fff; border: 2px solid rgba(255,255,255,.85); cursor: pointer; }
+.pf-cam svg { width: 20px; height: 20px; }
+.pf-info { padding-top: 86px; min-width: 0; }
+.pf-name { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: clamp(28px, 3.6vw, 40px); line-height: 1.1; font-weight: 800; word-break: break-word; }
+.pf-handle { margin: 4px 0 0; color: var(--pf-muted); font-size: 18px; }
+.pf-tagline { margin: 6px 0 0; font-size: 15px; }
+.pf-more { background: none; border: 0; padding: 0; margin-left: 6px; color: var(--pf-muted); font: inherit; font-weight: 700; cursor: pointer; }
+.pf-more:hover { color: var(--pf-text); }
+.pf-meta { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 10px 0 0; color: var(--pf-muted); font-size: 14px; }
+.pf-meta span { display: inline-flex; align-items: center; gap: 7px; }
+.pf-meta svg { width: 17px; height: 17px; flex: 0 0 auto; }
+.pf-actions { padding-top: 98px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.pf-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--pf-line);
+    background: var(--pf-card2); color: var(--pf-text); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.pf-btn:hover { border-color: rgba(255,42,58,.7); box-shadow: 0 0 16px rgba(255,42,58,.3); transform: translateY(-1px); }
+.pf-btn svg { width: 19px; height: 19px; flex: 0 0 auto; }
+.pf-btn.icon { width: 44px; padding: 0; }
+.pf-btn.red { background: linear-gradient(90deg, #ff2a3a, #c4121f); border-color: transparent; color: #fff; box-shadow: 0 0 18px rgba(255,42,58,.4); }
+.pf-btn.sm { height: 34px; padding: 0 14px; font-size: 13px; }
+.pf-badge-light { display: inline-flex; align-items: center; }
+
+/* stats */
+.pf-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 18px 0 14px; }
+.pf-stat { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 16px; border: 1px solid var(--pf-line); background: var(--pf-card); min-width: 0; }
+.pf-stat > svg { width: 44px; height: 44px; flex: 0 0 auto; }
+.pf-stat b { display: block; font-size: 26px; line-height: 1.1; font-weight: 800; }
+.pf-stat span { display: block; margin-top: 2px; color: var(--pf-muted); font-size: 14px; }
+.pf-stat.gold { border-color: rgba(255,194,61,.55); background: radial-gradient(260px 100px at 0 50%, rgba(255,194,61,.14), transparent 70%), var(--pf-card); }
+.pf-stat.gold b { font-size: 18px; color: var(--pf-text); }
+.pf-active { display: inline-flex; align-items: center; gap: 6px; margin-top: 5px; padding: 2px 12px; border-radius: 999px; border: 1px solid rgba(47,224,138,.55); background: rgba(47,224,138,.12); color: var(--pf-green); font-size: 13px; font-weight: 800; }
+.pf-active::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--pf-green); }
+.pf-lvl { display: inline-block; margin-top: 4px; padding: 2px 12px; border-radius: 999px; border: 1px solid currentColor; font-size: 13px; font-weight: 800; }
+
+/* tabs */
+.pf-tabs { display: flex; gap: 10px; margin: 0 0 16px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
+.pf-tabs::-webkit-scrollbar { display: none; }
+.pf-tab { display: inline-flex; align-items: center; gap: 9px; height: 48px; padding: 0 24px; flex: 0 0 auto; border-radius: 999px; border: 1px solid var(--pf-line);
+    background: var(--pf-card); color: var(--pf-text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.pf-tab svg { width: 20px; height: 20px; flex: 0 0 auto; }
+.pf-tab:hover { border-color: rgba(255,42,58,.6); }
+.pf-tab .n { color: var(--pf-muted); font-weight: 500; font-size: 13px; }
+.pf-tab[aria-selected="true"] { background: linear-gradient(90deg, #ff2a3a, #c4121f); border-color: transparent; color: #fff; box-shadow: 0 0 20px rgba(255,42,58,.45); }
+.pf-tab[aria-selected="true"] .n { color: rgba(255,255,255,.85); }
+.pf-tab:focus-visible, .pf-btn:focus-visible, .pf-chip:focus-visible { outline: 3px solid #ffb020; outline-offset: 2px; }
+.pf-panel { display: none; }
+.pf-panel.active { display: block; }
+
+/* cards */
+.pf-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 16px; align-items: start; }
+.pf-card { border: 1px solid var(--pf-line); border-radius: 16px; background: var(--pf-card); padding: 18px 20px; min-width: 0; margin-bottom: 16px; }
+.pf-cols .pf-card { margin-bottom: 0; }
+.pf-card-head { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
+.pf-card-head > svg { width: 28px; height: 28px; flex: 0 0 auto; }
+.pf-card-head h2 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; min-width: 0; }
+.pf-viewall { color: var(--pf-red); font-weight: 700; font-size: 14px; background: none; border: 0; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.pf-viewall:hover { text-decoration: underline; }
+.pf-about-text { margin: 0; font-size: 16px; line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; }
+.pf-empty-note { color: var(--pf-muted); font-size: 14px; }
+.pf-links { list-style: none; margin: 14px 0 0; padding: 14px 0 0; border-top: 1px solid var(--pf-line); display: grid; gap: 10px; }
+.pf-links a { display: flex; align-items: center; gap: 12px; color: var(--pf-blue); font-size: 15px; overflow-wrap: anywhere; }
+.pf-links a:hover { text-decoration: underline; }
+.pf-links svg { width: 24px; height: 24px; flex: 0 0 auto; }
+
+/* memberships */
+.pf-member { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; }
+.pf-promo { position: relative; display: flex; align-items: center; gap: 18px; padding: 20px; border-radius: 16px; border: 1px solid rgba(190,90,255,.65);
+    background: radial-gradient(360px 160px at 0 50%, rgba(255,194,61,.18), transparent 70%), linear-gradient(120deg, #3a0f63, #6a1bb0 60%, #4a0f86); box-shadow: 0 0 26px rgba(150,60,255,.3); color: #fff; }
+.pf-promo > svg { width: 110px; height: 110px; flex: 0 0 auto; filter: drop-shadow(0 0 16px rgba(255,194,61,.5)); }
+.pf-promo h3 { margin: 0 0 6px; font-size: 24px; font-weight: 800; }
+.pf-promo p { margin: 0 0 14px; font-size: 15px; line-height: 1.4; color: #eadfff; }
+.pf-promo .join { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 42px; border-radius: 999px; border: 1px solid #d8a8ff; background: rgba(20,5,40,.55); color: #fff; font-weight: 800; font-size: 15px; }
+.pf-promo .join:hover { background: rgba(20,5,40,.8); box-shadow: 0 0 20px rgba(200,130,255,.5); }
+.pf-promo .join svg { width: 20px; height: 20px; }
+.pf-perks { list-style: none; margin: 0; padding: 16px 18px; border-radius: 16px; border: 1px solid var(--pf-line); background: rgba(120,60,200,.10); display: grid; gap: 12px; align-content: center; }
+.pf-perks li { display: flex; align-items: center; gap: 12px; font-size: 15px; }
+.pf-perks svg { width: 22px; height: 22px; flex: 0 0 auto; }
+
+/* video strips + grids */
+.pf-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+.pf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 24px 16px; }
+.pf-short-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 24px 14px; }
+.pf-vid { display: block; min-width: 0; transition: transform .18s ease; }
+.pf-vid:hover { transform: translateY(-3px); }
+.pf-thumb { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: var(--pf-card2); border: 1px solid var(--pf-line); }
+.pf-vid:hover .pf-thumb { border-color: rgba(255,42,58,.7); box-shadow: 0 0 20px rgba(255,42,58,.35); }
+.pf-thumb.tall { aspect-ratio: 9 / 16; }
+.pf-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pf-dur { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.82); color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+.pf-vtitle { margin: 9px 0 3px; font-size: 14px; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pf-vmeta { margin: 0; color: var(--pf-muted); font-size: 12px; }
+.pf-sort { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.pf-chip { border: 1px solid var(--pf-line); cursor: pointer; height: 34px; padding: 0 16px; border-radius: 999px; background: var(--pf-card2); color: var(--pf-text); font: inherit; font-size: 14px; font-weight: 600; }
+.pf-chip.active { background: var(--pf-text); color: var(--pf-card); border-color: transparent; }
+.pf-empty { text-align: center; padding: 50px 16px; color: var(--pf-muted); border: 1px dashed var(--pf-line); border-radius: 18px; }
+.pf-empty .pf-btn { margin-top: 14px; }
+
+/* playlists */
+.pf-pl { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.pf-pl-item { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 14px; border: 1px solid var(--pf-line); background: var(--pf-card2); }
+.pf-pl-item svg { width: 34px; height: 34px; color: var(--pf-red); flex: 0 0 auto; }
+.pf-pl-item strong { display: block; font-size: 15px; overflow-wrap: anywhere; }
+.pf-pl-item span { color: var(--pf-muted); font-size: 13px; }
+
+/* about + rewards */
+.pf-dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 22px; margin: 0; }
+.pf-dl div { border-top: 1px solid var(--pf-line); padding-top: 10px; }
+.pf-dl dt { color: var(--pf-muted); font-size: 13px; margin: 0 0 2px; }
+.pf-dl dd { margin: 0; font-size: 17px; font-weight: 700; }
+.pf-bar { height: 10px; border-radius: 999px; background: rgba(128,128,128,.25); overflow: hidden; margin: 12px 0 6px; }
+.pf-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff2a3a, #ffb020); }
+
+/* edit panel */
+.pf-edit { margin: 0 0 16px; }
+.pf-edit[hidden] { display: none; }
+.pf-edit h2 { margin: 0 0 12px; font-size: 19px; }
+.pf-form { display: grid; gap: 10px; margin: 0 0 18px; padding-bottom: 18px; border-bottom: 1px solid var(--pf-line); }
+.pf-form:last-of-type { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
+.pf-form label { font-size: 13px; color: var(--pf-muted); font-weight: 600; }
+.pf-form input[type=text], .pf-form textarea { width: 100%; box-sizing: border-box; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--pf-line); background: var(--pf-card2); color: var(--pf-text); font: inherit; }
+.pf-form textarea { min-height: 100px; resize: vertical; }
+.pf-form input:focus, .pf-form textarea:focus { outline: none; border-color: var(--pf-red); box-shadow: 0 0 0 3px rgba(255,42,58,.2); }
+.pf-form small { color: var(--pf-muted); font-size: 12px; }
+.pf-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pf-row-btns { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* ===== phones / tablets ===== */
+@media (max-width: 1100px) {
+    .pf-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pf-cols { grid-template-columns: 1fr; }
+    .pf-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .pf-member { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
+    .pf-head { grid-template-columns: auto minmax(0, 1fr); margin-top: -50px; gap: 6px 16px; }
+    .pf-avatar { width: 110px; height: 110px; padding: 4px; }
+    .pf-avatar-in { font-size: 46px; border-width: 3px; }
+    .pf-cam { width: 34px; height: 34px; right: 0; bottom: 0; }
+    .pf-info { padding-top: 54px; }
+    .pf-actions { grid-column: 1 / -1; padding-top: 6px; justify-content: flex-start; }
+    .pf-handle { font-size: 15px; }
+}
+@media (max-width: 560px) {
+    .pf-stats { gap: 10px; }
+    .pf-stat { padding: 12px; gap: 10px; }
+    .pf-stat > svg { width: 34px; height: 34px; }
+    .pf-stat b { font-size: 20px; }
+    .pf-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pf-promo { flex-direction: column; text-align: center; }
+    .pf-promo > svg { width: 84px; height: 84px; }
+    .pf-two { grid-template-columns: 1fr; }
+    .pf-btn { height: 46px; }
+    .pf-banner { aspect-ratio: 16 / 5; }
+    .pf-banner-actions { right: 8px; bottom: 8px; }
+    .pf-b-crown { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .pf-vid, .pf-btn { transition: none; } .pf-vid:hover, .pf-btn:hover { transform: none; } }
+
+/* ===== top bar like the design: centred search, no centre icons on desktop (only on this page) ===== */
+html body:has(.pf) .app-navbar { background: #09090c; border-bottom: 1px solid rgba(255,255,255,.08); box-shadow: none; }
+html[data-theme="light"] body:has(.pf) .app-navbar { background: #ffffff; border-bottom-color: rgba(0,0,0,.10); }
+html body:has(.pf) .brand { -webkit-text-fill-color: currentColor; filter: none; }
+@media (min-width: 1001px) {
+    html body:has(.pf) .nav-center { display: none; }
+    html body:has(.pf) .nav-search { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(46vw, 640px); margin: 0; }
+    html body:has(.pf) .nav-search input {
+        height: 48px; padding: 0 52px 0 54px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); color: #f4f4f7;
+        background: #131318 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a3ad' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") 20px center / 20px no-repeat;
+    }
+    html[data-theme="light"] body:has(.pf) .nav-search input {
+        color: #17101f; border-color: rgba(0,0,0,.16);
+        background: #f3f1f6 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5870' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") 20px center / 20px no-repeat;
+    }
+    html body:has(.pf) .nav-search input:focus { border-color: #ff2a3a; box-shadow: 0 0 0 3px rgba(255,42,58,.22); }
+}
 CSS;
 
 vs_page_start($accountFound ? '@' . $profileUser : 'Channel', 'profile', $extraCss);
+
+/* small inline icons */
+$ico = [
+    'home'    => '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 2.5 11.5H5V20h5v-5.5h4V20h5v-8.5h2.5z"/></svg>',
+    'videos'  => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3.5"/><path d="M10 9.2v5.6l4.8-2.8z" fill="currentColor"/></svg>',
+    'shorts'  => '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 2 4 14h6.5L9.5 22 20 9.5h-6.8z"/></svg>',
+    'lists'   => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h14M3 12h14M3 18h8M19 14v6l4-3z" fill="currentColor"/></svg>',
+    'about'   => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+    'crown'   => '<svg viewBox="0 0 24 20" fill="currentColor" aria-hidden="true" style="color:#ffc23d"><path d="M2 17 0 5l6.5 5L12 1l5.5 9L24 5l-2 12zM3 19h18v1.5H3z"/></svg>',
+    'star'    => '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l6.9-1z"/></svg>',
+    'cam'     => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+    'pencil'  => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z"/></svg>',
+    'share'   => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4l7 7-7 7v-4c-6 0-9 2-11 6 1-7 4-11 11-12z"/></svg>',
+    'cal'     => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+    'pin'     => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 21s7-6.2 7-11.5a7 7 0 0 0-14 0C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
+    'people'  => '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0z"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.2A5.5 5.5 0 0 1 21.5 20H18c0-2.3-.6-4.2-1.5-5.8z"/></svg>',
+    'check'   => '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#d946ef"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    'plus'    => function_exists('vs_icon') ? vs_icon('plus-square', 16) : '',
+];
+$bigCrown = '<svg viewBox="0 0 120 100" aria-hidden="true"><defs><linearGradient id="pfG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#e79300"/></linearGradient></defs><path d="M10 34l22 22 28-44 28 44 22-22-10 52H20z" fill="url(#pfG)"/><rect x="20" y="86" width="80" height="9" rx="4" fill="#c77a00"/><circle cx="60" cy="14" r="7" fill="#ff4a6a"/><circle cx="10" cy="34" r="6" fill="#ffe27a"/><circle cx="110" cy="34" r="6" fill="#ffe27a"/><path d="M60 52l9 12-9 12-9-12z" fill="#ff3150"/></svg>';
+$tabList = [
+    'home' => ['Home', $ico['home'], null],
+    'videos' => ['Videos', $ico['videos'], count($videos)],
+    'shorts' => ['Shorts', $ico['shorts'], count($shorts)],
+    'playlists' => ['Playlists', $ico['lists'], null],
+    'about' => ['About', $ico['about'], null],
+    'memberships' => ['Memberships', $ico['crown'], null],
+    'rewards' => ['Rewards', $ico['star'], null],
+];
 ?>
-<div class="profile-page">
+<div class="pf">
 <?php if ($flash): ?>
-    <div class="flash <?= $flash['type'] === 'ok' ? 'ok' : 'err' ?>"><?= $h($flash['text']) ?></div>
+    <div class="pf-flash <?= $flash['type'] === 'ok' ? 'ok' : 'err' ?>" role="status"><?= $h($flash['text']) ?></div>
 <?php endif; ?>
 
 <?php if (!$accountFound): ?>
-    <div class="empty-state">
+    <div class="pf-empty">
         <p>This channel was not found.</p>
-        <a class="btn primary" href="index.php">Go home</a>
+        <a class="pf-btn red" href="index.php">Go home</a>
     </div>
 <?php else: ?>
     <?php if ($isMe): ?>
@@ -716,254 +852,405 @@ vs_page_start($accountFound ? '@' . $profileUser : 'Channel', 'profile', $extraC
             <input type="hidden" name="action" value="banner">
             <input type="file" name="banner" id="bannerFile" accept=".jpg,.jpeg,.png,.webp">
         </form>
+        <form method="post" action="profile.php" enctype="multipart/form-data" id="avatarForm" style="display:none;">
+            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+            <input type="hidden" name="action" value="avatar">
+            <input type="file" name="avatar" id="avatarFile" accept=".jpg,.jpeg,.png,.webp,.gif">
+        </form>
     <?php endif; ?>
-    <section class="channel-banner">
+
+    <section class="pf-banner" aria-label="Channel banner">
         <?php if ($bannerUrl !== ''): ?>
             <img src="<?= $h($bannerUrl) ?>" alt="<?= $h($profileUser) ?> banner">
+        <?php else: ?>
+            <div class="pf-banner-default" aria-hidden="true">
+                <svg class="pf-b-play" viewBox="0 0 120 120"><defs><linearGradient id="pfRed" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5a5a"/><stop offset="1" stop-color="#c4121f"/></linearGradient></defs><path d="M30 14c0-6 6-9 11-6l62 40c5 3 5 10 0 13L41 101c-5 3-11 0-11-6z" fill="url(#pfRed)"/></svg>
+                <div class="pf-b-word">
+                    <b><?php if (preg_match('/^(.*?)(Stream)$/u', $brandName, $bm)): ?><?= $h($bm[1]) ?><span><?= $h($bm[2]) ?></span><?php else: ?><?= $h($brandName) ?><?php endif; ?></b>
+                    <em>Watch <i>&bull;</i> Create <i>&bull;</i> Belong</em>
+                </div>
+                <svg class="pf-b-crown" viewBox="0 0 64 48" fill="none" stroke="#ff2a3a" stroke-width="3" stroke-linejoin="round"><path d="M4 14l12 12 16-22 16 22 12-12-6 30H10z"/><path d="M10 44h44"/></svg>
+            </div>
         <?php endif; ?>
         <?php if ($isMe): ?>
-            <div class="banner-actions">
-                <label class="btn" for="bannerFile"><?= vs_icon('plus-square', 16) ?> <?= $bannerUrl !== '' ? 'Change banner' : 'Add banner' ?></label>
+            <div class="pf-banner-actions">
+                <label class="pf-btn sm" for="bannerFile"><?= $ico['plus'] ?> <?= $bannerUrl !== '' ? 'Change banner' : 'Add banner' ?></label>
                 <?php if ($bannerUrl !== ''): ?>
-                    <form method="post" action="profile.php" style="margin:0;">
+                    <form method="post" action="profile.php">
                         <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
                         <input type="hidden" name="action" value="banner_remove">
-                        <button type="submit" class="btn">Remove banner</button>
+                        <button type="submit" class="pf-btn sm">Remove</button>
                     </form>
                 <?php endif; ?>
             </div>
         <?php endif; ?>
     </section>
 
-    <section class="channel-head">
-        <?php if ($avatarUrl !== ''): ?>
-            <img class="channel-avatar-lg" src="<?= $h($avatarUrl) ?>" alt="<?= $h($profileUser) ?> avatar">
-        <?php else: ?>
-            <div class="channel-avatar-lg"><?= $h(mb_strtoupper(mb_substr($profileUser, 0, 1))) ?></div>
-        <?php endif; ?>
-
-        <div class="channel-info">
-            <h1 class="channel-name"><?= $h($profileUser) ?><?php echo function_exists('vs_vip_badge_html') ? vs_vip_badge_html($profileUser) : ''; ?></h1>
-            <p class="channel-handle-line"><span class="channel-handle">@<?= $h($profileUser) ?></span></p>
-            <?php if ($description !== ''): ?>
-                <?php $descShort = mb_strlen($description) > 140 ? mb_substr($description, 0, 140) . '…' : $description; ?>
-                <p class="channel-desc"><?= $h($descShort) ?><?php if ($descShort !== $description): ?><button type="button" class="link-more" data-goto="about">more</button><?php endif; ?></p>
-            <?php endif; ?>
-
-            <div class="channel-stats" aria-label="Public creator statistics">
-                <div class="ch-stat"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><div><b><?= $h(vs_short_views(count($videos))) ?></b><span>Videos</span></div></div>
-                <div class="ch-stat"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 2 4 14h6.5L9.5 22 20 9.5h-6.8z"/></svg><div><b><?= $h(vs_short_views(count($shorts))) ?></b><span>Shorts</span></div></div>
-                <?php if ($isMe && $subscriberCount !== null): ?>
-                <div class="ch-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg><div><b><?= $h(vs_short_views($subscriberCount)) ?></b><span>Subscribers</span></div></div>
+    <section class="pf-head">
+        <div class="pf-avatar">
+            <div class="pf-avatar-in">
+                <?php if ($avatarUrl !== ''): ?>
+                    <img src="<?= $h($avatarUrl) ?>" alt="<?= $h($profileUser) ?> avatar">
+                <?php else: ?>
+                    <?= $h(mb_strtoupper(mb_substr($profileUser, 0, 1))) ?>
                 <?php endif; ?>
-                <div class="ch-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><div><b><?= $h(vs_short_views($totalViews)) ?></b><span>Views</span></div></div>
-                <?php if ($isMe): ?><div class="ch-stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.3-9.2C1.3 8.3 3.4 5 6.7 5c2 0 3.6 1.1 5.3 3 1.7-1.9 3.3-3 5.3-3 3.3 0 5.4 3.3 4 6.8C19.5 16.4 12 21 12 21z"/></svg><div><b><?= $h(vs_short_views($totalLikes)) ?></b><span>Likes</span></div></div><?php endif; ?>
             </div>
-            <small class="channel-stats-note">Public totals are calculated from this channel’s uploaded videos and Shorts.</small>
-            <?php if (!$isMe): ?>
-                <div class="channel-actions">
-                    <form method="post" action="profile.php?u=<?= urlencode($profileUser) ?>" style="margin:0;">
-                        <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
-                        <input type="hidden" name="action" value="<?= $isSubscribed ? 'unsubscribe' : 'subscribe' ?>">
-                        <button type="submit" class="btn<?= $isSubscribed ? '' : ' subscribe' ?>"<?= $isSubscribed ? ' title="Click to unsubscribe"' : '' ?>><?php if ($isSubscribed): ?><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg> Subscribed<?php else: ?>Subscribe<?php endif; ?></button>
-                    </form>
-                    <button type="button" class="btn" id="shareChannel" data-u="<?= $h($profileUser) ?>"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.6l6.8-4M8.6 13.4l6.8 4"/></svg> Share channel</button>
-                </div>
-            <?php endif; ?>
-
             <?php if ($isMe): ?>
-                <div class="channel-actions">
-                    <form method="post" action="profile.php" enctype="multipart/form-data" id="avatarForm" style="display:none;">
-                        <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
-                        <input type="hidden" name="action" value="avatar">
-                        <input type="file" name="avatar" id="avatarFile" accept=".jpg,.jpeg,.png,.webp,.gif">
-                    </form>
-                    <label class="btn" for="avatarFile"><?= vs_icon('contact', 16) ?> Change avatar</label>
-                    <button type="button" class="btn" id="nameToggle"><?= vs_icon('contact', 16) ?> Change name</button>
-                    <button type="button" class="btn" id="descToggle">Edit description</button>
-                    <a class="btn primary" href="upload.php"><?= vs_icon('plus-square', 16) ?> Upload</a>
-                    <button type="button" class="btn" id="shareChannel" data-u="<?= $h($profileUser) ?>"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.6l6.8-4M8.6 13.4l6.8 4"/></svg> Share channel</button>
-                    <a class="btn" href="logout.php">Logout</a>
-                </div>
+                <label class="pf-cam" for="avatarFile" title="Change profile picture" aria-label="Change profile picture"><?= $ico['cam'] ?></label>
             <?php endif; ?>
+        </div>
+
+        <div class="pf-info">
+            <h1 class="pf-name"><?= $h($profileUser) ?><?php echo function_exists('vs_vip_badge_html') ? vs_vip_badge_html($profileUser) : ''; ?><?php echo function_exists('vs_rewards_user_level_html') ? vs_rewards_user_level_html($profileUser, 13) : ''; ?></h1>
+            <p class="pf-handle">@<?= $h($profileUser) ?></p>
+            <?php if ($descShort !== ''): ?>
+                <p class="pf-tagline"><?= $h(str_replace(["\r", "\n"], ' ', $descShort)) ?><?php if ($descShort !== $description): ?><button type="button" class="pf-more" data-goto="about">more</button><?php endif; ?></p>
+            <?php endif; ?>
+            <div class="pf-meta">
+                <?php if ($joinedAt !== '' && strtotime($joinedAt)): ?><span><?= $ico['cal'] ?>Joined <?= $h(date('M Y', strtotime($joinedAt))) ?></span><?php endif; ?>
+                <?php if ($location !== ''): ?><span><?= $ico['pin'] ?><?= $h($location) ?></span><?php endif; ?>
+                <?php if ($subscriberCount !== null): ?><span><?= $ico['people'] ?><?= $h(vs_short_views($subscriberCount)) ?> Subscribers</span><?php endif; ?>
+            </div>
+        </div>
+
+        <div class="pf-actions">
+            <?php if ($isMe): ?>
+                <button type="button" class="pf-btn" id="editToggle" aria-expanded="false" aria-controls="editPanel"><?= $ico['pencil'] ?> Edit Profile</button>
+            <?php else: ?>
+                <form method="post" action="profile.php?u=<?= urlencode($profileUser) ?>" style="margin:0;">
+                    <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                    <input type="hidden" name="action" value="<?= $isSubscribed ? 'unsubscribe' : 'subscribe' ?>">
+                    <button type="submit" class="pf-btn<?= $isSubscribed ? '' : ' red' ?>"<?= $isSubscribed ? ' title="Click to unsubscribe"' : '' ?>><?= $isSubscribed ? 'Subscribed' : 'Subscribe' ?></button>
+                </form>
+            <?php endif; ?>
+            <button type="button" class="pf-btn icon" id="shareChannel" data-u="<?= $h($profileUser) ?>" aria-label="Share channel" title="Share channel"><?= $ico['share'] ?></button>
         </div>
     </section>
 
     <?php if ($isMe): ?>
-        <form class="name-form" id="nameForm" method="post" action="profile.php" hidden>
-            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
-            <input type="hidden" name="action" value="rename">
-            <label for="newName">New name</label>
-            <input type="text" id="newName" name="new_name" value="<?= $h($profileUser) ?>" minlength="3" maxlength="30" required autocomplete="off">
-            <button type="submit" class="btn primary">Save</button>
-            <button type="button" class="btn" id="nameCancel">Cancel</button>
-            <small>3-30 characters: letters, numbers, dot, dash or underscore. Your videos, shorts and channel will move to the new name.</small>
-        </form>
+        <section class="pf-card pf-edit" id="editPanel" hidden aria-label="Edit profile">
+            <h2>Edit profile</h2>
+            <form class="pf-form" method="post" action="profile.php">
+                <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                <input type="hidden" name="action" value="details">
+                <label for="descText">About you</label>
+                <textarea id="descText" name="description" maxlength="500" placeholder="Tell people what your channel is about"><?= $h($description) ?></textarea>
+                <div class="pf-two">
+                    <div><label for="locText">Location</label><input type="text" id="locText" name="location" maxlength="60" value="<?= $h($location) ?>" placeholder="e.g. Pakistan"></div>
+                    <div><label for="lnkWeb">Website</label><input type="text" id="lnkWeb" name="link_website" maxlength="200" value="<?= $h($links['website']) ?>" placeholder="https://"></div>
+                    <div><label for="lnkYt">YouTube</label><input type="text" id="lnkYt" name="link_youtube" maxlength="200" value="<?= $h($links['youtube']) ?>" placeholder="youtube.com/@yourname"></div>
+                    <div><label for="lnkDc">Discord</label><input type="text" id="lnkDc" name="link_discord" maxlength="200" value="<?= $h($links['discord']) ?>" placeholder="discord.gg/yourserver"></div>
+                    <div><label for="lnkX">X</label><input type="text" id="lnkX" name="link_x" maxlength="200" value="<?= $h($links['x']) ?>" placeholder="x.com/yourname"></div>
+                </div>
+                <small>Up to 500 characters about you. Links must be YouTube, Discord or X addresses (the website can be anything).</small>
+                <div class="pf-row-btns"><button type="submit" class="pf-btn red">Save details</button><button type="button" class="pf-btn" data-edit-close>Close</button></div>
+            </form>
+            <form class="pf-form" method="post" action="profile.php">
+                <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                <input type="hidden" name="action" value="rename">
+                <label for="newName">Channel name</label>
+                <input type="text" id="newName" name="new_name" value="<?= $h($profileUser) ?>" minlength="3" maxlength="30" required autocomplete="off">
+                <small>3-30 characters: letters, numbers, dot, dash or underscore. Your videos, shorts and channel move to the new name.</small>
+                <div class="pf-row-btns"><button type="submit" class="pf-btn">Change name</button><a class="pf-btn" href="logout.php">Log out</a></div>
+            </form>
+        </section>
     <?php endif; ?>
 
-    <?php if ($isMe): ?>
-        <form class="name-form" id="descForm" method="post" action="profile.php" hidden>
-            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
-            <input type="hidden" name="action" value="description">
-            <label for="descText">About your channel</label>
-            <textarea id="descText" name="description" maxlength="500" placeholder="Tell people what your channel is about"><?= $h($description) ?></textarea>
-            <button type="submit" class="btn primary">Save</button>
-            <button type="button" class="btn" id="descCancel">Cancel</button>
-            <small>Up to 500 characters. It shows under your name and on the About tab.</small>
-        </form>
-    <?php endif; ?>
-
-    <div class="tabs" role="tablist">
-        <button type="button" class="tab<?= $defaultTab === 'videos' ? ' active' : '' ?>" role="tab" data-tab="videos"><svg class="tab-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Videos<span class="count"><?= count($videos) ?></span></button>
-        <button type="button" class="tab<?= $defaultTab === 'shorts' ? ' active' : '' ?>" role="tab" data-tab="shorts"><svg class="tab-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 2 4 14h6.5L9.5 22 20 9.5h-6.8z"/></svg>Shorts<span class="count"><?= count($shorts) ?></span></button>
-        <button type="button" class="tab" role="tab" data-tab="about"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>About</button>
-    </div>
-
-    <div class="tab-panel<?= $defaultTab === 'videos' ? ' active' : '' ?>" data-panel="videos">
-      <div class="panel-cols"><div class="panel-main">
-        <?php if (!$videos): ?>
-            <div class="empty-state">
-                <p>No videos yet.</p>
-                <?php if ($isMe): ?><a class="btn primary" href="upload.php"><?= vs_icon('plus-square', 16) ?> Upload your first video</a><?php endif; ?>
+    <div class="pf-stats" aria-label="Channel statistics">
+        <div class="pf-stat">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M12 6c0-3 3-4.5 5.5-3l25 16c2.5 1.6 2.5 5 0 6.6l-25 16c-2.5 1.500-5.500 0-5.500-3z" fill="#ff2a3a"/></svg>
+            <div><b><?= $h(vs_short_views($totalUploads)) ?></b><span>Total Videos</span></div>
+        </div>
+        <div class="pf-stat">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M2 24S10 8 24 8s22 16 22 16-8 16-22 16S2 24 2 24z" fill="#e8f1ff"/><circle cx="24" cy="24" r="10" fill="#2f7bff"/><circle cx="24" cy="24" r="5" fill="#0b1630"/></svg>
+            <div><b><?= $h(vs_short_views($totalViews)) ?></b><span>Total Views</span></div>
+        </div>
+        <div class="pf-stat">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="15" r="8" fill="#3ea6ff"/><path d="M8 42a16 16 0 0 1 32 0z" fill="#3ea6ff"/><circle cx="9" cy="19" r="5.500" fill="#2d7fd6"/><circle cx="39" cy="19" r="5.500" fill="#2d7fd6"/></svg>
+            <div><b><?= $subscriberCount !== null ? $h(vs_short_views($subscriberCount)) : '&mdash;' ?></b><span>Subscribers</span></div>
+        </div>
+        <?php if ($isPremium): ?>
+            <div class="pf-stat gold">
+                <span style="width:44px;height:44px;flex:0 0 auto;display:block"><?= $bigCrown ?></span>
+                <div><b>Premium Member</b><span class="pf-active">Active</span></div>
+            </div>
+        <?php elseif ($level): ?>
+            <div class="pf-stat gold">
+                <span style="width:44px;height:44px;flex:0 0 auto;display:block"><?= $bigCrown ?></span>
+                <div><b>Rewards Level</b><span class="pf-lvl" style="color:<?= $h($level[2]) ?>"><?= $h($level[0]) ?></span></div>
             </div>
         <?php else: ?>
-            <div class="sort-bar" data-sort-for="videoGrid">
-                <button type="button" class="chip active" data-sort="latest">Latest</button>
-                <button type="button" class="chip" data-sort="popular">Popular</button>
-                <button type="button" class="chip" data-sort="oldest">Oldest</button>
+            <div class="pf-stat gold">
+                <span style="width:44px;height:44px;flex:0 0 auto;display:block"><?= $bigCrown ?></span>
+                <div><b>Free Member</b><span><?= $isMe ? '<a href="premium.php" style="color:var(--pf-gold);font-weight:700">Get Premium &rarr;</a>' : 'Joined the community' ?></span></div>
             </div>
-            <div class="video-grid" id="videoGrid">
+        <?php endif; ?>
+    </div>
+
+    <nav class="pf-tabs" role="tablist" aria-label="Channel sections">
+        <?php foreach ($tabList as $key => $tab): ?>
+            <button type="button" class="pf-tab" role="tab" data-tab="<?= $key ?>" aria-selected="<?= $key === 'home' ? 'true' : 'false' ?>"><?= $tab[1] ?><?= $h($tab[0]) ?><?php if ($tab[2] !== null): ?><span class="n"><?= (int)$tab[2] ?></span><?php endif; ?></button>
+        <?php endforeach; ?>
+    </nav>
+
+    <!-- HOME -->
+    <div class="pf-panel active" data-panel="home">
+        <div class="pf-cols">
+            <section class="pf-card" aria-labelledby="pfAboutTitle">
+                <div class="pf-card-head">
+                    <svg viewBox="0 0 24 24" fill="#ff2a3a" aria-hidden="true"><circle cx="12" cy="7.500" r="4.500"/><path d="M3 21a9 9 0 0 1 18 0z"/></svg>
+                    <h2 id="pfAboutTitle">About Me</h2>
+                    <?php if ($isMe): ?><button type="button" class="pf-btn sm" data-edit-open><?= $ico['pencil'] ?> Edit</button><?php endif; ?>
+                </div>
+                <?php if ($description !== ''): ?>
+                    <p class="pf-about-text"><?= $h($description) ?></p>
+                <?php else: ?>
+                    <p class="pf-empty-note"><?= $isMe ? 'Tell people about your channel with “Edit”.' : 'This channel has no description yet.' ?></p>
+                <?php endif; ?>
+                <?php if ($hasLinks): ?>
+                    <ul class="pf-links">
+                        <?php if ($links['youtube'] !== ''): ?><li><a href="<?= $h($links['youtube']) ?>" target="_blank" rel="noopener noreferrer nofollow"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="5" width="22" height="14" rx="4" fill="#ff0000"/><path d="M10 9v6l5-3z" fill="#fff"/></svg><?= $h(vs_link_label($links['youtube'])) ?></a></li><?php endif; ?>
+                        <?php if ($links['discord'] !== ''): ?><li><a href="<?= $h($links['discord']) ?>" target="_blank" rel="noopener noreferrer nofollow"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="3" width="22" height="18" rx="5" fill="#5865f2"/><circle cx="9" cy="12" r="2" fill="#fff"/><circle cx="15" cy="12" r="2" fill="#fff"/></svg><?= $h(vs_link_label($links['discord'])) ?></a></li><?php endif; ?>
+                        <?php if ($links['x'] !== ''): ?><li><a href="<?= $h($links['x']) ?>" target="_blank" rel="noopener noreferrer nofollow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l16 16M20 4L4 20" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><?= $h(vs_link_label($links['x'])) ?></a></li><?php endif; ?>
+                        <?php if ($links['website'] !== ''): ?><li><a href="<?= $h($links['website']) ?>" target="_blank" rel="noopener noreferrer nofollow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.500 3 14.500 0 18M12 3c-3 3.500-3 14.500 0 18"/></svg><?= $h(vs_link_label($links['website'])) ?></a></li><?php endif; ?>
+                    </ul>
+                <?php endif; ?>
+            </section>
+
+            <section class="pf-card" aria-labelledby="pfMemTitle">
+                <div class="pf-card-head">
+                    <span style="width:30px;height:30px;display:block"><?= $bigCrown ?></span>
+                    <h2 id="pfMemTitle">Memberships</h2>
+                    <button type="button" class="pf-viewall" data-goto="memberships">View All &rarr;</button>
+                </div>
+                <div class="pf-member">
+                    <div class="pf-promo">
+                        <?= $bigCrown ?>
+                        <div style="flex:1;min-width:0">
+                            <h3>Premium Member</h3>
+                            <p>Unlock more features, support <?= $isMe ? 'me' : 'this creator' ?> and enjoy exclusive perks!</p>
+                            <a class="join" href="premium.php"><?= $ico['crown'] ?> <?= ($isMe && $isPremium) ? 'Manage Premium' : 'Join Now' ?></a>
+                        </div>
+                    </div>
+                    <ul class="pf-perks">
+                        <li><?= $ico['check'] ?>No Ads</li>
+                        <li><?= $ico['check'] ?>Exclusive Badges</li>
+                        <li><?= $ico['check'] ?>Early Access to Videos</li>
+                        <li><?= $ico['check'] ?>Support Your Creator</li>
+                    </ul>
+                </div>
+            </section>
+        </div>
+
+        <section class="pf-card" style="margin-top:16px" aria-labelledby="pfVidTitle">
+            <div class="pf-card-head">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="4" width="22" height="16" rx="5" fill="#ff2a3a"/><path d="M10 8.500v7l6-3.500z" fill="#fff"/></svg>
+                <h2 id="pfVidTitle"><?= $isMe ? 'My Videos' : 'Videos' ?></h2>
+                <?php if ($topVideos): ?><button type="button" class="pf-viewall" data-goto="videos">View All &rarr;</button><?php endif; ?>
+            </div>
+            <?php if (!$topVideos): ?>
+                <div class="pf-empty"><p>No videos yet.</p><?php if ($isMe): ?><a class="pf-btn red" href="upload.php">Upload your first video</a><?php endif; ?></div>
+            <?php else: ?>
+                <div class="pf-strip">
+                    <?php foreach ($topVideos as $row):
+                        $src = find_source($row, __DIR__);
+                        $yt = $src !== '' ? extract_youtube_id($src, true) : null;
+                        $title = $row['title'] ?? 'Untitled';
+                    ?>
+                        <a class="pf-vid" href="watch.php?id=<?= urlencode((string)$row['id']) ?>">
+                            <div class="pf-thumb"><img src="<?= $h(thumb_for($row, $src, $yt)) ?>" alt="<?= $h($title) ?>" loading="lazy"><?php if (!empty($row['duration'])): ?><span class="pf-dur"><?= $h($row['duration']) ?></span><?php endif; ?></div>
+                            <h3 class="pf-vtitle"><?= $h($title) ?></h3>
+                            <p class="pf-vmeta"><?= $h(vs_short_views($row['views'] ?? 0)) ?> views &bull; <?= $h(vs_yt_time_ago($row['created_at'] ?? null)) ?></p>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+    </div>
+
+    <!-- VIDEOS -->
+    <div class="pf-panel" data-panel="videos">
+        <?php if (!$videos): ?>
+            <div class="pf-empty"><p>No videos yet.</p><?php if ($isMe): ?><a class="pf-btn red" href="upload.php">Upload your first video</a><?php endif; ?></div>
+        <?php else: ?>
+            <div class="pf-sort" data-sort-for="videoGrid">
+                <button type="button" class="pf-chip active" data-sort="latest">Latest</button>
+                <button type="button" class="pf-chip" data-sort="popular">Popular</button>
+                <button type="button" class="pf-chip" data-sort="oldest">Oldest</button>
+            </div>
+            <div class="pf-grid" id="videoGrid">
                 <?php foreach ($videos as $row):
                     $src = find_source($row, __DIR__);
                     $yt = $src !== '' ? extract_youtube_id($src, true) : null;
-                    $thumb = thumb_for($row, $src, $yt);
                     $title = $row['title'] ?? 'Untitled';
-                    $duration = $row['duration'] ?? '';
                 ?>
-                    <a href="watch.php?id=<?= urlencode((string)$row['id']) ?>" class="p-card" data-views="<?= (int)($row['views'] ?? 0) ?>" data-score="<?= $popScore($row) ?>" data-ts="<?= (int)strtotime((string)($row['created_at'] ?? '')) ?>">
-                        <div class="p-thumb">
-                            <img src="<?= $h($thumb) ?>" alt="<?= $h($title) ?>" loading="lazy">
-                            <?php if (!empty($duration)): ?><span class="p-duration"><?= $h($duration) ?></span><?php endif; ?>
-                        </div>
-                        <h3 class="p-title"><?= $h($title) ?></h3>
-                        <p class="p-meta"><?= $h(vs_short_views($row['views'] ?? 0)) ?> views &bull; <?= $h(vs_yt_time_ago($row['created_at'] ?? null)) ?></p>
+                    <a href="watch.php?id=<?= urlencode((string)$row['id']) ?>" class="pf-vid" data-views="<?= (int)($row['views'] ?? 0) ?>" data-score="<?= $popScore($row) ?>" data-ts="<?= (int)strtotime((string)($row['created_at'] ?? '')) ?>">
+                        <div class="pf-thumb"><img src="<?= $h(thumb_for($row, $src, $yt)) ?>" alt="<?= $h($title) ?>" loading="lazy"><?php if (!empty($row['duration'])): ?><span class="pf-dur"><?= $h($row['duration']) ?></span><?php endif; ?></div>
+                        <h3 class="pf-vtitle"><?= $h($title) ?></h3>
+                        <p class="pf-vmeta"><?= $h(vs_short_views($row['views'] ?? 0)) ?> views &bull; <?= $h(vs_yt_time_ago($row['created_at'] ?? null)) ?></p>
                     </a>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
-      </div>
-      <aside class="about-side" aria-label="About this channel">
-        <h2>About</h2>
-        <p class="about-desc"><?php if ($description !== ''): ?><?= $h($description) ?><?php else: ?><span style="color:var(--muted)"><?= $isMe ? 'Add a description with "Edit description".' : 'No description yet.' ?></span><?php endif; ?></p>
-        <dl class="about-list">
-            <?php if ($joinedAt !== '' && strtotime($joinedAt)): ?><div><dt>Joined</dt><dd><?= $h(date('M j, Y', strtotime($joinedAt))) ?></dd></div><?php endif; ?>
-            <?php if ($isMe && $subscriberCount !== null): ?><div><dt>Subscribers</dt><dd><?= $h(vs_short_views($subscriberCount)) ?></dd></div><?php endif; ?>
-            <div><dt>Total views</dt><dd><?= $h(vs_short_views($totalViews)) ?></dd></div>
-            <?php if ($isMe): ?><div><dt>Total likes</dt><dd><?= $h(vs_short_views($totalLikes)) ?></dd></div><?php endif; ?>
-        </dl>
-      </aside>
-      </div>
     </div>
 
-    <div class="tab-panel<?= $defaultTab === 'shorts' ? ' active' : '' ?>" data-panel="shorts">
+    <!-- SHORTS -->
+    <div class="pf-panel" data-panel="shorts">
         <?php if (!$shorts): ?>
-            <div class="empty-state">
-                <p>No shorts yet.</p>
-                <?php if ($isMe): ?><a class="btn primary" href="upload.php"><?= vs_icon('plus-square', 16) ?> Upload a short</a><?php endif; ?>
-            </div>
+            <div class="pf-empty"><p>No shorts yet.</p><?php if ($isMe): ?><a class="pf-btn red" href="upload.php">Upload a short</a><?php endif; ?></div>
         <?php else: ?>
-            <div class="sort-bar" data-sort-for="shortGrid">
-                <button type="button" class="chip active" data-sort="latest">Latest</button>
-                <button type="button" class="chip" data-sort="popular">Popular</button>
-                <button type="button" class="chip" data-sort="oldest">Oldest</button>
+            <div class="pf-sort" data-sort-for="shortGrid">
+                <button type="button" class="pf-chip active" data-sort="latest">Latest</button>
+                <button type="button" class="pf-chip" data-sort="popular">Popular</button>
+                <button type="button" class="pf-chip" data-sort="oldest">Oldest</button>
             </div>
-            <div class="short-grid" id="shortGrid">
+            <div class="pf-short-grid" id="shortGrid">
                 <?php foreach ($shorts as $row):
                     $src = find_source($row, __DIR__);
                     $yt = $src !== '' ? extract_youtube_id($src, true) : null;
-                    $thumb = thumb_for($row, $src, $yt);
                     $title = $row['title'] ?? 'Untitled';
                 ?>
-                    <a href="shorts.php?id=<?= urlencode((string)$row['id']) ?>" class="p-card" data-views="<?= (int)($row['views'] ?? 0) ?>" data-score="<?= $popScore($row) ?>" data-ts="<?= (int)strtotime((string)($row['created_at'] ?? '')) ?>">
-                        <div class="p-short-thumb"><img src="<?= $h($thumb) ?>" alt="<?= $h($title) ?>" loading="lazy"></div>
-                        <h3 class="p-title"><?= $h($title) ?></h3>
-                        <p class="p-meta"><?= $h(vs_short_views($row['views'] ?? 0)) ?> views</p>
+                    <a href="shorts.php?id=<?= urlencode((string)$row['id']) ?>" class="pf-vid" data-views="<?= (int)($row['views'] ?? 0) ?>" data-score="<?= $popScore($row) ?>" data-ts="<?= (int)strtotime((string)($row['created_at'] ?? '')) ?>">
+                        <div class="pf-thumb tall"><img src="<?= $h(thumb_for($row, $src, $yt)) ?>" alt="<?= $h($title) ?>" loading="lazy"></div>
+                        <h3 class="pf-vtitle"><?= $h($title) ?></h3>
+                        <p class="pf-vmeta"><?= $h(vs_short_views($row['views'] ?? 0)) ?> views</p>
                     </a>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
     </div>
 
-    <div class="tab-panel" data-panel="about">
-        <div class="about-box">
-            <h2>Description</h2>
-            <p class="about-desc"><?php if ($description !== ''): ?><?= $h($description) ?><?php else: ?><span style="color:var(--muted)"><?= $isMe ? 'You have not written a description yet. Use "Edit description" at the top of your channel.' : 'This channel has no description yet.' ?></span><?php endif; ?></p>
-            <h2>Details</h2>
-            <dl class="about-list">
+    <!-- PLAYLISTS -->
+    <div class="pf-panel" data-panel="playlists">
+        <?php if (!$playlists): ?>
+            <div class="pf-empty"><p><?= $isMe ? 'You have no playlists yet.' : 'No public playlists yet.' ?></p><?php if ($isMe): ?><a class="pf-btn red" href="playlists.php">Create a playlist</a><?php endif; ?></div>
+        <?php else: ?>
+            <?php if ($isMe): ?><p style="margin:0 0 14px"><a class="pf-btn" href="playlists.php">Manage playlists</a></p><?php endif; ?>
+            <div class="pf-pl">
+                <?php foreach ($playlists as $pl): ?>
+                    <div class="pf-pl-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h14M3 12h14M3 18h8"/><path d="M19 14v6l4-3z" fill="currentColor"/></svg>
+                        <div><strong><?= $h($pl['name']) ?></strong><span><?= (int)$pl['n'] ?> video<?= (int)$pl['n'] === 1 ? '' : 's' ?><?= ($isMe && (string)$pl['visibility'] !== 'public') ? ' · ' . $h(ucfirst((string)$pl['visibility'])) : '' ?></span></div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- ABOUT -->
+    <div class="pf-panel" data-panel="about">
+        <section class="pf-card">
+            <div class="pf-card-head"><h2>Description</h2><?php if ($isMe): ?><button type="button" class="pf-btn sm" data-edit-open><?= $ico['pencil'] ?> Edit</button><?php endif; ?></div>
+            <?php if ($description !== ''): ?><p class="pf-about-text"><?= $h($description) ?></p><?php else: ?><p class="pf-empty-note"><?= $isMe ? 'You have not written a description yet.' : 'This channel has no description yet.' ?></p><?php endif; ?>
+        </section>
+        <section class="pf-card">
+            <div class="pf-card-head"><h2>Details</h2></div>
+            <dl class="pf-dl">
                 <?php if ($joinedAt !== '' && strtotime($joinedAt)): ?><div><dt>Joined</dt><dd><?= $h(date('M j, Y', strtotime($joinedAt))) ?></dd></div><?php endif; ?>
+                <?php if ($location !== ''): ?><div><dt>Location</dt><dd><?= $h($location) ?></dd></div><?php endif; ?>
                 <?php if ($subscriberCount !== null): ?><div><dt>Subscribers</dt><dd><?= $h(vs_short_views($subscriberCount)) ?></dd></div><?php endif; ?>
                 <div><dt>Videos</dt><dd><?= count($videos) ?></dd></div>
                 <div><dt>Shorts</dt><dd><?= count($shorts) ?></dd></div>
                 <div><dt>Total views</dt><dd><?= $h(vs_short_views($totalViews)) ?></dd></div>
-                <div><dt>Total likes</dt><dd><?= $h(vs_short_views($totalLikes)) ?></dd></div>
+                <?php if ($isMe): ?><div><dt>Total likes</dt><dd><?= $h(vs_short_views($totalLikes)) ?></dd></div><?php endif; ?>
             </dl>
-        </div>
+            <?php if ($hasLinks): ?>
+                <ul class="pf-links">
+                    <?php foreach (['youtube', 'discord', 'x', 'website'] as $k): if ($links[$k] === '') { continue; } ?>
+                        <li><a href="<?= $h($links[$k]) ?>" target="_blank" rel="noopener noreferrer nofollow"><?= $h(vs_link_label($links[$k])) ?></a></li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
+        </section>
+    </div>
+
+    <!-- MEMBERSHIPS -->
+    <div class="pf-panel" data-panel="memberships">
+        <section class="pf-card">
+            <div class="pf-card-head"><span style="width:30px;height:30px;display:block"><?= $bigCrown ?></span><h2>Memberships</h2></div>
+            <div class="pf-member">
+                <div class="pf-promo">
+                    <?= $bigCrown ?>
+                    <div style="flex:1;min-width:0">
+                        <h3>Premium Member</h3>
+                        <p><?= $isPremium ? ($isMe ? 'Your Premium is active. Thank you for supporting VibeStream!' : 'This creator is a Premium member.') : 'Unlock more features, support creators and enjoy exclusive perks!' ?></p>
+                        <a class="join" href="premium.php"><?= $ico['crown'] ?> <?= ($isMe && $isPremium) ? 'Manage Premium' : 'Join Now' ?></a>
+                    </div>
+                </div>
+                <ul class="pf-perks">
+                    <li><?= $ico['check'] ?>No Ads</li>
+                    <li><?= $ico['check'] ?>Exclusive Badges</li>
+                    <li><?= $ico['check'] ?>Early Access to Videos</li>
+                    <li><?= $ico['check'] ?>Support Your Creator</li>
+                </ul>
+            </div>
+        </section>
+    </div>
+
+    <!-- REWARDS -->
+    <div class="pf-panel" data-panel="rewards">
+        <section class="pf-card">
+            <div class="pf-card-head"><svg viewBox="0 0 24 24" fill="#ffc23d" aria-hidden="true"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2 2 9.3l6.9-1z"/></svg><h2>Rewards</h2></div>
+            <?php if ($level): ?>
+                <p style="margin:0"><span class="pf-lvl" style="color:<?= $h($level[2]) ?>;font-size:16px"><?= $h($level[0]) ?></span></p>
+                <div class="pf-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= (int)round($levelPct) ?>"><i style="width:<?= (int)round($levelPct) ?>%"></i></div>
+                <p class="pf-empty-note" style="margin:0"><?= number_format($earned) ?> points earned<?= $nextLevel ? ' · ' . number_format($nextLevel[1] - $earned) . ' to ' . $h($nextLevel[0]) : ' · top level!' ?></p>
+            <?php else: ?>
+                <p class="pf-empty-note">No points earned yet. Check in daily, upload videos and complete quests to earn points.</p>
+            <?php endif; ?>
+            <?php if ($isMe): ?><p style="margin:16px 0 0"><a class="pf-btn red" href="<?= $h($rewardsPage) ?>">Open Rewards</a></p><?php endif; ?>
+        </section>
     </div>
 <?php endif; ?>
 </div>
 <?php
 vs_page_end(<<<'JS'
 (function () {
-    var tabs = document.querySelectorAll('.tab');
-    var panels = document.querySelectorAll('.tab-panel');
+    var tabs = document.querySelectorAll('.pf-tab');
+    var panels = document.querySelectorAll('.pf-panel');
+    function openTab(key, updateHash) {
+        var found = false;
+        tabs.forEach(function (t) { if (t.getAttribute('data-tab') === key) { found = true; } });
+        if (!found) { return; }
+        tabs.forEach(function (t) { t.setAttribute('aria-selected', t.getAttribute('data-tab') === key ? 'true' : 'false'); });
+        panels.forEach(function (p) { p.classList.toggle('active', p.getAttribute('data-panel') === key); });
+        if (updateHash) { try { history.replaceState(null, '', '#' + key); } catch (e) {} }
+    }
     tabs.forEach(function (tab) {
-        tab.addEventListener('click', function () {
-            var key = tab.getAttribute('data-tab');
-            tabs.forEach(function (t) { t.classList.toggle('active', t === tab); });
-            panels.forEach(function (p) { p.classList.toggle('active', p.getAttribute('data-panel') === key); });
-        });
+        tab.addEventListener('click', function () { openTab(tab.getAttribute('data-tab'), true); });
     });
-
-    var toggle = document.getElementById('nameToggle');
-    var form = document.getElementById('nameForm');
-    var cancel = document.getElementById('nameCancel');
-    if (toggle && form) {
-        toggle.addEventListener('click', function () {
-            form.hidden = !form.hidden;
-            if (!form.hidden) { document.getElementById('newName').focus(); }
-        });
-    }
-    if (cancel && form) {
-        cancel.addEventListener('click', function () { form.hidden = true; });
-    }
-
-    var descToggle = document.getElementById('descToggle');
-    var descForm = document.getElementById('descForm');
-    var descCancel = document.getElementById('descCancel');
-    if (descToggle && descForm) {
-        descToggle.addEventListener('click', function () {
-            descForm.hidden = !descForm.hidden;
-            if (!descForm.hidden) { document.getElementById('descText').focus(); }
-        });
-    }
-    if (descCancel && descForm) {
-        descCancel.addEventListener('click', function () { descForm.hidden = true; });
-    }
-
     document.querySelectorAll('[data-goto]').forEach(function (b) {
         b.addEventListener('click', function () {
-            var t = document.querySelector('.tab[data-tab="' + b.getAttribute('data-goto') + '"]');
-            if (t) { t.click(); t.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+            openTab(b.getAttribute('data-goto'), true);
+            var bar = document.querySelector('.pf-tabs');
+            if (bar) { bar.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
         });
     });
+    var initial = (window.location.hash || '').replace('#', '');
+    if (initial && initial !== 'edit') { openTab(initial, false); }
 
-    document.querySelectorAll('.sort-bar').forEach(function (bar) {
+    // edit panel
+    var edit = document.getElementById('editPanel');
+    var toggle = document.getElementById('editToggle');
+    function setEdit(open) {
+        if (!edit) { return; }
+        edit.hidden = !open;
+        if (toggle) { toggle.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+        if (open) { edit.scrollIntoView({ behavior: 'smooth', block: 'start' }); var f = document.getElementById('descText'); if (f) { f.focus({ preventScroll: true }); } }
+    }
+    if (toggle) { toggle.addEventListener('click', function () { setEdit(edit.hidden); }); }
+    document.querySelectorAll('[data-edit-open]').forEach(function (b) { b.addEventListener('click', function () { setEdit(true); }); });
+    document.querySelectorAll('[data-edit-close]').forEach(function (b) { b.addEventListener('click', function () { setEdit(false); }); });
+    if (window.location.hash === '#edit') { setEdit(true); }
+
+    // sorting
+    document.querySelectorAll('.pf-sort').forEach(function (bar) {
         var grid = document.getElementById(bar.getAttribute('data-sort-for'));
         if (!grid) { return; }
         bar.addEventListener('click', function (e) {
-            var chip = e.target.closest('.chip');
+            var chip = e.target.closest('.pf-chip');
             if (!chip) { return; }
-            bar.querySelectorAll('.chip').forEach(function (c) { c.classList.toggle('active', c === chip); });
+            bar.querySelectorAll('.pf-chip').forEach(function (c) { c.classList.toggle('active', c === chip); });
             var mode = chip.getAttribute('data-sort');
             var cards = Array.prototype.slice.call(grid.children);
             cards.sort(function (a, b) {
@@ -977,21 +1264,16 @@ vs_page_end(<<<'JS'
         });
     });
 
-    var file = document.getElementById('avatarFile');
-    var avatarForm = document.getElementById('avatarForm');
-    if (file && avatarForm) {
-        file.addEventListener('change', function () {
-            if (file.files && file.files.length) { avatarForm.submit(); }
-        });
-    }
+    // picture + banner upload: send as soon as a file is chosen
+    [['avatarFile', 'avatarForm'], ['bannerFile', 'bannerForm']].forEach(function (pair) {
+        var file = document.getElementById(pair[0]);
+        var form = document.getElementById(pair[1]);
+        if (file && form) {
+            file.addEventListener('change', function () { if (file.files && file.files.length) { form.submit(); } });
+        }
+    });
 
-    var bannerFile = document.getElementById('bannerFile');
-    var bannerForm = document.getElementById('bannerForm');
-    if (bannerFile && bannerForm) {
-        bannerFile.addEventListener('change', function () {
-            if (bannerFile.files && bannerFile.files.length) { bannerForm.submit(); }
-        });
-    }
+    // share channel
     var shareBtn = document.getElementById('shareChannel');
     if (shareBtn) {
         shareBtn.addEventListener('click', function () {

@@ -82,6 +82,7 @@ function vs_bg_brand(): array {
 /** Full HTML page with the "you have been banned" card. */
 function vs_bg_card_html(array $ban): string {
     $brand = vs_bg_brand();
+    require_once __DIR__ . '/page-loader-render.php';
     $siteName = $brand['name']; $logo = $brand['logo'];
     $light = $brand['theme'] === 'light';
     $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -96,6 +97,7 @@ function vs_bg_card_html(array $ban): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Account banned · <?= $e($siteName) ?></title>
+<?php vs_page_loader_assets(); ?>
 <style>
   :root{--brand:<?= $e($brand['color']) ?>;--bg:#080a16;--bgglow1:rgba(255,60,110,.22);--bgglow2:rgba(110,60,255,.28);--card1:rgba(22,26,52,.97);--card2:rgba(12,15,32,.98);--txt:#f4f5ff;--mut:#aab0d4;--dim:#8f95bb;--box:rgba(20,26,56,.55);--tile:rgba(8,10,24,.6);--line:rgba(139,111,255,.22);--danger:#ff6b88}
   <?php if ($light): ?>:root{--bg:#f3f4fb;--bgglow1:rgba(255,60,110,.12);--bgglow2:rgba(110,60,255,.14);--card1:#fff;--card2:#fff;--txt:#14172e;--mut:#555b7e;--dim:#7a80a3;--box:#f4f5fc;--tile:#fff;--line:rgba(90,70,200,.18);--danger:#e0294a}<?php endif; ?>
@@ -128,6 +130,7 @@ function vs_bg_card_html(array $ban): string {
 </style>
 </head>
 <body>
+<?php vs_page_loader_markup(); ?>
 <main class="card" role="alert">
   <div class="brand"><?php if ($logo !== ''): ?><img src="<?= $e($logo) ?>" alt=""><?php endif; ?><span><?= $e($siteName) ?></span></div>
 

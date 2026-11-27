@@ -6,7 +6,7 @@
     --cm-line: rgba(255, 255, 255, 0.15);
     --cm-hover: rgba(255, 255, 255, 0.10);
     --cm-menu: #282828;
-    --cm-blue: #3ea6ff;
+    --cm-blue: #ff2a32;
     display: flex;
     flex-direction: column;
     max-height: min(78vh, 720px);

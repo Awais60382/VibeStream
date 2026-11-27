@@ -8,6 +8,7 @@ require_once __DIR__ . '/owner-guard.php';
 require_once __DIR__ . '/checkin-owner-names.php';
 require_once __DIR__ . '/checkin-insights.php';
 require_once __DIR__ . '/work-hours.php';
+require_once __DIR__ . '/../page-loader-render.php';
 
 $isOwner = false;
 try {
@@ -176,6 +177,7 @@ $checkinUrl = vs_checkin_url();
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<?php vs_page_loader_assets(); ?>
 <style>
   :root{--bg:#070914;--line:rgba(139,111,255,.22);--txt:#f4f5ff;--mut:#9aa0c3;--free:#22e08a;--busy:#ffb020;--mod:#1e9bff;--break:#c9bbff}
   *{box-sizing:border-box}
@@ -239,6 +241,7 @@ $checkinUrl = vs_checkin_url();
 </style>
 </head>
 <body>
+<?php vs_page_loader_markup(); ?>
 <main class="wrap">
   <a class="back" href="<?= $h($checkinUrl) ?>#team">&larr; Back to check-in</a>
   <a class="back" style="margin-left:18px" href="failed-admin-logins.php">Failed admin sign-ins &rarr;</a>

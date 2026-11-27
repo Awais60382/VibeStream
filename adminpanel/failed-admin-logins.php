@@ -153,7 +153,7 @@ include __DIR__ . '/header.php';
 
   .fal-hero{position:relative;overflow:hidden;display:flex;align-items:center;gap:20px;padding:18px 22px;border:1px solid var(--c-line);border-radius:18px;background:linear-gradient(115deg,rgba(255,46,147,.22),rgba(12,14,36,.92) 45%,rgba(106,61,255,.3));box-shadow:0 0 30px -10px var(--c-glow)}
   html[data-theme="light"] .fal-hero,html[data-bs-theme="light"] .fal-hero{background:linear-gradient(115deg,rgba(255,46,147,.14),#fff 50%,rgba(124,77,255,.14))}
-  .fal-icon{flex:0 0 72px;width:72px;height:72px;display:grid;place-items:center;border-radius:18px;font-size:2.2rem;color:#fff;background:linear-gradient(135deg,#ff2e93,#b0126b);box-shadow:0 0 22px rgba(255,46,147,.6)}
+  .fal-icon{flex:0 0 72px;width:72px;height:72px;display:grid;place-items:center;border-radius:18px;font-size:2.2rem;color:#fff;background:linear-gradient(135deg,#ff2a32,#b0126b);box-shadow:0 0 22px rgba(255,46,147,.6)}
   .fal-hero h1{margin:0;font-size:clamp(24px,2.6vw,36px);font-weight:800;letter-spacing:-.02em;color:var(--c-text)}
   .fal-hero p{margin:4px 0 0;color:var(--c-muted);font-size:15px}
   .fal-hero-btn{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:10px;padding:12px 22px;border-radius:14px;border:1.5px solid #00c8ff;background:linear-gradient(135deg,rgba(0,200,255,.28),rgba(10,116,230,.28));color:#fff;font-weight:700;text-decoration:none;box-shadow:0 0 18px rgba(0,200,255,.45);white-space:nowrap}
@@ -164,7 +164,7 @@ include __DIR__ . '/header.php';
   .fal-stat{--c:#00c8ff;--c-rgb:0,200,255;position:relative;display:flex;align-items:center;gap:16px;padding:18px;border-radius:16px;border:1px solid rgba(var(--c-rgb),.6);background:linear-gradient(135deg,rgba(var(--c-rgb),.16),var(--c-card) 70%);box-shadow:0 0 22px -12px rgba(var(--c-rgb),.9)}
   .fal-stat-red{--c:#ff3d77;--c-rgb:255,61,119}
   .fal-stat-blue{--c:#2e9bff;--c-rgb:46,155,255}
-  .fal-stat-violet{--c:#8a5cff;--c-rgb:138,92,255}
+  .fal-stat-violet{--c:#b50d16;--c-rgb:138,92,255}
   .fal-stat-green{--c:#22e58a;--c-rgb:34,229,138}
   .fal-stat-icon{flex:0 0 58px;width:58px;height:58px;display:grid;place-items:center;border-radius:15px;border:1px solid rgba(var(--c-rgb),.35);background:rgba(var(--c-rgb),.14);color:var(--c);font-size:1.8rem}
   .fal-stat strong{display:block;font-size:2rem;line-height:1.05;font-weight:800;color:var(--c-text)}
@@ -181,7 +181,7 @@ include __DIR__ . '/header.php';
   .fal-search{flex:1 1 auto;min-width:0}
   .fal-search input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--c-text);font-size:15px}
   .fal-search input::placeholder{color:var(--c-muted)}
-  .fal-select:focus-within,.fal-search:focus-within{box-shadow:0 0 0 2px #00e5ff}
+  .fal-select:focus-within,.fal-search:focus-within{box-shadow:0 0 0 2px #ff2a32}
   .fal-submit{flex:0 0 auto;display:inline-flex;align-items:center;gap:10px;padding:0 26px;border-radius:14px;border:1px solid #a070ff;background:linear-gradient(135deg,#8a3dff,#4a2bd6);color:#fff;font-weight:700;font-size:16px;box-shadow:0 0 18px rgba(138,92,255,.6);cursor:pointer}
   .fal-submit:hover{filter:brightness(1.12)}
 
@@ -208,7 +208,7 @@ include __DIR__ . '/header.php';
   .fal-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 20px;border-top:1px solid var(--c-line);color:var(--c-muted);font-size:15px}
   .fal-pager{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .fal-pager a,.fal-pager span{display:grid;place-items:center;min-width:40px;height:40px;padding:0 8px;border-radius:10px;border:1px solid var(--c-line);background:rgba(138,92,255,.06);color:var(--c-text);font-weight:600;text-decoration:none}
-  .fal-pager a:hover{border-color:#00e5ff;color:var(--c-text);text-decoration:none}
+  .fal-pager a:hover{border-color:#ff2a32;color:var(--c-text);text-decoration:none}
   .fal-pager .is-current{background:linear-gradient(135deg,#8a3dff,#5a2fe0);border-color:#a070ff;color:#fff;box-shadow:0 0 14px rgba(138,92,255,.6)}
   .fal-pager .is-disabled{opacity:.4}
   .fal-pager .fal-gap{border:0;background:transparent;min-width:20px}
@@ -234,7 +234,7 @@ include __DIR__ . '/header.php';
 
 <?php
 $rangeLabels = ['1d' => '24 Hours', '7d' => '7 Days', '30d' => '30 Days', 'all' => 'All time'];
-$showSettings = !function_exists('vs_admin_route_allowed') || vs_admin_route_allowed('platform-settings.php');
+$showSettings = !function_exists('vs_admin_route_allowed') || vs_admin_route_allowed('app-settings.php');
 $pageWindow = [];
 for ($p = 1; $p <= $pages; $p++) {
     if ($p === 1 || $p === $pages || abs($p - $page) <= 1 || ($page <= 3 && $p <= 5) || ($page >= $pages - 2 && $p >= $pages - 4)) {
@@ -252,7 +252,7 @@ $e = static fn($v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
         <p>View recent failed admin login attempts and suspicious activity.</p>
       </div>
       <?php if ($showSettings): ?>
-        <a class="fal-hero-btn" href="platform-settings.php"><i class="bi bi-gear-fill" aria-hidden="true"></i>View Settings</a>
+        <a class="fal-hero-btn" href="app-settings.php"><i class="bi bi-gear-fill" aria-hidden="true"></i>View Settings</a>
       <?php endif; ?>
     </section>
 

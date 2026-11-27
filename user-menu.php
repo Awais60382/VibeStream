@@ -5,6 +5,9 @@
  */
 require_once __DIR__ . '/sidebar-icons-store.php';
 require_once __DIR__ . '/vip-badge.php';
+if (is_file(__DIR__ . '/premium-store.php')) {
+    require_once __DIR__ . '/premium-store.php';   // rewards level badge
+}
 
 if (!function_exists('vs_user_menu_html')) {
     function vs_user_menu_html(string $username, string $avatarUrl = ''): string
@@ -48,6 +51,10 @@ if (!function_exists('vs_user_menu_html')) {
         $vipDb = $GLOBALS['conn'] ?? ($GLOBALS['pdo'] ?? null);
         $avatar = vs_vip_ring_auto_open($username, $vipDb) . $avatar . vs_vip_ring_auto_close($username, $vipDb);
         $nameBadge = vs_vip_badge($username, $vipDb, 16);
+        // Rewards level pill (Bronze to Diamond) once the member has earned points.
+        if (function_exists('vs_rewards_level_badge_html')) {
+            $nameBadge .= vs_rewards_level_badge_html($username);
+        }
 
         return '<div class="vs-user-menu" data-vs-user-menu>'
             . '<button type="button" class="vs-user-toggle" data-vs-user-toggle aria-haspopup="true" aria-expanded="false">'

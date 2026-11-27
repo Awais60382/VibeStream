@@ -112,21 +112,21 @@ $lt = static function ($at) use ($esc): string {
           .mt-card-head{padding:14px 16px}
         }
       </style>
-      <style data-vs-neon>
+      <style>
         /* neon glow layer: the lightning button switches this block off */
         .mt-head-ico{box-shadow:0 0 30px -4px rgba(124,77,255,.9),inset 0 0 18px rgba(255,255,255,.12)}
         .mt-head h1{text-shadow:0 0 22px rgba(138,92,255,.55)}
         .mt-status{border-color:rgba(34,211,238,.6);box-shadow:0 0 18px -4px rgba(34,211,238,.55)}
         .mt-dot{box-shadow:0 0 0 3px rgba(255,255,255,.07),0 0 12px 2px currentColor}
         .mt-card{box-shadow:0 0 28px -10px rgba(112,104,255,.65),inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .2s,box-shadow .2s}
-        .mt-card:before{content:"";display:block;height:2px;margin:0 8%;border-radius:2px;background:linear-gradient(90deg,transparent,#8a5cff 30%,#22d3ee 50%,#8a5cff 70%,transparent);opacity:.85}
+        .mt-card:before{content:"";display:block;height:2px;margin:0 8%;border-radius:2px;background:linear-gradient(90deg,transparent,#b50d16 30%,#22d3ee 50%,#b50d16 70%,transparent);opacity:.85}
         .mt-card-head h2{text-shadow:0 0 14px rgba(138,92,255,.5)}
         .mt-card-ico.dot{box-shadow:0 0 16px 2px rgba(124,77,255,.9)}
         .mt-card-ico.ok{box-shadow:0 0 16px -2px rgba(20,194,122,.9)}
         .mt-chip{border-color:rgba(138,92,255,.6);box-shadow:0 0 12px -3px rgba(138,92,255,.7)}
         .mt-num{box-shadow:0 0 18px -2px rgba(124,77,255,.95)}
         .mt-item:hover{box-shadow:inset 3px 0 0 #22d3ee,inset 0 0 24px rgba(34,211,238,.06)}
-        .mt-wait{border-color:#8a5cff;box-shadow:0 0 14px -2px rgba(138,92,255,.85);animation:mtPulse 2.4s ease-in-out infinite}
+        .mt-wait{border-color:#b50d16;box-shadow:0 0 14px -2px rgba(138,92,255,.85);animation:mtPulse 2.4s ease-in-out infinite}
         @keyframes mtPulse{50%{box-shadow:0 0 22px 0 rgba(138,92,255,1)}}
         .mt-tick{box-shadow:0 0 14px -2px rgba(20,194,122,.9)}
         .mt-tick.bad{box-shadow:0 0 14px -2px rgba(224,48,111,.9)}

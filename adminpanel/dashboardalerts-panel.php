@@ -14,15 +14,15 @@
 #vsdAlerts .vsa-list{list-style:none;margin:0;padding:0}
 #vsdAlerts .vsa-list li{display:flex;gap:12px;align-items:flex-start;padding:11px 8px;border-bottom:1px solid rgba(var(--nx-violet-rgb,138,92,255),.25);border-radius:8px}
 #vsdAlerts .vsa-list li:last-child{border-bottom:0}
-#vsdAlerts .vsa-list li.unread{background:rgba(var(--nx-cyan-rgb,0,229,255),.07);box-shadow:inset 3px 0 0 var(--vsa-c,#00e5ff)}
-#vsdAlerts .vsa-ico{flex:0 0 34px;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--vsa-c,#00e5ff);background:color-mix(in srgb,var(--vsa-c,#00e5ff) 16%,transparent)}
+#vsdAlerts .vsa-list li.unread{background:rgba(var(--nx-cyan-rgb,0,229,255),.07);box-shadow:inset 3px 0 0 var(--vsa-c,#ff2a32)}
+#vsdAlerts .vsa-ico{flex:0 0 34px;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--vsa-c,#ff2a32);background:color-mix(in srgb,var(--vsa-c,#ff2a32) 16%,transparent)}
 #vsdAlerts .vsa-body{min-width:0;flex:1}
 #vsdAlerts .vsa-body strong{display:block;font-weight:600;font-size:.92rem}
 #vsdAlerts .vsa-body small{display:block;opacity:.72;line-height:1.45;margin-top:2px}
-#vsdAlerts .vsa-sev{flex:0 0 auto;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:999px;color:var(--vsa-c,#00e5ff);border:1px solid color-mix(in srgb,var(--vsa-c,#00e5ff) 55%,transparent)}
+#vsdAlerts .vsa-sev{flex:0 0 auto;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:999px;color:var(--vsa-c,#ff2a32);border:1px solid color-mix(in srgb,var(--vsa-c,#ff2a32) 55%,transparent)}
 #vsdAlerts .sev-critical{--vsa-c:var(--nx-red,#ff4d6d)}
 #vsdAlerts .sev-warning{--vsa-c:var(--nx-amber,#ffd23f)}
-#vsdAlerts .sev-info{--vsa-c:var(--nx-cyan,#00e5ff)}
+#vsdAlerts .sev-info{--vsa-c:var(--nx-cyan,#ff2a32)}
 #vsdAlerts .vsa-ok{display:flex;gap:10px;align-items:center;padding:14px 8px;opacity:.85}
 #vsdAlerts .vsa-ok i{color:var(--nx-green,#22e58a);font-size:1.3rem}
 #vsdAlerts .vsa-head-btn{margin-left:auto}
@@ -38,14 +38,14 @@
 #vsdAlerts .vsa-state.done{color:var(--nx-green,#22e58a)}
 #vsdAlerts .vsa-note{margin:10px 0 0;font-size:.78rem;opacity:.65}
 .vsa-bell{position:fixed;right:18px;bottom:18px;z-index:1900;width:48px;height:48px;border-radius:50%;border:1px solid rgba(var(--nx-violet-rgb,138,92,255),.6);background:var(--nx-solid,#0a0d1f);color:var(--nx-text,#eaf0ff);display:grid;place-items:center;font-size:1.2rem;cursor:pointer;box-shadow:0 0 20px -4px rgba(var(--nx-violet-rgb,138,92,255),.7)}
-.vsa-bell:hover,.vsa-bell:focus-visible{border-color:var(--nx-cyan,#00e5ff);box-shadow:0 0 20px -2px rgba(var(--nx-cyan-rgb,0,229,255),.7)}
+.vsa-bell:hover,.vsa-bell:focus-visible{border-color:var(--nx-cyan,#ff2a32);box-shadow:0 0 20px -2px rgba(var(--nx-cyan-rgb,0,229,255),.7)}
 .vsa-bell .vsa-badge{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--nx-red,#ff4d6d);color:#fff;font-size:.72rem;font-weight:700;line-height:20px;text-align:center}
 .vsa-bell.ring i{animation:vsaRing .9s ease-in-out 2}
 @keyframes vsaRing{0%,100%{transform:rotate(0)}20%{transform:rotate(16deg)}40%{transform:rotate(-14deg)}60%{transform:rotate(9deg)}80%{transform:rotate(-6deg)}}
 #vsaToasts{position:fixed;right:18px;bottom:78px;z-index:1900;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 36px))}
-.vsa-toast{padding:10px 14px;border-radius:12px;background:rgba(10,13,31,.97);color:#eaf0ff;border:1px solid var(--vsa-c,#00e5ff);box-shadow:0 8px 24px rgba(0,0,0,.4);font-size:.86rem;animation:vsaIn .25s ease-out}
+.vsa-toast{padding:10px 14px;border-radius:12px;background:rgba(10,13,31,.97);color:#eaf0ff;border:1px solid var(--vsa-c,#ff2a32);box-shadow:0 8px 24px rgba(0,0,0,.4);font-size:.86rem;animation:vsaIn .25s ease-out}
 .vsa-toast b{display:block;margin-bottom:2px}
-.vsa-toast.sev-critical{--vsa-c:#ff4d6d}.vsa-toast.sev-warning{--vsa-c:#ffd23f}.vsa-toast.sev-info{--vsa-c:#00e5ff}
+.vsa-toast.sev-critical{--vsa-c:#ff4d6d}.vsa-toast.sev-warning{--vsa-c:#ffd23f}.vsa-toast.sev-info{--vsa-c:#ff2a32}
 @keyframes vsaIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.vsa-bell.ring i,.vsa-toast{animation:none}}
 </style>

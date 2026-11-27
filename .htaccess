@@ -20,3 +20,5 @@
     Deny from all
   </IfModule>
 </Files>
+
+ErrorDocument 404 /VibeStream/404.php

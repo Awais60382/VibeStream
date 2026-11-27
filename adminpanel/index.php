@@ -14,6 +14,7 @@ require_once __DIR__ . '/../report-helpers.php';
 require_once __DIR__ . '/../avatar.php';
 include_once __DIR__ . '/../vip-badge.php';
 require_once __DIR__ . '/../upload-failure-store.php';
+require_once __DIR__ . '/../premium-popup.php';
 
 $USERS_TABLE = 'users';
 
@@ -25,34 +26,73 @@ if (isset($_GET['live'])) {
     require __DIR__ . '/dashboard-live.php';
 }
 require __DIR__ . '/dashboard-data.php';
+
+/* --- Signups today (added for dashboard feature) --- */
+$vsdSignupsToday = null;
+if (isset($pdo) && $pdo instanceof PDO) {
+    try {
+        $vsdStCols = vs_cols($pdo, $USERS_TABLE);
+        $vsdStDate = $vsdStCols ? vs_pick($vsdStCols, ['created_at','joined_at','registered_at','date_joined','created_on','reg_date']) : null;
+        if ($vsdStDate) {
+            $vsdStmt = $pdo->prepare('SELECT COUNT(*) FROM ' . vs_q($USERS_TABLE) . ' WHERE DATE(' . vs_q($vsdStDate) . ') = CURDATE()');
+            $vsdStmt->execute();
+            $vsdSignupsToday = (int)$vsdStmt->fetchColumn();
+        }
+    } catch (Throwable $e) {}
+}
+
 if (isset($_GET['download'])) {
     require __DIR__ . '/dashboard-export.php';
 }
 
 
 include "header.php";
+$vsDashboardPremiumUser = trim((string)($_SESSION['username'] ?? $_SESSION['AdminSession'] ?? ''));
+echo vs_premium_popup_html(
+    $vsDashboardPremiumUser,
+    vs_premium_popup_eligible($vsDashboardPremiumUser, true),
+    '../premium.php'
+);
 require __DIR__ . '/dashboard-overview-data.php';
 ?>
       <link rel="stylesheet" href="./assets/css/vs-neon.css?v=4">
-      <link rel="stylesheet" href="./assets/css/vs-dashboard.css?v=5">
+      <link rel="stylesheet" href="./assets/css/vs-dashboard.css?v=7">
       <link rel="stylesheet" href="./assets/css/vs-dashboard-theme.css?v=1">
       <style>
-/* ===== NEON THEME (dark + light) - same look as creator-analytics.php ===== */
+/* ===== Dashboard theme tokens ===== */
 html:not([data-bs-theme="light"]):not([data-theme="light"]){
-  --nx-cyan:#00e5ff;--nx-pink:#ff2e93;--nx-violet:#8a5cff;--nx-green:#22e58a;--nx-amber:#ffd23f;--nx-red:#ff4d6d;
-  --nx-cyan-rgb:0,229,255;--nx-pink-rgb:255,46,147;--nx-violet-rgb:138,92,255;--nx-green-rgb:34,229,138;--nx-amber-rgb:255,210,63;--nx-red-rgb:255,77,109;
-  --nx-cyan-ink:#00e5ff;--nx-pink-ink:#ff7ac0;--nx-muted:#8f9bd0;
-  --nx-text:#eaf0ff;--nx-card:rgba(10,13,31,.88);--nx-solid:#0a0d1f;--nx-field:rgba(10,13,31,.9);
-  --nx-track:#05060f;--nx-active:#fff;
-  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(138,92,255,.16),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,229,255,.10),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.08),transparent 70%),#05060f;
+  --nx-cyan:#ff2a32;--nx-pink:#ff2a32;--nx-violet:#b50d16;--nx-green:#22e58a;--nx-amber:#ffd23f;--nx-red:#ff4d6d;
+  --nx-cyan-rgb:255,42,50;--nx-pink-rgb:255,42,50;--nx-violet-rgb:181,13,22;--nx-green-rgb:34,229,138;--nx-amber-rgb:255,210,63;--nx-red-rgb:255,42,50;
+  --nx-cyan-ink:#ff2a32;--nx-pink-ink:#ff2a32;--nx-muted:#aaaab4;
+  --nx-text:#f5f5f7;--nx-card:#16161a;--nx-solid:#16161a;--nx-field:#202027;
+  --nx-track:#0f0f0f;--nx-active:#fff;
+  --nx-page:#0f0f0f;
+  --vn-page:var(--nx-page);--vn-card:var(--nx-card);--vn-card2:var(--nx-field);
+  --vn-line:rgba(var(--nx-violet-rgb),.4);--vn-line-soft:rgba(var(--nx-violet-rgb),.24);
+  --vn-shadow:0 0 26px -10px rgba(var(--nx-violet-rgb),.55);
+  --vn-text:var(--nx-text);--vn-strong:var(--nx-text);--vn-muted:var(--nx-muted);
+  --vn-cyan:var(--nx-cyan);--vn-cyan-rgb:var(--nx-cyan-rgb);--vn-pink:var(--nx-pink);--vn-pink-rgb:var(--nx-pink-rgb);--vn-violet:var(--nx-violet);--vn-violet-rgb:var(--nx-violet-rgb);
+  --vn-green:var(--nx-green);--vn-green-rgb:var(--nx-green-rgb);--vn-accent:var(--nx-violet);--vn-accent2:var(--nx-cyan);
+  --vn-iconbox:rgba(var(--nx-violet-rgb),.14);--vn-backdrop:none;
+  --vn-btn-bg:rgba(var(--nx-violet-rgb),.12);--vn-btn-hover:rgba(var(--nx-cyan-rgb),.12);--vn-btn-text:var(--nx-text);
+  --vn-row-hover:rgba(var(--nx-cyan-rgb),.07);--vn-thead-bg:rgba(var(--nx-violet-rgb),.12);
 }
 html[data-bs-theme="light"],html[data-theme="light"]{
-  --nx-cyan:#00b8e6;--nx-pink:#ff2e93;--nx-violet:#7c4dff;--nx-green:#0fb86a;--nx-amber:#f59e0b;--nx-red:#e11d63;
-  --nx-cyan-rgb:0,184,230;--nx-pink-rgb:255,46,147;--nx-violet-rgb:124,77,255;--nx-green-rgb:15,184,106;--nx-amber-rgb:245,158,11;--nx-red-rgb:225,29,99;
-  --nx-cyan-ink:#0086b3;--nx-pink-ink:#d4147a;--nx-muted:#55608f;
-  --nx-text:#0b1030;--nx-card:#ffffff;--nx-solid:#ffffff;--nx-field:#ffffff;
-  --nx-track:#eceffd;--nx-active:#0b1030;
-  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(124,77,255,.14),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,184,230,.14),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.10),transparent 70%),#f4f6ff;
+  --nx-cyan:#ff2a32;--nx-pink:#ff2a32;--nx-violet:#b50d16;--nx-green:#0fb86a;--nx-amber:#f59e0b;--nx-red:#e11d63;
+  --nx-cyan-rgb:255,42,50;--nx-pink-rgb:255,42,50;--nx-violet-rgb:181,13,22;--nx-green-rgb:15,184,106;--nx-amber-rgb:245,158,11;--nx-red-rgb:223,23,31;
+  --nx-cyan-ink:#d80e18;--nx-pink-ink:#d80e18;--nx-muted:#666671;
+  --nx-text:#17171c;--nx-card:#ffffff;--nx-solid:#ffffff;--nx-field:#ffffff;
+  --nx-track:#f5f6fa;--nx-active:#17171c;
+  --nx-page:#f5f6fa;
+  --vn-page:var(--nx-page);--vn-card:var(--nx-card);--vn-card2:var(--nx-field);
+  --vn-line:rgba(var(--nx-violet-rgb),.28);--vn-line-soft:rgba(var(--nx-violet-rgb),.16);
+  --vn-shadow:0 0 20px -12px rgba(var(--nx-violet-rgb),.3);
+  --vn-text:var(--nx-text);--vn-strong:var(--nx-text);--vn-muted:var(--nx-muted);
+  --vn-cyan:var(--nx-cyan);--vn-cyan-rgb:var(--nx-cyan-rgb);--vn-pink:var(--nx-pink);--vn-pink-rgb:var(--nx-pink-rgb);--vn-violet:var(--nx-violet);--vn-violet-rgb:var(--nx-violet-rgb);
+  --vn-green:var(--nx-green);--vn-green-rgb:var(--nx-green-rgb);--vn-accent:var(--nx-violet);--vn-accent2:var(--nx-cyan);
+  --vn-iconbox:rgba(var(--nx-violet-rgb),.1);--vn-backdrop:none;
+  --vn-btn-bg:rgba(var(--nx-violet-rgb),.08);--vn-btn-hover:rgba(var(--nx-cyan-rgb),.1);--vn-btn-text:var(--nx-text);
+  --vn-row-hover:rgba(var(--nx-cyan-rgb),.06);--vn-thead-bg:rgba(var(--nx-violet-rgb),.08);
 }
 html body{background:var(--nx-page);background-attachment:fixed}
 html body ::-webkit-scrollbar{width:10px;height:10px}
@@ -62,8 +102,22 @@ html body ::selection{background:rgba(var(--nx-pink-rgb),.4);color:var(--nx-text
 
 /* dashboard (index) */
 html body #vsdPage .vsd-card{background:var(--nx-card);border:1px solid rgba(var(--nx-violet-rgb),.4);box-shadow:0 0 26px -10px rgba(var(--nx-violet-rgb),.55);transition:box-shadow .18s ease,border-color .18s ease}
+html body #vsdPage .vsd-card.vsd-hello{background:transparent!important;border:0!important;box-shadow:none!important}
 html body #vsdPage .vsd-card:hover{border-color:var(--nx-cyan);box-shadow:0 0 26px -4px rgba(var(--nx-cyan-rgb),.55),0 0 50px -16px rgba(var(--nx-violet-rgb),.55)}
 html body #vsdPage .vsd-hello h1{text-shadow:0 0 18px rgba(var(--nx-violet-rgb),.7)}
+html body #vsdPage #vsHelloExtra{margin:4px 0 0;color:var(--nx-muted);font-size:.84rem}
+html body #vsdPage #vsHelloMotiv{margin:6px 0 0;font-size:.82rem;color:var(--nx-green)}
+html body #vsdPage .vsd-today-badge{display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:2px 9px;border-radius:999px;background:rgba(var(--nx-green-rgb),.15);color:var(--nx-green);font-size:.72rem;font-weight:700}
+html body #vsdPage .vsd-sparkline{display:block;margin-top:6px;width:100%;height:22px;overflow:visible}
+#vsKbModal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center}
+#vsKbModal.open{display:flex}
+#vsKbModal .vsKbBox{background:var(--nx-card);border:1px solid rgba(var(--nx-cyan-rgb),.5);border-radius:16px;padding:24px 28px;min-width:280px;max-width:380px;box-shadow:0 0 40px -6px rgba(var(--nx-cyan-rgb),.5)}
+#vsKbModal h3{margin:0 0 14px;font-size:1rem;color:var(--nx-text)}
+#vsKbModal table{width:100%;border-collapse:collapse;font-size:.84rem}
+#vsKbModal td{padding:5px 8px;color:var(--nx-text)}
+#vsKbModal td:first-child{font-family:monospace;background:rgba(var(--nx-violet-rgb),.18);border-radius:6px;text-align:center;width:36px;color:var(--nx-cyan-ink);font-weight:700}
+#vsKbModal .vsKbClose{margin-top:16px;width:100%;padding:7px;border:1px solid rgba(var(--nx-cyan-rgb),.4);border-radius:8px;background:rgba(var(--nx-cyan-rgb),.08);color:var(--nx-text);cursor:pointer;font-size:.84rem}
+#vsKbHint{position:fixed;bottom:20px;right:20px;z-index:999;width:34px;height:34px;border-radius:50%;background:rgba(var(--nx-violet-rgb),.18);border:1px solid rgba(var(--nx-cyan-rgb),.4);color:var(--nx-cyan-ink);font-size:.85rem;font-weight:700;display:grid;place-items:center;cursor:pointer;box-shadow:0 0 14px -3px rgba(var(--nx-cyan-rgb),.4)}
 html body #vsdPage .vsd-head h2,html body #vsdPage .vsd-head h3{text-shadow:0 0 12px rgba(var(--nx-violet-rgb),.5)}
 html body #vsdPage .vsd-btn{background:rgba(var(--nx-violet-rgb),.16);color:var(--nx-text);border:1px solid rgba(var(--nx-violet-rgb),.55);transition:box-shadow .18s ease,border-color .18s ease,background .18s ease}
 html body #vsdPage .vsd-btn:hover,html body #vsdPage .vsd-btn:focus{background:rgba(var(--nx-cyan-rgb),.12);color:var(--nx-text);border-color:var(--nx-cyan);box-shadow:0 0 16px rgba(var(--nx-cyan-rgb),.55)}
@@ -87,13 +141,6 @@ html body #vsdPage .dropdown-menu{background:var(--nx-solid);border:1px solid rg
 html body #vsdPage .dropdown-item{color:var(--nx-text)}
 html body #vsdPage .dropdown-item:hover,html body #vsdPage .dropdown-item:focus{background:rgba(var(--nx-cyan-rgb),.12);color:var(--nx-text)}
 html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),.35)}
-#vsdPage .vsd-featured-creator{display:flex;align-items:center;gap:14px;margin-top:14px;padding:14px 18px;border-color:rgba(var(--nx-amber-rgb),.48);background:linear-gradient(110deg,rgba(var(--nx-amber-rgb),.1),var(--nx-card) 48%)}
-#vsdPage .vsd-featured-creator .vsd-featured-trophy{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:12px;background:rgba(var(--nx-amber-rgb),.16);color:var(--nx-amber);font-size:1.35rem}
-#vsdPage .vsd-featured-copy{display:flex;flex:1;flex-direction:column;min-width:0;gap:3px}
-#vsdPage .vsd-featured-copy small{color:var(--vsd-muted)}
-#vsdPage .vsd-featured-links{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-#vsdPage .vsd-featured-links a{color:var(--nx-cyan-ink);font-size:.82rem;font-weight:600}
-#vsdPage .vsd-featured-links a:hover{text-decoration:underline}
 #vsdPage .vsd-plwrap{position:relative}
 #vsdPage .vsd-pltip{position:absolute;top:12px;left:0;pointer-events:none;z-index:5;min-width:170px;padding:10px 12px;border-radius:12px;font-size:.8rem;line-height:1.5;background:rgba(10,13,31,.96);color:#eaf0ff;border:1px solid rgba(var(--nx-cyan-rgb),.55);box-shadow:0 0 24px -4px rgba(var(--nx-cyan-rgb),.55);opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s}
 #vsdPage .vsd-pltip.show{opacity:1;transform:none}
@@ -142,12 +189,18 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
 
           <!-- Greeting -->
           <section class="vsd-card vsd-hello" aria-label="Welcome">
-            <span class="vsd-wave" aria-hidden="true">&#128075;</span>
+            <span class="vsd-wave" aria-hidden="true"></span>
             <div>
-              <h1><span id="vsdGreet"><?php echo vs_e($vsdGreet); ?></span>, <?php echo vs_e($vsdName); ?></h1>
-              <p>Here's what's happening with your platform today.</p>
+              <h1><span id="vsHelloText"><?php echo vs_e($vsdGreet); ?></span>, <?php echo vs_e($vsdName); ?><span id="vsHelloMark"><?php echo $vsdGreetingQuestion ? '?' : ''; ?></span> <i class="bi bi-crown-fill" aria-hidden="true"></i></h1>
+              <p id="vsHelloMsg"><?php echo vs_e($vsdGreetingMessage); ?></p>
+              <p id="vsHelloExtra"></p>
+              <span id="vsdGreet" hidden></span>
             </div>
             <div class="vsd-hello-right">
+              <div class="vsd-date">
+                <i class="bi bi-calendar-check" aria-hidden="true"></i>
+                <div><div id="vsdDate"><?php echo vs_e(date('M j, Y')); ?></div><div id="vsdTime"><?php echo vs_e(date('g:i A')); ?></div></div>
+              </div>
               <div class="dropdown">
                 <button class="vsd-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-download" aria-hidden="true"></i> Export</button>
                 <ul class="dropdown-menu dropdown-menu-end">
@@ -160,10 +213,6 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                 </ul>
               </div>
               <a class="vsd-btn" href="report.php"><i class="bi bi-file-earmark-bar-graph" aria-hidden="true"></i> Create Report</a>
-              <div class="vsd-date">
-                <i class="bi bi-calendar-check" aria-hidden="true"></i>
-                <div><div id="vsdDate"><?php echo vs_e(date('M j, Y')); ?></div><div id="vsdTime"><?php echo vs_e(date('g:i A')); ?></div></div>
-              </div>
             </div>
           </section>
 
@@ -209,30 +258,6 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                 ];
             }
           ?>
-          <?php if ($vsdAdminAlerts): ?>
-            <section class="vsd-card vsd-admin-alerts mt-3" aria-label="Admin alerts">
-              <div class="vsd-head">
-                <span class="vsd-hico plain"><i class="bi bi-bell-fill" aria-hidden="true"></i></span>
-                <div>
-                  <h2>Admin Alerts</h2>
-                  <p class="vsd-sub">Queues and system checks that may need attention</p>
-                </div>
-              </div>
-              <div class="vsd-admin-alert-grid">
-                <?php foreach ($vsdAdminAlerts as $alert): ?>
-                  <a class="vsd-admin-alert" data-tone="<?php echo vs_e($alert['tone']); ?>" href="<?php echo vs_e($alert['href']); ?>">
-                    <span class="vsd-admin-alert-icon" aria-hidden="true"><i class="bi <?php echo vs_e($alert['icon']); ?>"></i></span>
-                    <span class="vsd-admin-alert-copy">
-                      <strong><?php echo vs_e($alert['title']); ?></strong>
-                      <small><?php echo vs_e($alert['message']); ?></small>
-                    </span>
-                    <span class="vsd-admin-alert-value"><?php echo vs_e($alert['value']); ?></span>
-                  </a>
-                <?php endforeach; ?>
-              </div>
-            </section>
-          <?php endif; ?>
-
           <!-- Stat cards -->
           <?php
             $vsdFmt = static function ($n) use ($vsdShort): string {
@@ -264,25 +289,32 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
             <?php endforeach; ?>
           </section>
 
-          <?php if (!empty($vsdCreators[0])): $featuredCreator = $vsdCreators[0]; ?>
-            <section class="vsd-card vsd-featured-creator" aria-label="Top creator by views">
-              <span class="vsd-featured-trophy" aria-hidden="true"><i class="bi bi-trophy-fill"></i></span>
-              <?php echo $vsdAvatar((string)$featuredCreator['name'], 48); ?>
-              <div class="vsd-featured-copy">
-                <small>Top Creator by views</small>
-                <strong><?php echo vs_e($featuredCreator['name']); ?></strong>
-                <small><?php echo vs_e($vsdShort((int)$featuredCreator['views'])); ?> views &bull; <?php echo number_format((int)$featuredCreator['total']); ?> uploads</small>
-              </div>
-              <div class="vsd-featured-links">
-                <a href="../profile.php?u=<?php echo rawurlencode((string)$featuredCreator['name']); ?>">View channel</a>
-                <a href="top-creators.php">All creators</a>
-              </div>
-            </section>
-          <?php endif; ?>
-
           <div class="vsd-grid mt-3">
             <!-- LEFT column -->
             <div class="vsd-main">
+              <?php if ($vsdAdminAlerts): ?>
+                <section class="vsd-card vsd-admin-alerts" aria-label="Admin alerts">
+                  <div class="vsd-head">
+                    <span class="vsd-hico plain"><i class="bi bi-bell-fill" aria-hidden="true"></i></span>
+                    <div>
+                      <h2>Admin Alerts</h2>
+                      <p class="vsd-sub">Queues and system checks that may need attention</p>
+                    </div>
+                  </div>
+                  <div class="vsd-admin-alert-grid">
+                    <?php foreach ($vsdAdminAlerts as $alert): ?>
+                      <a class="vsd-admin-alert" data-tone="<?php echo vs_e($alert['tone']); ?>" href="<?php echo vs_e($alert['href']); ?>">
+                        <span class="vsd-admin-alert-icon" aria-hidden="true"><i class="bi <?php echo vs_e($alert['icon']); ?>"></i></span>
+                        <span class="vsd-admin-alert-copy">
+                          <strong><?php echo vs_e($alert['title']); ?></strong>
+                          <small><?php echo vs_e($alert['message']); ?></small>
+                        </span>
+                        <span class="vsd-admin-alert-value"><?php echo vs_e($alert['value']); ?></span>
+                      </a>
+                    <?php endforeach; ?>
+                  </div>
+                </section>
+              <?php endif; ?>
 
               <div class="vsd-mid">
                 <!-- Platform growth -->
@@ -294,9 +326,9 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                       <p class="vsd-sub">Users, uploads and views over the last 7 days</p>
                     </div>
                     <div class="vsd-legend">
-                      <span><i style="background:#a855f7"></i>Users</span>
-                      <span><i style="background:#3b82f6"></i>Uploads</span>
-                      <span title="Views are counted on the day the video or short was uploaded"><i style="background:#22e58a"></i>Views</span>
+                      <span><i style="background:#df171f"></i>Users</span>
+                      <span><i style="background:#b50d16"></i>Uploads</span>
+                      <span title="Views are counted on the day the video or short was uploaded"><i style="background:#ff6b73"></i>Views</span>
                     </div>
                   </div>
                   <div class="vsd-plwrap" id="vsdGrWrap">
@@ -305,6 +337,9 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                   </div>
                 </section>
 
+              </div>
+
+              <div class="vsd-lower">
                 <!-- Live online -->
                 <section class="vsd-card vsd-online" aria-label="Live online">
                   <div class="vsd-head">
@@ -315,12 +350,12 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                     <svg viewBox="0 0 168 168" aria-hidden="true">
                       <defs>
                         <linearGradient id="vsdRingG" x1="0" y1="0" x2="1" y2="1">
-                          <stop offset="0%" stop-color="#22e58a"/>
-                          <stop offset="50%" stop-color="#2f7bff"/>
-                          <stop offset="100%" stop-color="#8b5cf6"/>
+                          <stop offset="0%" stop-color="#df171f"/>
+                          <stop offset="50%" stop-color="#b50d16"/>
+                          <stop offset="100%" stop-color="#ff6b73"/>
                         </linearGradient>
                       </defs>
-                      <circle cx="84" cy="84" r="74" fill="none" stroke="rgba(90,125,255,.15)" stroke-width="10"/>
+                      <circle cx="84" cy="84" r="74" fill="none" stroke="rgba(128,128,128,.15)" stroke-width="10"/>
                       <circle cx="84" cy="84" r="74" fill="none" stroke="url(#vsdRingG)" stroke-width="10" stroke-linecap="round" stroke-dasharray="420 46"/>
                     </svg>
                     <div class="vsd-ring-c">
@@ -331,9 +366,6 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                   </div>
                   <div class="vsd-updated">Last updated: <span id="vsdUpdated"><?php echo vs_e(date('g:i A')); ?></span></div>
                 </section>
-              </div>
-
-
               <div class="vsd-two">
                 <?php if (isset($_GET['debug'])): ?>
                   <pre style="white-space:pre-wrap;font-size:.72rem;color:#cfd9ff;background:rgba(0,0,0,.35);padding:8px;border-radius:8px"><?php echo vs_e(print_r(['tables' => $vsdDebug, 'rows' => array_map(static function ($t) { return ['title' => $t['title'], 'type' => $t['type'], 'thumb_in_db' => $t['thumb_raw'], 'thumb_found' => $t['thumb'], 'video_in_db' => $t['video_raw'], 'video_found' => $t['video'], 'link' => $t['link']]; }, $vsdTop)], true)); ?></pre>
@@ -352,14 +384,14 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                       <div class="vsd-empty">No <?php echo vs_e(strtolower($sectionTitle)); ?> with view counts yet.</div>
                     <?php else: ?>
                     <ol class="vsd-top">
-                      <?php foreach ($section['items'] as $ti => $tp):
+                      <?php foreach (array_slice($section['items'], 0, 3) as $ti => $tp):
                           $share = $vsdTotalViews > 0 ? round($tp['views'] / $vsdTotalViews * 100, 1) : 0;
                       ?>
                         <li>
                           <span class="vsd-rank"><?php echo $ti + 1; ?></span>
                           <a class="vsd-thumb" <?php echo $tp['link'] !== '' ? 'href="' . vs_e($tp['link']) . '" target="_blank" rel="noopener"' : ''; ?> aria-label="Open <?php echo vs_e($tp['title']); ?>">
                             <?php if ($tp['video'] !== ''): ?>
-                              <video src="<?php echo vs_e($tp['video']); ?>#t=0.5" preload="metadata" muted playsinline tabindex="-1"></video>
+                              <video data-video-preview-src="<?php echo vs_e($tp['video']); ?>" poster="<?php echo vs_e($tp['thumb'] !== '' ? $tp['thumb'] : '../assets/branding/vibestream-logo-mark.png'); ?>" preload="none" muted playsinline tabindex="-1" aria-hidden="true"></video>
                             <?php endif; ?>
                             <?php if ($tp['thumb'] !== ''): ?>
                               <img src="<?php echo vs_e($tp['thumb']); ?>" alt="" loading="lazy" onerror="this.remove()">
@@ -390,22 +422,16 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                   <?php if (!$vsdAdmins): ?>
                     <div class="vsd-empty">No admin uploads found yet.</div>
                   <?php else: ?>
-                    <div class="table-responsive">
-                      <table class="vsd-tbl">
-                        <thead><tr><th>#</th><th>Admin</th><th>Videos</th><th>Shorts</th><th>Views</th></tr></thead>
-                        <tbody>
-                          <?php foreach ($vsdAdmins as $ai => $ad): ?>
-                            <tr>
-                              <td><?php echo $ai + 1; ?></td>
-                              <td><div class="vsd-who"><?php echo $vsdAvatar((string)$ad['name'], 34); ?><span class="n"><?php echo vs_e($ad['name']); ?></span></div></td>
-                              <td><?php echo (int)$ad['videos']; ?></td>
-                              <td><?php echo (int)$ad['shorts']; ?></td>
-                              <td><?php echo vs_e($vsdShort((int)$ad['views'])); ?></td>
-                            </tr>
-                          <?php endforeach; ?>
-                        </tbody>
-                      </table>
-                    </div>
+                    <ol class="vsd-top vsd-people">
+                      <?php foreach (array_slice($vsdAdmins, 0, 3) as $ai => $ad): ?>
+                        <li>
+                          <span class="vsd-rank"><?php echo $ai + 1; ?></span>
+                          <?php echo $vsdAvatar((string)$ad['name'], 30); ?>
+                          <span class="vsd-tx"><strong><?php echo vs_e($ad['name']); ?></strong><small><?php echo (int)$ad['videos']; ?> videos · <?php echo (int)$ad['shorts']; ?> shorts</small></span>
+                          <span class="vsd-person-value"><?php echo vs_e($vsdShort((int)$ad['views'])); ?></span>
+                        </li>
+                      <?php endforeach; ?>
+                    </ol>
                   <?php endif; ?>
                 </section>
 
@@ -414,27 +440,24 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                   <div class="vsd-head">
                     <span class="vsd-hico plain"><i class="bi bi-trophy-fill" aria-hidden="true"></i></span>
                     <h2>Top Creators</h2>
+                    <a class="vsd-viewall" href="top-creators.php">View all</a>
                   </div>
                   <?php if (!$vsdCreators): ?>
                     <div class="vsd-empty">No creator uploads found yet.</div>
                   <?php else: ?>
-                    <div class="table-responsive">
-                      <table class="vsd-tbl">
-                        <thead><tr><th>#</th><th>Creator</th><th>Uploads</th><th>Views</th></tr></thead>
-                        <tbody>
-                          <?php foreach ($vsdCreators as $ci => $creator): ?>
-                            <tr>
-                              <td><?php echo $ci + 1; ?></td>
-                              <td><div class="vsd-who"><?php echo $vsdAvatar((string)$creator['name'], 34); ?><span class="n"><?php echo vs_e($creator['name']); ?></span></div></td>
-                              <td><?php echo (int)$creator['total']; ?></td>
-                              <td><?php echo vs_e($vsdShort((int)$creator['views'])); ?></td>
-                            </tr>
-                          <?php endforeach; ?>
-                        </tbody>
-                      </table>
-                    </div>
+                    <ol class="vsd-top vsd-people">
+                      <?php foreach (array_slice($vsdCreators, 0, 3) as $ci => $creator): ?>
+                        <li>
+                          <span class="vsd-rank"><?php echo $ci + 1; ?></span>
+                          <?php echo $vsdAvatar((string)$creator['name'], 30); ?>
+                          <span class="vsd-tx"><strong><a href="../profile.php?u=<?php echo rawurlencode((string)$creator['name']); ?>"><?php echo vs_e($creator['name']); ?></a></strong><small><?php echo number_format((int)$creator['total']); ?> uploads</small></span>
+                          <span class="vsd-person-value"><?php echo vs_e($vsdShort((int)$creator['views'])); ?></span>
+                        </li>
+                      <?php endforeach; ?>
+                    </ol>
                   <?php endif; ?>
                 </section>
+              </div>
               </div>
             </div>
 
@@ -445,6 +468,7 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                 <div class="vsd-head">
                   <span class="vsd-hico plain"><i class="bi bi-lightning-charge-fill" aria-hidden="true"></i></span>
                   <h2>Live Activity Feed</h2>
+                  <span class="vsd-live-badge"><i aria-hidden="true"></i>Live</span>
                 </div>
                 <ul class="vsd-feed" id="vsdFeed">
                   <?php if (!$feed): ?>
@@ -476,7 +500,16 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
                   <ul class="vsd-feed">
                     <?php foreach ($vsdRecent as $ra): ?>
                       <li>
-                        <span class="vsd-fi t-<?php echo $ra['tone'] === 'blue' ? 'blue' : $ra['tone']; ?>"><i class="bi <?php echo $ra['icon']; ?>" aria-hidden="true"></i></span>
+                        <?php $activityAvatar = trim((string)($ra['avatar'] ?? '')); ?>
+                        <span class="vsd-fi t-<?php echo $ra['tone'] === 'blue' ? 'blue' : $ra['tone']; ?><?php echo $activityAvatar !== '' ? ' has-avatar' : ''; ?>">
+                          <?php if ($activityAvatar !== ''): ?>
+                            <?php $activityInitial = mb_strtoupper(mb_substr(trim((string)($ra['sub'] ?? 'A')), 1, 1)); ?>
+                            <span class="vsd-avatar-fallback" aria-hidden="true"><?php echo vs_e($activityInitial); ?></span>
+                            <img src="<?php echo vs_e($activityAvatar); ?>" alt="" loading="lazy" onerror="this.style.display='none'">
+                          <?php else: ?>
+                            <i class="bi <?php echo $ra['icon']; ?>" aria-hidden="true"></i>
+                          <?php endif; ?>
+                        </span>
                         <span class="vsd-tx"><strong><?php echo vs_e($ra['title']); ?></strong><small><?php echo vs_e($ra['sub']); ?></small></span>
                         <span class="vsd-time"><?php echo vs_e(date('Y-m-d', $ra['ts']) === date('Y-m-d') ? date('g:i A', $ra['ts']) : date('M j', $ra['ts'])); ?></span>
                       </li>
@@ -516,6 +549,7 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
 
   <script src="./assets/js/bootstrap.bundle.min.js"></script>
   <script src="./assets/js/main.js"></script>
+  <script src="../video-thumbnails.js?v=<?php echo (int)@filemtime(__DIR__ . '/../video-thumbnails.js'); ?>" defer></script>
   <script src="./assets/js/vs-dashboard.js?v=3"></script>
   <script>
   (function () {
@@ -525,7 +559,7 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
     if (!svg || !G.labels || G.labels.length < 2) { return; }
     var W = 640, L = 46, R = 14, n = G.labels.length;
     var band = document.getElementById('vsdGrBand'), dots = svg.querySelectorAll('.gpc');
-    var S = [['users', 'Users', '#a855f7'], ['uploads', 'Uploads', '#3b82f6'], ['views', 'Views', '#22e58a']];
+    var S = [['users', 'Users', '#df171f'], ['uploads', 'Uploads', '#b50d16'], ['views', 'Views', '#ff6b73']];
     function xAt(i) { return L + (W - L - R) * i / (n - 1); }
     function pct(k, i) { var b = Math.max(1, +G[k][0]); return (+G[k][i] - +G[k][0]) / b * 100; }
     function fmtPct(v) { var r = Math.round(v * 10) / 10; return (r > 0 ? '+' : '') + r + '%'; }
@@ -557,6 +591,99 @@ html body #vsdPage .dropdown-divider{border-top-color:rgba(var(--nx-violet-rgb),
     svg.addEventListener('pointermove', show);
     svg.addEventListener('pointerdown', show);
     svg.addEventListener('pointerleave', hide);
+  })();
+  </script>
+  <script>
+  /* Greeting that follows the time on the viewer's device */
+  (function () {
+    var title = document.getElementById('vsHelloText'),
+        mark  = document.getElementById('vsHelloMark'),
+        msg   = document.getElementById('vsHelloMsg'),
+        extra = document.getElementById('vsHelloExtra');
+    if (!title || !mark || !msg || !extra) { return; }
+
+    var periods = {
+      morning: {
+        title: 'Good morning',
+        messages: [
+          "A fresh day for your platform. Here's what's happening.",
+          "Rise and shine! Let's see what came in overnight.",
+          "A new day, new uploads. Here's your overview."
+        ],
+        tips: [
+          "☀️ Tip: start with open reports, then check new uploads.",
+          "☕ Tip: see what users did overnight in Recent Activity.",
+          "📅 Tip: check which scheduled videos are waiting to publish.",
+          "🩺 Tip: run a quick system check before the day gets busy."
+        ]
+      },
+      afternoon: {
+        title: 'Good afternoon',
+        messages: [
+          "Hope your day is going well. Here's the latest.",
+          "Halfway through the day. Let's check the numbers.",
+          "Time for a quick look at how your platform is doing."
+        ],
+        tips: [
+          "🚀 Tip: see which videos and shorts are leading.",
+          "📈 Tip: look at Platform Growth to spot changes this week.",
+          "💧 Tip: take a short break and drink some water.",
+          "🏆 Tip: visit Top Creators to see who is doing well."
+        ]
+      },
+      evening: {
+        title: 'Good evening',
+        messages: [
+          "Here's what's happening with your platform today.",
+          "The day is winding down. Let's see how it went.",
+          "Nice work today. Here's your evening overview."
+        ],
+        tips: [
+          "🌆 Tip: clear any pending reports before you call it a day.",
+          "📊 Tip: create a report to save today's numbers.",
+          "💾 Tip: export your activity list for your records.",
+          "👀 Tip: take one last look at new uploads."
+        ]
+      },
+      night: {
+        title: 'Still awake',
+        messages: [
+          "Burning the midnight oil? Here's a quick look.",
+          "It's late, but your platform never sleeps.",
+          "Night shift mode. Here's what's going on."
+        ],
+        tips: [
+          "🌙 Check the important things, then get some rest.",
+          "😴 Tip: the rest can wait until morning.",
+          "🔒 Tip: log out if you are on a shared computer.",
+          "🛌 Tip: good sleep helps you build better features tomorrow."
+        ]
+      }
+    };
+
+    // One new tip per page load: remember a counter in this browser
+    var load = Math.floor(Math.random() * 1000);
+    try {
+      var saved = parseInt(localStorage.getItem('vsTipCount'), 10);
+      if (!isNaN(saved)) { load = saved + 1; }
+      localStorage.setItem('vsTipCount', load);
+    } catch (e) {}
+
+    function update() {
+      var h = new Date().getHours();
+      var key = h >= 5 && h < 12 ? 'morning'
+              : h >= 12 && h < 17 ? 'afternoon'
+              : h >= 17 && h < 21 ? 'evening'
+              : 'night';
+      var p = periods[key];
+      title.textContent = p.title;
+      mark.textContent  = key === 'night' ? '?' : '';
+      msg.textContent   = p.messages[h % p.messages.length];
+      extra.textContent = p.tips[load % p.tips.length];
+    }
+
+    update();
+    setInterval(update, 60000);
   })();
   </script>
 </body>

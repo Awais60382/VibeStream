@@ -1,0 +1,234 @@
+/* =====================================================================
+   VibeStream - red + black theme (same colours as the Memberships page)
+   Put this file in the MAIN site folder (next to style.css / theme.css).
+   Load it by adding this as the FIRST line of theme.css:
+       @import url("red-theme.css");
+   It recolours the neon purple / cyan / pink to red + black on the main site.
+   The admin panel is left alone (every token rule skips pages that have .admin-sidebar).
+   Delete the @import line to go back to the old colours.
+   ===================================================================== */
+
+/* ---- two colour sets: dark (default) and light ---- */
+html, html[data-theme="dark"] {
+  --rt-red: #ff2a2a;
+  --rt-red2: #c40c0c;
+  --rt-rgb: 255, 42, 42;
+  --rt-ink: #ff7a7a;
+  --rt-bg: #0a0a0c;
+  --rt-s1: #121216;
+  --rt-s2: #1b1b21;
+  --rt-s3: #23232b;
+  --rt-line: #2b2b32;
+  --rt-text: #f5f5f7;
+  --rt-muted: #a9a9b4;
+  --rt-pop: rgba(14, 14, 18, .95);
+  --rt-field: rgba(12, 12, 16, .92);
+  --rt-gold: #ffc23d;
+}
+html[data-theme="light"] {
+  --rt-red: #e0151f;
+  --rt-red2: #a30c0c;
+  --rt-rgb: 224, 21, 31;
+  --rt-ink: #c4121b;
+  --rt-bg: #f6f6fa;
+  --rt-s1: #ffffff;
+  --rt-s2: #eeeef3;
+  --rt-s3: #e4e4eb;
+  --rt-line: #dcdce4;
+  --rt-text: #17171c;
+  --rt-muted: #5f6068;
+  --rt-pop: #ffffff;
+  --rt-field: #ffffff;
+  --rt-gold: #8a5a00;
+}
+
+/* ---- the site's own colour tokens (not on admin pages) ---- */
+html:not(:has(.admin-sidebar)) {
+  --bg: var(--rt-bg) !important;
+  --surface: var(--rt-s1) !important;
+  --surface-2: var(--rt-s2) !important;
+  --surface-3: var(--rt-s3) !important;
+  --text: var(--rt-text) !important;
+  --muted: var(--rt-muted) !important;
+  --border: var(--rt-line) !important;
+  --accent: var(--rt-red) !important;
+  --accent-hover: #ff5a52 !important;
+  --accent-soft: rgba(var(--rt-rgb), .16) !important;
+  --blue: var(--rt-ink) !important;
+  --neon-cyan: var(--rt-ink) !important;
+  --neon-pink: var(--rt-red) !important;
+  --neon-violet: var(--rt-red2) !important;
+}
+
+html:not(:has(.admin-sidebar)) body {
+  background:
+    radial-gradient(900px 480px at 8% -8%, rgba(var(--rt-rgb), .13), transparent 70%),
+    radial-gradient(800px 420px at 100% 0, rgba(255, 110, 40, .07), transparent 70%),
+    radial-gradient(700px 500px at 50% 110%, rgba(var(--rt-rgb), .08), transparent 70%),
+    var(--rt-bg) !important;
+  background-attachment: fixed !important;
+}
+
+/* ---- top bar ---- */
+html body .app-navbar,
+html body header.navbar {
+  background: color-mix(in srgb, var(--rt-bg) 88%, transparent) !important;
+  border-bottom: 1px solid rgba(var(--rt-rgb), .4) !important;
+  box-shadow: 0 1px 24px -8px rgba(var(--rt-rgb), .45) !important;
+}
+html body .brand {
+  background: linear-gradient(90deg, #ff8a4d, var(--rt-red) 55%, #ff3d7a) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  filter: drop-shadow(0 0 8px rgba(var(--rt-rgb), .5)) !important;
+}
+html body .nav-toggle span { background: var(--rt-red) !important; box-shadow: 0 0 6px rgba(var(--rt-rgb), .7) !important; }
+html body .nav-toggle:hover,
+html body .theme-toggle:hover,
+html body .vs-theme-toggle:hover { background: rgba(var(--rt-rgb), .14) !important; box-shadow: 0 0 14px rgba(var(--rt-rgb), .4) !important; }
+html:not([data-theme="light"]) body .theme-toggle svg { color: var(--rt-gold) !important; filter: drop-shadow(0 0 5px rgba(var(--rt-rgb), .6)) !important; }
+html[data-theme="light"] body .theme-toggle svg { color: var(--rt-red) !important; }
+html body .nav-link.active {
+  background: rgba(var(--rt-rgb), .16) !important;
+  color: var(--rt-ink) !important;
+  border-color: rgba(var(--rt-rgb), .55) !important;
+  box-shadow: 0 0 12px -2px rgba(var(--rt-rgb), .5) !important;
+}
+html body .create-btn,
+html body .sign-in-btn {
+  background: linear-gradient(180deg, var(--rt-red), var(--rt-red2)) !important;
+  color: #fff !important;
+  box-shadow: 0 0 16px -2px rgba(var(--rt-rgb), .6) !important;
+}
+html body #search-input {
+  background: var(--rt-field) !important;
+  border: 1px solid rgba(var(--rt-rgb), .5) !important;
+  color: var(--rt-text) !important;
+  box-shadow: 0 0 10px -2px rgba(var(--rt-rgb), .4) !important;
+}
+html body #search-input:focus {
+  border-color: var(--rt-red) !important;
+  box-shadow: 0 0 0 1px var(--rt-red), 0 0 20px rgba(var(--rt-rgb), .5) !important;
+}
+html body .user-badge-pill {
+  background: var(--rt-s1) !important;
+  border: 1px solid rgba(var(--rt-rgb), .5) !important;
+  box-shadow: 0 0 14px -3px rgba(var(--rt-rgb), .45) !important;
+}
+html body .logout-link:hover { color: var(--rt-red) !important; text-shadow: 0 0 10px rgba(var(--rt-rgb), .7) !important; }
+html body .nav-right .upload-btn.vs-create-btn:hover { border-color: var(--rt-red) !important; }
+
+/* ---- sidebar ---- */
+html body .app-sidebar {
+  background: linear-gradient(180deg, var(--rt-s1), var(--rt-bg)) !important;
+  border-right: 1px solid rgba(var(--rt-rgb), .3) !important;
+  box-shadow: 4px 0 28px -12px rgba(var(--rt-rgb), .4) !important;
+}
+html body .sidebar-link:hover {
+  background: rgba(var(--rt-rgb), .10) !important;
+  box-shadow: inset 3px 0 0 var(--rt-red), 0 0 16px -4px rgba(var(--rt-rgb), .5) !important;
+}
+html body .app-sidebar .sidebar-link.active { box-shadow: 0 0 18px -4px rgba(var(--rt-rgb), .55) !important; }
+html body .sidebar-heading { color: var(--rt-ink) !important; text-shadow: 0 0 8px rgba(var(--rt-rgb), .4) !important; }
+
+/* ---- scrollbars + text selection ---- */
+html:not(:has(.admin-sidebar)) ::-webkit-scrollbar-track { background: var(--rt-bg) !important; }
+html:not(:has(.admin-sidebar)) ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--rt-red), var(--rt-red2)) !important; border-radius: 8px; }
+html:not(:has(.admin-sidebar)) ::selection { background: rgba(var(--rt-rgb), .4) !important; color: #fff !important; }
+
+/* ---- Watch page ---- */
+html body .video-wrapper {
+  border: 1px solid rgba(var(--rt-rgb), .5) !important;
+  box-shadow: 0 0 28px -6px rgba(var(--rt-rgb), .5), 0 0 60px -20px rgba(var(--rt-rgb), .5) !important;
+}
+html body .video-title { text-shadow: 0 0 14px rgba(var(--rt-rgb), .3) !important; }
+html body .channel-avatar { box-shadow: 0 0 0 2px rgba(var(--rt-rgb), .8), 0 0 12px rgba(var(--rt-rgb), .5) !important; }
+html body .subscribe-btn,
+html body .subscribe-btn:hover {
+  background: linear-gradient(180deg, var(--rt-red), var(--rt-red2)) !important;
+  color: #fff !important;
+  border: 0 !important;
+  box-shadow: 0 0 18px rgba(var(--rt-rgb), .5) !important;
+}
+html body .subscribe-btn.subscribed,
+html body .subscribe-btn.on {
+  background: var(--rt-s2) !important;
+  color: var(--rt-text) !important;
+  border: 1px solid rgba(var(--rt-rgb), .5) !important;
+  box-shadow: 0 0 14px rgba(var(--rt-rgb), .3) !important;
+}
+html body .btn-pill,
+html body .like-dislike-group {
+  background: var(--rt-s2) !important;
+  border: 1px solid rgba(var(--rt-rgb), .35) !important;
+  color: var(--rt-text) !important;
+}
+html body .btn-pill:hover {
+  background: rgba(var(--rt-rgb), .14) !important;
+  border-color: var(--rt-red) !important;
+  box-shadow: 0 0 14px rgba(var(--rt-rgb), .4) !important;
+}
+html body .like-dislike-group button:hover:not(:disabled) { background: rgba(var(--rt-rgb), .14) !important; }
+html body .like-dislike-group .divider { background: rgba(var(--rt-rgb), .45) !important; }
+html body .like-dislike-group #like-btn.active { background: rgba(var(--rt-rgb), .18) !important; color: var(--rt-ink) !important; text-shadow: 0 0 10px rgba(var(--rt-rgb), .7) !important; }
+html body .like-dislike-group #dislike-btn.active { background: rgba(255, 194, 61, .14) !important; color: var(--rt-gold) !important; text-shadow: none !important; }
+html body .description-box {
+  background: var(--rt-s1) !important;
+  border: 1px solid rgba(var(--rt-rgb), .3) !important;
+  box-shadow: 0 0 22px -10px rgba(var(--rt-rgb), .5) !important;
+}
+html body .comment-input-line:focus { border-bottom-color: var(--rt-red) !important; box-shadow: 0 6px 14px -8px rgba(var(--rt-rgb), .8) !important; }
+html body .comment-submit-btn { background: linear-gradient(180deg, var(--rt-red), var(--rt-red2)) !important; color: #fff !important; border: 0 !important; box-shadow: 0 0 14px rgba(var(--rt-rgb), .45) !important; }
+html body .comment-submit-btn:disabled { background: var(--rt-s2) !important; color: var(--rt-muted) !important; box-shadow: none !important; }
+html body .comment-author { color: var(--rt-ink) !important; }
+html body .autoplay-toggle input:checked + .autoplay-track { background: var(--rt-red) !important; box-shadow: 0 0 10px rgba(var(--rt-rgb), .7) !important; }
+html body .upnext { background: var(--rt-pop) !important; border: 1px solid rgba(var(--rt-rgb), .45) !important; box-shadow: 0 0 20px -6px rgba(var(--rt-rgb), .5) !important; }
+html body .upnext button.primary { background: linear-gradient(180deg, var(--rt-red), var(--rt-red2)) !important; color: #fff !important; box-shadow: 0 0 12px rgba(var(--rt-rgb), .5) !important; }
+html body .video-card.compact .thumbnail { border: 1px solid rgba(var(--rt-rgb), .25) !important; }
+html body .video-card.compact:hover .thumbnail { border-color: var(--rt-red) !important; box-shadow: 0 0 20px rgba(var(--rt-rgb), .5) !important; }
+html body .video-card.compact:hover .video-title { color: var(--rt-ink) !important; text-shadow: 0 0 10px rgba(var(--rt-rgb), .4) !important; }
+html body .toast { border: 1px solid rgba(var(--rt-rgb), .6) !important; box-shadow: 0 0 22px rgba(var(--rt-rgb), .4) !important; }
+html body .vs-pop,
+html body .vs-help-box { background: var(--rt-pop) !important; color: var(--rt-text) !important; border: 1px solid rgba(var(--rt-rgb), .45) !important; box-shadow: 0 0 20px -6px rgba(var(--rt-rgb), .5) !important; }
+
+/* ---- Shorts page ---- */
+html body .player-card {
+  border: 1px solid rgba(var(--rt-rgb), .55) !important;
+  box-shadow: 0 0 30px -6px rgba(var(--rt-rgb), .5), 0 0 70px -20px rgba(var(--rt-rgb), .5) !important;
+}
+html body .short-overlay .avatar { box-shadow: 0 0 0 2px rgba(var(--rt-rgb), .8), 0 0 12px rgba(var(--rt-rgb), .55) !important; }
+html body .short-title { text-shadow: 0 0 12px rgba(var(--rt-rgb), .6) !important; }
+html body .icon-btn .circle,
+html body .nav-btn .circle,
+html body .stat-item .circle {
+  border: 1px solid rgba(var(--rt-rgb), .5) !important;
+  box-shadow: 0 0 12px -2px rgba(var(--rt-rgb), .55) !important;
+}
+html body .icon-btn:hover .circle,
+html body .nav-btn:hover .circle { border-color: var(--rt-red) !important; background: rgba(var(--rt-rgb), .16) !important; box-shadow: 0 0 18px rgba(var(--rt-rgb), .7) !important; }
+html body .icon-btn.liked .circle { border-color: var(--rt-red) !important; box-shadow: 0 0 20px rgba(var(--rt-rgb), .75) !important; }
+html body .actions-column .icon-btn.on .circle { color: var(--rt-ink) !important; background: rgba(var(--rt-rgb), .16) !important; border-color: var(--rt-red) !important; }
+html body .unmute-pill { border: 1px solid rgba(var(--rt-rgb), .6) !important; box-shadow: 0 0 16px rgba(var(--rt-rgb), .45) !important; }
+html body .comments-box { background: var(--rt-pop) !important; border: 1px solid rgba(var(--rt-rgb), .5) !important; box-shadow: 0 0 40px -8px rgba(var(--rt-rgb), .5) !important; }
+html body .comment-send input { background: var(--rt-field) !important; border: 1px solid rgba(var(--rt-rgb), .45) !important; color: var(--rt-text) !important; }
+html body .comment-send input:focus { border-color: var(--rt-red) !important; box-shadow: 0 0 16px rgba(var(--rt-rgb), .45) !important; }
+html body .comment-send button { background: linear-gradient(180deg, var(--rt-red), var(--rt-red2)) !important; color: #fff !important; border: 0 !important; box-shadow: 0 0 14px rgba(var(--rt-rgb), .5) !important; }
+html body .short-progress i { background: var(--rt-red) !important; }
+
+/* ---- buttons that use the accent colour on login / upload / profile pages ---- */
+html body .submit-btn { background: linear-gradient(180deg, var(--rt-red), var(--rt-red2)) !important; color: #fff !important; }
+html body .submit-btn:hover { filter: brightness(1.1); }
+html body .form-group input:focus,
+html body .form-group textarea:focus,
+html body .auth-card .form-group input:focus { border-color: var(--rt-red) !important; box-shadow: 0 0 0 3px rgba(var(--rt-rgb), .2) !important; }
+html body .auth-eyebrow, html body .auth-footer a { color: var(--rt-ink) !important; }
+html body .chip.active, html body .cat-chip.active { box-shadow: 0 0 14px -2px rgba(var(--rt-rgb), .5) !important; }
+html body .nav-bell:hover, html body .nav-bell[aria-expanded="true"],
+html body .nav-right .vs-user-toggle:hover, html body .nav-right .vs-user-toggle[aria-expanded="true"],
+html body .nav-right .vs-neon-toggle:hover { border-color: var(--rt-red) !important; }
+html body .nav-right .vs-neon-toggle[aria-pressed="true"] { color: var(--rt-red) !important; border-color: rgba(var(--rt-rgb), .5) !important; }
+
+/* ---- keep the VIP / premium gold exactly as it was ---- */
+html body [data-vs-upgrade] { background: linear-gradient(135deg, #f5b942, #ff8a3d) !important; color: #2a1700 !important; box-shadow: none !important; }
+html body .nav-link.nav-premium { color: #ffc933 !important; }

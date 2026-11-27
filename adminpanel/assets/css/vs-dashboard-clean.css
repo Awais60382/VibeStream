@@ -1,0 +1,143 @@
+/* Flat red dashboard palette; loaded after the legacy dashboard theme rules. */
+html[data-theme="light"] #vsdPage,
+html[data-bs-theme="light"] #vsdPage {
+  --vsd-clean-text: #17171c;
+  --vsd-clean-muted: #666671;
+  --vsd-clean-border: #e1e1e8;
+  --vsd-clean-surface: #ffffff;
+  --vsd-clean-subtle: #f7f7f9;
+  --vsd-clean-accent: #df171f;
+}
+
+html[data-theme="dark"] #vsdPage,
+html[data-bs-theme="dark"] #vsdPage {
+  --vsd-clean-text: #f5f5f7;
+  --vsd-clean-muted: #aaaab4;
+  --vsd-clean-border: #303036;
+  --vsd-clean-surface: #16161a;
+  --vsd-clean-subtle: #202027;
+  --vsd-clean-accent: #ff2a32;
+}
+
+html[data-theme="light"] main.dashboard-content,
+html[data-bs-theme="light"] main.dashboard-content {
+  background: #f5f6fa !important;
+}
+
+html[data-theme="dark"] main.dashboard-content,
+html[data-bs-theme="dark"] main.dashboard-content {
+  background: #0f0f0f !important;
+}
+
+#vsdPage,
+#vsdPage .vsd-head h2,
+#vsdPage .vsd-hello h1,
+#vsdPage .vsd-stat-label,
+#vsdPage .vsd-stat-val,
+#vsdPage .vsd-tx strong,
+#vsdPage .vsd-tx strong a {
+  color: var(--vsd-clean-text) !important;
+}
+
+#vsdPage .vsd-card,
+#vsdPage .vsd-admin-alert,
+#vsdPage .vsd-command-tile,
+#vsdPage .vsd-date,
+#vsdPage .vsd-btn,
+#vsdPage .vsd-dropdown,
+#vsdPage .dropdown-menu {
+  background: var(--vsd-clean-surface) !important;
+  border-color: var(--vsd-clean-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+#vsdPage .vsd-card:hover,
+#vsdPage .vsd-admin-alert:hover,
+#vsdPage .vsd-command-tile:hover,
+#vsdPage .vsd-btn:hover {
+  border-color: var(--vsd-clean-accent) !important;
+  background: var(--vsd-clean-subtle) !important;
+  box-shadow: none !important;
+}
+
+#vsdPage .vsd-hello p,
+#vsdPage .vsd-sub,
+#vsdPage .vsd-updated,
+#vsdPage .vsd-legend span,
+#vsdPage .vsd-stat small,
+#vsdPage .vsd-tx small,
+#vsdPage .vsd-time,
+#vsdPage .vsd-empty,
+#vsdPage .vsd-admin-alert-copy small {
+  color: var(--vsd-clean-muted) !important;
+}
+
+#vsdPage .vsd-viewall,
+#vsdPage .vsd-share,
+#vsdPage .vsd-admin-alert-value,
+#vsdPage .vsd-command-tile i,
+#vsdPage .vsd-hico,
+#vsdPage .vsd-date i {
+  color: var(--vsd-clean-accent) !important;
+  text-shadow: none !important;
+}
+
+#vsdPage .vsd-ico,
+#vsdPage .vsd-hico:not(.plain),
+#vsdPage .vsd-admin-alert-icon {
+  background: var(--vsd-clean-accent) !important;
+  border-color: var(--vsd-clean-accent) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+#vsdPage .vsd-ico.t-purple,
+#vsdPage .vsd-ico.t-red,
+#vsdPage .vsd-ico.t-green,
+#vsdPage .vsd-ico.t-violet,
+#vsdPage .vsd-ico.t-blue,
+#vsdPage .vsd-ico.t-indigo {
+  background: var(--vsd-clean-accent) !important;
+}
+
+#vsdPage .vsd-admin-alert,
+#vsdPage .vsd-command-tile,
+#vsdPage .vsd-overview-stat,
+#vsdPage .vsd-overview-list,
+#vsdPage .vsd-tbl th,
+#vsdPage .vsd-tbl td,
+#vsdPage .vsd-feed li,
+#vsdPage .vsd-top li {
+  border-color: var(--vsd-clean-border) !important;
+}
+
+#vsdPage .vsd-chart,
+#vsdPage .vsd-ring,
+#vsdPage .vsd-ring svg,
+#vsdPage .vsd-chart svg,
+#vsdPage .vsd-legend i,
+#vsdPage .vsd-fi,
+#vsdPage .vsd-hico,
+#vsdPage .vsd-thumb,
+#vsdPage .vsd-rank,
+#vsdPage .vsd-dot {
+  filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  animation: none !important;
+}
+
+#vsdPage .vsd-chart svg .gl {
+  stroke: var(--vsd-clean-border) !important;
+}
+
+#vsdPage .vsd-admin-alert[data-tone="warning"] .vsd-admin-alert-icon,
+#vsdPage .vsd-admin-alert[data-tone="warning"] .vsd-admin-alert-value {
+  color: #a45b00 !important;
+}
+
+html[data-theme="dark"] #vsdPage .vsd-admin-alert[data-tone="warning"] .vsd-admin-alert-icon,
+html[data-bs-theme="dark"] #vsdPage .vsd-admin-alert[data-tone="warning"] .vsd-admin-alert-icon {
+  color: #ffd166 !important;
+}

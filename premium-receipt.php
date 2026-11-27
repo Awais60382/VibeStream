@@ -8,6 +8,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 require_once __DIR__ . '/connection.php';
 require_once __DIR__ . '/premium-store.php';
+require_once __DIR__ . '/page-loader-render.php';
 
 $me = trim((string)($_SESSION['username'] ?? ''));
 if ($me === '') {
@@ -53,8 +54,10 @@ td:last-child{text-align:right;font-weight:600}
 button{border:0;border-radius:10px;background:#f9433f;color:#fff;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
 @media print{body{background:#fff;padding:0}.rc{box-shadow:none}button{display:none}}
 </style>
+<?php vs_page_loader_assets(); ?>
 </head>
 <body>
+<?php vs_page_loader_markup(); ?>
 <div class="rc">
   <h1>VibeStream receipt</h1>
   <p class="muted">Invoice VS-<?php echo $h(str_pad((string)$r['id'], 6, '0', STR_PAD_LEFT)); ?> &middot; <?php echo $h(date('F j, Y', strtotime((string)$r['updated_at']))); ?> &nbsp; <span class="paid">PAID</span></p>

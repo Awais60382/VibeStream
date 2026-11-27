@@ -13,12 +13,11 @@
 
   var KEEP = {
     "index.php": "Home",
-    "videos.php": "Videos",
     "Users.php": "Users",
     "messages.php": "Messages",
-    "premium.php": "Premium",
-    "profile.php": "Profile",
-    "platform-settings.php": "Settings"
+    "announcements.php": "Announcements",
+    "app-settings.php": "Settings",
+    "platform-control.php": "Controlls",
   };
 
   var desktop = window.matchMedia("(min-width: 992px)");
@@ -49,8 +48,12 @@
 
   function syncRail() {
     var on = desktop.matches && document.body.classList.contains("sidebar-mini");
+    var proCard = document.querySelector(".admin-sidebar .vs-pro");
     root.classList.toggle("vs-arail", on);
     root.classList.toggle("vs-arail-fixed", on); // keeps the page content flush with the 76px bar
+    if (proCard) {
+      proCard.hidden = on;
+    }
   }
 
   function start() {

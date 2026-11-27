@@ -61,6 +61,7 @@ function vs_branding_defaults(): array
         'brand_color' => '#7c3aed',
         'site_timezone' => 'UTC',
         'date_format' => 'Y-m-d',
+        'site_fixed_date' => '',
         // Scheduled maintenance window (site time zone, format Y-m-dTH:i; both empty = none)
         'maintenance_start' => '',
         'maintenance_end' => '',
@@ -698,9 +699,12 @@ function vs_ip_block_gate(): void
         http_response_code(403);
         header('Cache-Control: no-store');
     }
-    echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Access denied</title></head>'
-        . '<body style="font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#0f0f0f;color:#f1f1f1">'
-        . '<div style="text-align:center;padding:24px"><h1 style="font-size:24px">Access denied</h1><p style="color:#b5b5b5">Your network address is not allowed to use this website.</p></div></body></html>';
+    require_once __DIR__ . '/page-loader-render.php';
+    echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Access denied</title>';
+    vs_page_loader_assets();
+    echo '</head><body style="font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#0f0f0f;color:#f1f1f1">';
+    vs_page_loader_markup();
+    echo '<div style="text-align:center;padding:24px"><h1 style="font-size:24px">Access denied</h1><p style="color:#b5b5b5">Your network address is not allowed to use this website.</p></div></body></html>';
     exit;
 }
 
@@ -831,6 +835,14 @@ function vs_import_settings(array $input, array $current): array
         }
         $set('announcement_expires', $date);
     }
+    if ($has('site_fixed_date')) {
+        $date = is_string($input['site_fixed_date']) ? trim($input['site_fixed_date']) : null;
+        if ($date !== null && $date !== '') {
+            $parsed = DateTime::createFromFormat('!Y-m-d', $date);
+            $date = ($parsed && $parsed->format('Y-m-d') === $date) ? $date : null;
+        }
+        $set('site_fixed_date', $date);
+    }
     if ($has('support_email')) {
         $email = is_string($input['support_email']) ? trim($input['support_email']) : null;
         $set('support_email', ($email === '' || ($email !== null && mb_strlen($email) <= 120 && filter_var($email, FILTER_VALIDATE_EMAIL))) ? $email : null);
@@ -839,7 +851,7 @@ function vs_import_settings(array $input, array $current): array
     if ($has('privacy_url')) { $set('privacy_url', $url($input['privacy_url'])); }
 
     if ($has('categories')) {
-        $set('categories', $list($input['categories'], 40, static fn($c) => (bool)preg_match('/^[A-Za-z0-9 _-]{1,30}$/', $c), $trim));
+        $set('categories', $list($input['categories'], 50, static fn($c) => (bool)preg_match('/^[A-Za-z0-9 _-]{1,30}$/', $c), $trim));
     }
     if ($has('category_colors')) {
         $colors = null;
@@ -1045,6 +1057,10 @@ function vs_render_brand_style(): void
 function vs_site_timezone(?array $state = null): string
 {
     $zone = (string)(($state ?? vs_branding_state())['site_timezone'] ?? 'UTC');
+    $zone = trim($zone);
+    if (in_array(strtolower($zone), ['pak', 'pakistan', 'pk', 'pkt'], true)) {
+        return 'Asia/Karachi';
+    }
     return in_array($zone, DateTimeZone::listIdentifiers(), true) ? $zone : 'UTC';
 }
 
@@ -1075,12 +1091,25 @@ function vs_date_format(?array $state = null): string
 /** Formats a timestamp (or a date string) in the site time zone and date format. */
 function vs_format_date($when, ?array $state = null): string
 {
-    $timestamp = is_numeric($when) ? (int)$when : strtotime((string)$when);
-    if ($timestamp === false) {
+    $state = $state ?? vs_branding_state();
+    $timezone = new DateTimeZone(vs_site_timezone($state));
+    $fixedDate = trim((string)($state['site_fixed_date'] ?? ''));
+    if ($fixedDate !== '') {
+        $date = DateTime::createFromFormat('!Y-m-d', $fixedDate, $timezone);
+        if (!$date || $date->format('Y-m-d') !== $fixedDate) {
+            $date = null;
+        }
+    } else {
+        $timestamp = is_numeric($when) ? (int)$when : strtotime((string)$when);
+        if ($timestamp === false) {
+            return '';
+        }
+        $date = new DateTime('@' . $timestamp);
+        $date->setTimezone($timezone);
+    }
+    if (!$date) {
         return '';
     }
-    $date = new DateTime('@' . $timestamp);
-    $date->setTimezone(new DateTimeZone(vs_site_timezone($state)));
     return $date->format(vs_date_format($state));
 }
 
@@ -1297,12 +1326,14 @@ function vs_maintenance_gate(): void
         header('Cache-Control: no-store');
     }
     $e = function ($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); };
+    require_once __DIR__ . '/page-loader-render.php';
     ?><!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Maintenance - <?= $e($name) ?></title>
+<?php vs_page_loader_assets(); ?>
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -1323,6 +1354,7 @@ a { color: #8ab4ff; font-size: 14px; }
 </style>
 </head>
 <body>
+<?php vs_page_loader_markup(); ?>
 <div class="box">
     <?php if ($logo !== ''): ?><img src="<?= $e($logo) ?>" alt=""><?php endif; ?>
     <h1>We'll be right back</h1>

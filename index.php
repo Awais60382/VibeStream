@@ -14,6 +14,7 @@ require_once __DIR__ . '/dashboard-events.php';
 require_once __DIR__ . '/icons.php';
 require_once __DIR__ . '/avatar.php';
 require_once __DIR__ . '/site-branding.php';
+require_once __DIR__ . '/page-loader-render.php';
 require_once __DIR__ . '/notifications-store.php';
 require_once __DIR__ . '/user-menu.php';
 require_once __DIR__ . '/sidebar-navigation.php';
@@ -85,9 +86,29 @@ if (!function_exists('find_source')) {
 if (!function_exists('thumb_for')) {
     function thumb_for(array $row, $src, $realYt) {
         if ($realYt) return "https://i.ytimg.com/vi/{$realYt}/hqdefault.jpg";
-        foreach (['thumbnail', 'thumb', 'image', 'img', 'poster'] as $c) {
-            if (!empty($row[$c])) return $row[$c];
+        foreach (['thumbnail_url', 'thumbnail', 'thumb_url', 'thumb', 'image_url', 'image_path', 'image', 'img', 'poster_url', 'poster', 'cover_image', 'cover', 'preview_image', 'preview'] as $c) {
+            $thumbnail = trim((string)($row[$c] ?? ''));
+            if ($thumbnail === '') continue;
+            if (preg_match('#^(https?:)?//|^(data|blob):#i', $thumbnail)) return $thumbnail;
+            $thumbnail = str_replace('\\', '/', $thumbnail);
+            if (preg_match('/^[A-Za-z]:\//', $thumbnail)) {
+                $realPath = realpath($thumbnail);
+                $rootPath = realpath(__DIR__);
+                if ($realPath !== false && $rootPath !== false && stripos($realPath, $rootPath . DIRECTORY_SEPARATOR) === 0) {
+                    $thumbnail = str_replace('\\', '/', substr($realPath, strlen($rootPath) + 1));
+                } else {
+                    continue;
+                }
+            }
+            $thumbnail = preg_replace('#^(?:\.\.?/)+#', '', $thumbnail);
+            return implode('/', array_map('rawurlencode', explode('/', ltrim($thumbnail, '/'))));
         }
+        return null;
+    }
+}
+
+if (!function_exists('video_thumb_placeholder')) {
+    function video_thumb_placeholder() {
         return 'data:image/svg+xml;utf8,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#1e1e24"/><text x="50%" y="50%" fill="#6f6f7a" font-family="Arial" font-size="16" text-anchor="middle" dy=".3em">No preview</text></svg>');
     }
 }
@@ -173,9 +194,6 @@ if (!function_exists('render_navbar')) {
             </nav>
 
             <div class="nav-right">
-                <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
-                </button>
                 <button type="button" class="theme-toggle" id="themeToggle" data-vs-theme-toggle aria-label="Switch to light mode" title="Toggle light / dark theme">
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
                     <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
@@ -460,6 +478,7 @@ $categories = array_values(array_unique($categories));
     <link rel="manifest" href="manifest.php">
     <link rel="apple-touch-icon" href="branding-icon.php">
     <title><?php echo $search !== '' ? 'Search: ' . htmlspecialchars($search, ENT_QUOTES, 'UTF-8') . ' - ' : ''; ?><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></title>
+    <?php vs_page_loader_assets(); ?>
     <?php
     require_once __DIR__ . '/sidebar-icons-store.php';
     $vsSiteIcons = [];
@@ -475,8 +494,6 @@ $categories = array_values(array_unique($categories));
     <script src="sidebar-rail.js"></script>
     <script src="theme.js?v=3"></script>
     <script src="brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/brain.js'); ?>" defer></script>
-    <link rel="stylesheet" href="neon-off.css?v=7">
-    <script src="neon-switch.js?v=7"></script>
     <link rel="stylesheet" href="style.css?v=5">
     <style>
         :root {
@@ -491,7 +508,7 @@ $categories = array_values(array_unique($categories));
             --accent: #b02a2a;
             --accent-hover: #1f1f1f;
             --accent-soft: rgba(176, 42, 42, 0.18);
-            --blue: #3ea6ff;
+            --blue: #ff2a32;
             --navbar-height: 72px;
             --sidebar-width: 240px;
         }
@@ -639,7 +656,7 @@ $categories = array_values(array_unique($categories));
             width: 32px;
             height: 32px;
             border-radius: 50%;
-            background: #3ea6ff;
+            background: #ff2a32;
             color: #ffffff;
             font-weight: 700;
             display: flex;
@@ -1252,7 +1269,7 @@ $categories = array_values(array_unique($categories));
         }
         .search-filter-form button, .search-filter-clear {
             display: inline-flex; align-items: center; justify-content: center; min-height: 40px;
-            padding: 8px 14px; border: 0; border-radius: 9px; background: var(--accent, #8a5cff);
+            padding: 8px 14px; border: 0; border-radius: 9px; background: var(--accent, #b50d16);
             color: #fff; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
         }
         .search-filter-clear { background: transparent; color: var(--text); border: 1px solid var(--border, rgba(128,128,128,.35)); }
@@ -1344,6 +1361,7 @@ $categories = array_values(array_unique($categories));
     <!-- Must stay AFTER the <style> block above -->
     <link rel="stylesheet" href="sidebar.css">
     <link rel="stylesheet" href="theme.css?v=5">
+    <link rel="stylesheet" href="main-pages-theme.css?v=1">
     <link rel="stylesheet" href="search-suggest.css?v=2">
     <script src="search-suggest.js?v=2" defer></script>
     <!-- NEON DARK THEME: only applies when the site is NOT in light mode. Stays after theme.css so it wins. -->
@@ -1357,18 +1375,18 @@ $categories = array_values(array_unique($categories));
             --text: #eaf0ff;
             --muted: #8f9bd0;
             --border: #1d2557;
-            --accent: #ff2e93;
+            --accent: #ff2a32;
             --accent-hover: #171c42;
             --accent-soft: rgba(255, 46, 147, 0.18);
-            --blue: #00e5ff;
-            --neon-cyan: #00e5ff;
-            --neon-pink: #ff2e93;
-            --neon-violet: #8a5cff;
+            --blue: #ff2a32;
+            --neon-cyan: #ff2a32;
+            --neon-pink: #ff2a32;
+            --neon-violet: #b50d16;
         }
         html:not([data-theme="light"]) body {
             background:
                 radial-gradient(900px 480px at 8% -8%, rgba(138, 92, 255, 0.16), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0, 229, 255, 0.10), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50, 0.10), transparent 70%),
                 radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.08), transparent 70%),
                 #05060f;
             background-attachment: fixed;
@@ -1377,8 +1395,8 @@ $categories = array_values(array_unique($categories));
         /* top bar */
         html:not([data-theme="light"]) .app-navbar {
             background: rgba(5, 6, 15, 0.82);
-            border-bottom: 1px solid rgba(0, 229, 255, 0.35);
-            box-shadow: 0 1px 24px -4px rgba(0, 229, 255, 0.35), 0 8px 30px -12px rgba(138, 92, 255, 0.4);
+            border-bottom: 1px solid rgba(255,42,50, 0.35);
+            box-shadow: 0 1px 24px -4px rgba(255,42,50, 0.35), 0 8px 30px -12px rgba(138, 92, 255, 0.4);
         }
         html:not([data-theme="light"]) .brand {
             background: linear-gradient(90deg, var(--neon-cyan), var(--neon-violet) 55%, var(--neon-pink));
@@ -1388,7 +1406,7 @@ $categories = array_values(array_unique($categories));
         }
         html:not([data-theme="light"]) .nav-toggle span { background: var(--neon-cyan); box-shadow: 0 0 6px var(--neon-cyan); }
         html:not([data-theme="light"]) .nav-toggle:hover,
-        html:not([data-theme="light"]) .theme-toggle:hover { background: rgba(0, 229, 255, 0.12); box-shadow: 0 0 14px rgba(0, 229, 255, 0.35); }
+        html:not([data-theme="light"]) .theme-toggle:hover { background: rgba(255,42,50, 0.12); box-shadow: 0 0 14px rgba(255,42,50, 0.35); }
         html:not([data-theme="light"]) .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(255, 225, 77, 0.8)); }
 
         /* search */
@@ -1402,7 +1420,7 @@ $categories = array_values(array_unique($categories));
         html:not([data-theme="light"]) #search-input::placeholder { color: #6f7bb0; }
         html:not([data-theme="light"]) #search-input:focus {
             outline: none; border-color: var(--neon-cyan);
-            box-shadow: 0 0 0 1px var(--neon-cyan), 0 0 22px rgba(0, 229, 255, 0.55);
+            box-shadow: 0 0 0 1px var(--neon-cyan), 0 0 22px rgba(255,42,50, 0.55);
         }
         html:not([data-theme="light"]) .search-form button { color: var(--neon-cyan); }
 
@@ -1422,14 +1440,14 @@ $categories = array_values(array_unique($categories));
         }
         html:not([data-theme="light"]) .app-sidebar a { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
         html:not([data-theme="light"]) .app-sidebar a:hover {
-            background: rgba(0, 229, 255, 0.10); color: #fff; box-shadow: inset 3px 0 0 var(--neon-cyan), 0 0 16px -4px rgba(0, 229, 255, 0.5);
+            background: rgba(255,42,50, 0.10); color: #fff; box-shadow: inset 3px 0 0 var(--neon-cyan), 0 0 16px -4px rgba(255,42,50, 0.5);
         }
         html:not([data-theme="light"]) .app-sidebar a.active,
         html:not([data-theme="light"]) .app-sidebar .active {
             background: linear-gradient(90deg, rgba(255, 46, 147, 0.22), rgba(138, 92, 255, 0.12));
             color: #fff; box-shadow: inset 3px 0 0 var(--neon-pink), 0 0 18px -4px rgba(255, 46, 147, 0.55);
         }
-        html:not([data-theme="light"]) .sidebar-heading { color: var(--neon-cyan); text-shadow: 0 0 8px rgba(0, 229, 255, 0.55); }
+        html:not([data-theme="light"]) .sidebar-heading { color: var(--neon-cyan); text-shadow: 0 0 8px rgba(255,42,50, 0.55); }
 
         /* category chips */
         html:not([data-theme="light"]) .chips-bar { background: rgba(5, 6, 15, 0.85); backdrop-filter: blur(8px); }
@@ -1439,8 +1457,8 @@ $categories = array_values(array_unique($categories));
             transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
         }
         html:not([data-theme="light"]) .chip:hover {
-            background: rgba(0, 229, 255, 0.12); border-color: var(--neon-cyan);
-            box-shadow: 0 0 14px rgba(0, 229, 255, 0.5); transform: translateY(-1px);
+            background: rgba(255,42,50, 0.12); border-color: var(--neon-cyan);
+            box-shadow: 0 0 14px rgba(255,42,50, 0.5); transform: translateY(-1px);
         }
         html:not([data-theme="light"]) .chip.active {
             background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); color: #fff; border-color: transparent;
@@ -1452,7 +1470,7 @@ $categories = array_values(array_unique($categories));
         html:not([data-theme="light"]) .hero-strip {
             background: linear-gradient(135deg, rgba(20, 24, 70, 0.85), rgba(10, 13, 31, 0.9) 60%, rgba(60, 14, 60, 0.6));
             border: 1px solid rgba(138, 92, 255, 0.5);
-            box-shadow: 0 0 30px -8px rgba(138, 92, 255, 0.6), inset 0 0 40px -20px rgba(0, 229, 255, 0.4);
+            box-shadow: 0 0 30px -8px rgba(138, 92, 255, 0.6), inset 0 0 40px -20px rgba(255,42,50, 0.4);
         }
         html:not([data-theme="light"]) .hero-badge {
             background: rgba(255, 46, 147, 0.14); color: #ff7ac0;
@@ -1464,18 +1482,18 @@ $categories = array_values(array_unique($categories));
         html:not([data-theme="light"]) .thumbnail,
         html:not([data-theme="light"]) .short-card-thumb {
             border: 1px solid rgba(138, 92, 255, 0.25);
-            box-shadow: 0 0 0 0 rgba(0, 229, 255, 0);
+            box-shadow: 0 0 0 0 rgba(255,42,50, 0);
             transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease;
         }
         html:not([data-theme="light"]) .video-card-link:hover .thumbnail,
         html:not([data-theme="light"]) .short-card-link:hover .short-card-thumb {
             border-color: var(--neon-cyan);
-            box-shadow: 0 0 22px rgba(0, 229, 255, 0.55), 0 0 44px -6px rgba(138, 92, 255, 0.55);
+            box-shadow: 0 0 22px rgba(255,42,50, 0.55), 0 0 44px -6px rgba(138, 92, 255, 0.55);
             transform: translateY(-3px);
         }
         html:not([data-theme="light"]) .video-card-link:hover .video-info h3,
-        html:not([data-theme="light"]) .short-card-link:hover .short-card-title { color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0, 229, 255, 0.6); }
-        html:not([data-theme="light"]) .duration-badge { background: rgba(5, 6, 15, 0.85); color: var(--neon-cyan); border: 1px solid rgba(0, 229, 255, 0.45); }
+        html:not([data-theme="light"]) .short-card-link:hover .short-card-title { color: var(--neon-cyan); text-shadow: 0 0 10px rgba(255,42,50, 0.6); }
+        html:not([data-theme="light"]) .duration-badge { background: rgba(5, 6, 15, 0.85); color: var(--neon-cyan); border: 1px solid rgba(255,42,50, 0.45); }
         html:not([data-theme="light"]) .channel-avatar { box-shadow: 0 0 0 2px rgba(255, 46, 147, 0.7), 0 0 10px rgba(255, 46, 147, 0.5); }
         html:not([data-theme="light"]) .channel-name,
         html:not([data-theme="light"]) .video-meta,
@@ -1487,11 +1505,11 @@ $categories = array_values(array_unique($categories));
         /* pagination + empty state */
         html:not([data-theme="light"]) .pagination a,
         html:not([data-theme="light"]) .pagination span { border: 1px solid rgba(138, 92, 255, 0.4); background: rgba(10, 13, 31, 0.8); }
-        html:not([data-theme="light"]) .pagination a:hover { border-color: var(--neon-cyan); box-shadow: 0 0 14px rgba(0, 229, 255, 0.5); color: #fff; }
+        html:not([data-theme="light"]) .pagination a:hover { border-color: var(--neon-cyan); box-shadow: 0 0 14px rgba(255,42,50, 0.5); color: #fff; }
         html:not([data-theme="light"]) .pagination .current {
             background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); border-color: transparent; color: #fff; box-shadow: 0 0 16px rgba(255, 46, 147, 0.6);
         }
-        html:not([data-theme="light"]) .empty-state { background: rgba(10, 13, 31, 0.7); border: 1px dashed rgba(0, 229, 255, 0.45); box-shadow: 0 0 24px -8px rgba(0, 229, 255, 0.4); }
+        html:not([data-theme="light"]) .empty-state { background: rgba(10, 13, 31, 0.7); border: 1px dashed rgba(255,42,50, 0.45); box-shadow: 0 0 24px -8px rgba(255,42,50, 0.4); }
 
         /* scrollbar */
         html:not([data-theme="light"]) ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -1514,18 +1532,18 @@ $categories = array_values(array_unique($categories));
             --text: #0b1030;
             --muted: #55608f;
             --border: #cfd6f7;
-            --accent: #ff2e93;
+            --accent: #ff2a32;
             --accent-hover: #e3e8fc;
             --accent-soft: rgba(255, 46, 147, 0.12);
             --blue: #0090e0;
-            --neon-cyan: #00b8e6;
-            --neon-pink: #ff2e93;
-            --neon-violet: #7c4dff;
+            --neon-cyan: #ff2a32;
+            --neon-pink: #ff2a32;
+            --neon-violet: #b50d16;
         }
         html[data-theme="light"] body {
             background:
                 radial-gradient(900px 480px at 8% -8%, rgba(124, 77, 255, 0.14), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0, 184, 230, 0.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50, 0.14), transparent 70%),
                 radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
                 #f4f6ff;
             background-attachment: fixed;
@@ -1533,8 +1551,8 @@ $categories = array_values(array_unique($categories));
 
         html[data-theme="light"] .app-navbar {
             background: rgba(255, 255, 255, 0.85);
-            border-bottom: 1px solid rgba(0, 184, 230, 0.55);
-            box-shadow: 0 1px 22px -4px rgba(0, 184, 230, 0.45), 0 8px 30px -12px rgba(124, 77, 255, 0.35);
+            border-bottom: 1px solid rgba(255,42,50, 0.55);
+            box-shadow: 0 1px 22px -4px rgba(255,42,50, 0.45), 0 8px 30px -12px rgba(124, 77, 255, 0.35);
         }
         html[data-theme="light"] .brand {
             background: linear-gradient(90deg, var(--neon-cyan), var(--neon-violet) 55%, var(--neon-pink));
@@ -1544,7 +1562,7 @@ $categories = array_values(array_unique($categories));
         }
         html[data-theme="light"] .nav-toggle span { background: var(--neon-violet); box-shadow: 0 0 6px rgba(124, 77, 255, 0.6); }
         html[data-theme="light"] .nav-toggle:hover,
-        html[data-theme="light"] .theme-toggle:hover { background: rgba(0, 184, 230, 0.14); box-shadow: 0 0 14px rgba(0, 184, 230, 0.4); }
+        html[data-theme="light"] .theme-toggle:hover { background: rgba(255,42,50, 0.14); box-shadow: 0 0 14px rgba(255,42,50, 0.4); }
         html[data-theme="light"] .theme-toggle svg { color: var(--neon-violet); filter: drop-shadow(0 0 5px rgba(124, 77, 255, 0.6)); }
 
         html[data-theme="light"] #search-input {
@@ -1557,7 +1575,7 @@ $categories = array_values(array_unique($categories));
         html[data-theme="light"] #search-input::placeholder { color: #8a94c4; }
         html[data-theme="light"] #search-input:focus {
             outline: none; border-color: var(--neon-cyan);
-            box-shadow: 0 0 0 1px var(--neon-cyan), 0 0 20px rgba(0, 184, 230, 0.5);
+            box-shadow: 0 0 0 1px var(--neon-cyan), 0 0 20px rgba(255,42,50, 0.5);
         }
         html[data-theme="light"] .search-form button { color: var(--neon-violet); }
 
@@ -1575,7 +1593,7 @@ $categories = array_values(array_unique($categories));
         }
         html[data-theme="light"] .app-sidebar a { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
         html[data-theme="light"] .app-sidebar a:hover {
-            background: rgba(0, 184, 230, 0.12); box-shadow: inset 3px 0 0 var(--neon-cyan), 0 0 14px -4px rgba(0, 184, 230, 0.5);
+            background: rgba(255,42,50, 0.12); box-shadow: inset 3px 0 0 var(--neon-cyan), 0 0 14px -4px rgba(255,42,50, 0.5);
         }
         html[data-theme="light"] .app-sidebar a.active,
         html[data-theme="light"] .app-sidebar .active {
@@ -1591,8 +1609,8 @@ $categories = array_values(array_unique($categories));
             transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
         }
         html[data-theme="light"] .chip:hover {
-            background: rgba(0, 184, 230, 0.10); border-color: var(--neon-cyan);
-            box-shadow: 0 0 14px rgba(0, 184, 230, 0.5); transform: translateY(-1px);
+            background: rgba(255,42,50, 0.10); border-color: var(--neon-cyan);
+            box-shadow: 0 0 14px rgba(255,42,50, 0.5); transform: translateY(-1px);
         }
         html[data-theme="light"] .chip.active {
             background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); color: #fff; border-color: transparent;
@@ -1603,7 +1621,7 @@ $categories = array_values(array_unique($categories));
         html[data-theme="light"] .hero-strip {
             background: linear-gradient(135deg, #ffffff 0%, #eef1ff 55%, #fff0f8 100%);
             border: 1px solid rgba(124, 77, 255, 0.45);
-            box-shadow: 0 0 28px -8px rgba(124, 77, 255, 0.5), inset 0 0 40px -22px rgba(0, 184, 230, 0.5);
+            box-shadow: 0 0 28px -8px rgba(124, 77, 255, 0.5), inset 0 0 40px -22px rgba(255,42,50, 0.5);
         }
         html[data-theme="light"] .hero-badge {
             background: rgba(255, 46, 147, 0.10); color: #d4147a;
@@ -1619,12 +1637,12 @@ $categories = array_values(array_unique($categories));
         html[data-theme="light"] .video-card-link:hover .thumbnail,
         html[data-theme="light"] .short-card-link:hover .short-card-thumb {
             border-color: var(--neon-cyan);
-            box-shadow: 0 0 20px rgba(0, 184, 230, 0.5), 0 0 40px -6px rgba(124, 77, 255, 0.45);
+            box-shadow: 0 0 20px rgba(255,42,50, 0.5), 0 0 40px -6px rgba(124, 77, 255, 0.45);
             transform: translateY(-3px);
         }
         html[data-theme="light"] .video-card-link:hover .video-info h3,
-        html[data-theme="light"] .short-card-link:hover .short-card-title { color: #0086b3; text-shadow: 0 0 8px rgba(0, 184, 230, 0.35); }
-        html[data-theme="light"] .duration-badge { background: rgba(11, 16, 48, 0.88); color: #7defff; border: 1px solid rgba(0, 184, 230, 0.55); }
+        html[data-theme="light"] .short-card-link:hover .short-card-title { color: #d80e18; text-shadow: 0 0 8px rgba(255,42,50, 0.35); }
+        html[data-theme="light"] .duration-badge { background: rgba(11, 16, 48, 0.88); color: #7defff; border: 1px solid rgba(255,42,50, 0.55); }
         html[data-theme="light"] .channel-avatar { box-shadow: 0 0 0 2px rgba(255, 46, 147, 0.7), 0 0 10px rgba(255, 46, 147, 0.4); }
         html[data-theme="light"] .feed-shorts-title svg,
         html[data-theme="light"] .feed-shorts-title .shorts-title-icon { color: var(--neon-pink); filter: drop-shadow(0 0 5px rgba(255, 46, 147, 0.55)); }
@@ -1632,11 +1650,11 @@ $categories = array_values(array_unique($categories));
 
         html[data-theme="light"] .pagination a,
         html[data-theme="light"] .pagination span { border: 1px solid rgba(124, 77, 255, 0.4); background: #ffffff; }
-        html[data-theme="light"] .pagination a:hover { border-color: var(--neon-cyan); box-shadow: 0 0 14px rgba(0, 184, 230, 0.5); }
+        html[data-theme="light"] .pagination a:hover { border-color: var(--neon-cyan); box-shadow: 0 0 14px rgba(255,42,50, 0.5); }
         html[data-theme="light"] .pagination .current {
             background: linear-gradient(90deg, var(--neon-violet), var(--neon-pink)); border-color: transparent; color: #fff; box-shadow: 0 0 16px rgba(255, 46, 147, 0.5);
         }
-        html[data-theme="light"] .empty-state { background: rgba(255, 255, 255, 0.8); border: 1px dashed rgba(0, 184, 230, 0.55); box-shadow: 0 0 24px -8px rgba(0, 184, 230, 0.4); }
+        html[data-theme="light"] .empty-state { background: rgba(255, 255, 255, 0.8); border: 1px dashed rgba(255,42,50, 0.55); box-shadow: 0 0 24px -8px rgba(255,42,50, 0.4); }
 
         html[data-theme="light"] ::-webkit-scrollbar { width: 10px; height: 10px; }
         html[data-theme="light"] ::-webkit-scrollbar-track { background: #eceffd; }
@@ -1648,8 +1666,10 @@ $categories = array_values(array_unique($categories));
         }
     </style>
     <link rel="stylesheet" href="sidebar-rail.css?v=1">
+    <link rel="stylesheet" href="no-neon.css?v=2">
 </head>
 <body>
+    <?php vs_page_loader_markup(); ?>
     <?php render_navbar('home'); ?>
     <?php
     $vsPromptUser = trim((string)($_SESSION['username'] ?? ''));
@@ -1839,6 +1859,7 @@ $categories = array_values(array_unique($categories));
                     $desktopFeed = ['first' => 4, 'per' => 4, 'shortsRow' => 6, 'shortsMax' => 36];
                     $mobileFeed  = ['first' => 1, 'per' => 1, 'shortsRow' => 2, 'shortsMax' => 48, 'shortsFirst' => ($search !== '')];
 
+                    if (function_exists('vs_rewards_level_prefetch')) { vs_rewards_level_prefetch(array_map(static function ($r) { return trim((string)($r['username'] ?? $r['channel_name'] ?? '')); }, $videos)); }
                     $renderVideo = function (array $row) {
                         $title = htmlspecialchars($row['title'] ?? 'Untitled');
                         $uploader = trim((string)($row['username'] ?? $row['channel_name'] ?? 'Anonymous'));
@@ -1851,6 +1872,8 @@ $categories = array_values(array_unique($categories));
                         $src = find_source($row, __DIR__);
                         $realYt = $src !== '' ? extract_youtube_id($src, true) : null;
                         $thumb = thumb_for($row, $src, $realYt);
+                        $videoPreview = $src !== '' && preg_match('/\.(mp4|webm|ogg|ogv|m4v|mov)(?:[?#]|$)/i', $src);
+                        $placeholder = video_thumb_placeholder();
                         $watchHref = "watch.php?id=" . urlencode($row['id']);
                         ?>
                         <div class="video-card" data-category="<?php echo htmlspecialchars($category); ?>"
@@ -1862,7 +1885,13 @@ $categories = array_values(array_unique($categories));
                              <?php echo vs_download_attr((string)$row['id'], $conn ?? null); ?><?php } ?>>
                             <a href="<?php echo htmlspecialchars($watchHref); ?>" class="video-card-link">
                                 <div class="thumbnail">
-                                    <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
+                                    <?php if ($thumb !== null): ?>
+                                        <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
+                                    <?php elseif ($videoPreview): ?>
+                                        <video class="video-thumbnail-preview" data-video-preview-src="<?php echo htmlspecialchars($src); ?>" poster="<?php echo htmlspecialchars($placeholder); ?>" muted playsinline preload="none" tabindex="-1" aria-hidden="true"></video>
+                                    <?php else: ?>
+                                        <img src="<?php echo htmlspecialchars($placeholder); ?>" alt="<?php echo $title; ?>" loading="lazy">
+                                    <?php endif; ?>
                                     <?php if (!empty($duration)): ?>
                                         <span class="duration-badge"><?php echo htmlspecialchars($duration); ?></span>
                                     <?php endif; ?>
@@ -1878,7 +1907,7 @@ $categories = array_values(array_unique($categories));
                                 </a>
                                 <div class="video-info">
                                     <h3><a href="<?php echo htmlspecialchars($watchHref); ?>"><?php echo $title; ?></a></h3>
-                                    <a class="channel-name" href="profile.php?u=<?php echo rawurlencode($uploader); ?>"><?php echo $username; ?></a>
+                                    <a class="channel-name" href="profile.php?u=<?php echo rawurlencode($uploader); ?>"><?php echo $username; ?></a><?php echo function_exists('vs_rewards_user_level_html') ? vs_rewards_user_level_html($uploader, 9) : ''; ?>
                                     <p class="video-meta"><?php echo $views; ?> views &bull; <?php echo $uploaded; ?></p>
                                 </div>
                             </div>
@@ -1892,6 +1921,8 @@ $categories = array_values(array_unique($categories));
                         $src = find_source($row, __DIR__);
                         $ytId = $src !== '' ? extract_youtube_id($src, true) : null;
                         $thumb = thumb_for($row, $src, $ytId);
+                        $videoPreview = $src !== '' && preg_match('/\.(mp4|webm|ogg|ogv|m4v|mov)(?:[?#]|$)/i', $src);
+                        $placeholder = video_thumb_placeholder();
                         ?>
                         <div class="short-card"
                              data-vm-id="<?php echo htmlspecialchars((string)$row['id']); ?>"
@@ -1901,7 +1932,13 @@ $categories = array_values(array_unique($categories));
                              data-vm-url="shorts.php?id=<?php echo urlencode($row['id']); ?>">
                             <a href="shorts.php?id=<?php echo urlencode($row['id']); ?>" class="short-card-link">
                                 <div class="short-card-thumb">
-                                    <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
+                                    <?php if ($thumb !== null): ?>
+                                        <img src="<?php echo htmlspecialchars($thumb); ?>" alt="<?php echo $title; ?>" loading="lazy">
+                                    <?php elseif ($videoPreview): ?>
+                                        <video class="video-thumbnail-preview" data-video-preview-src="<?php echo htmlspecialchars($src); ?>" poster="<?php echo htmlspecialchars($placeholder); ?>" muted playsinline preload="none" tabindex="-1" aria-hidden="true"></video>
+                                    <?php else: ?>
+                                        <img src="<?php echo htmlspecialchars($placeholder); ?>" alt="<?php echo $title; ?>" loading="lazy">
+                                    <?php endif; ?>
                                 </div>
                                 <div class="short-card-info">
                                     <div class="short-card-title"><?php echo $title; ?></div>
@@ -1988,5 +2025,6 @@ $categories = array_values(array_unique($categories));
     <?php /* The Report popup loads on demand from video-menu.js (report-widget.php), so the cards' three dots never depend on it. */ ?>
     <script src="creator-analytics-tracking.js?v=1"></script>
     <script src="video-menu.js?v=4"></script>
+    <script src="video-thumbnails.js?v=1" defer></script>
 </body>
 </html>

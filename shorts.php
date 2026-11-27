@@ -19,6 +19,7 @@ require_once __DIR__ . '/context-notes-store.php';
 require_once __DIR__ . '/vip-badge.php';
 require_once __DIR__ . '/premium-popup.php';
 require_once __DIR__ . '/csrf.php';
+if (is_file(__DIR__ . '/premium-store.php')) { require_once __DIR__ . '/premium-store.php'; }
 $siteName = vs_branding_app_name();
 $defaultTheme = vs_branding_default_theme();
 vs_maintenance_gate();
@@ -124,9 +125,6 @@ if (!function_exists('render_navbar')) {
             </nav>
 
             <div class="nav-right">
-                <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
-                </button>
                 <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                 </button>
@@ -219,6 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (function_exists('vs_notify_video_event')) {
                     $actor = (string)($_SESSION['username'] ?? $_SESSION['AdminSession']);
                     vs_notify_video_event($conn, $v, 'like', $actor);
+                    $questPoints = function_exists('vs_rewards_quest_try') ? vs_rewards_quest_try('like', (string)$vid, $v) : 0;
                 }
             }
 
@@ -234,7 +233,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $likes = (int)$stmt->get_result()->fetch_assoc()['n'];
             $stmt->close();
 
-            echo json_encode(['success' => true, 'liked' => !$liked, 'likes' => $likes]);
+            echo json_encode(['success' => true, 'liked' => !$liked, 'likes' => $likes, 'quest_points' => (int)($questPoints ?? 0)]);
             exit;
         }
 
@@ -267,6 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ins->close();
             vs_notify_video_event($conn, $v, 'comment', (string)$user, $text);
             vs_notify_comment_reply($conn, $v, (string)$user, $text, $newCommentId);
+            $questPointsC = (function_exists('vs_rewards_quest_try') && mb_strlen($text) >= 10) ? vs_rewards_quest_try('comment', (string)$newCommentId, $v) : 0;
 
             $stmt = $conn->prepare("SELECT COUNT(*) AS n FROM comments WHERE video_id = ?");
             $stmt->bind_param("s", $vid);
@@ -281,8 +281,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'comment_count' => $count,
                 'id' => $newCommentId,
                 'html' => vs_comment_new_item_html($newCommentId, (string)$user, $text),
+                'quest_points' => (int)($questPointsC ?? 0),
                 'avatar' => avatar_url($user),
             ]);
+            exit;
+        }
+
+        if ($action === 'quest_watch') {
+            $questPointsW = function_exists('vs_rewards_quest_try') ? vs_rewards_quest_try('watch', (string)$vid, $v) : 0;
+            echo json_encode(['success' => true, 'quest_points' => (int)$questPointsW]);
             exit;
         }
 
@@ -564,8 +571,6 @@ header('Pragma: no-cache');
     <link rel="preconnect" href="https://i.ytimg.com">
     <script src="brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/brain.js'); ?>" defer></script>
     <script src="theme.js?v=3"></script>
-    <link rel="stylesheet" href="neon-off.css?v=7">
-    <script src="neon-switch.js?v=7"></script>
     <style>
         :root {
             --bg: #0f0f0f;
@@ -578,7 +583,7 @@ header('Pragma: no-cache');
             --accent: #b02a2a;
             --accent-hover: #1f1f1f;
             --accent-soft: rgba(176, 42, 42, 0.18);
-            --blue: #3ea6ff;
+            --blue: #ff2a32;
             --navbar-height: 72px;
             --sidebar-width: 240px;
             --short-h: max(420px, min(calc(100vh - var(--navbar-height) - 40px), 860px));
@@ -655,7 +660,7 @@ header('Pragma: no-cache');
             border: 1px solid #3a3a3d; border-radius: 999px; padding: 5px 14px 5px 6px; min-height: 46px;
         }
         .user-avatar-circle {
-            width: 32px; height: 32px; border-radius: 50%; background: #3ea6ff; color: #ffffff;
+            width: 32px; height: 32px; border-radius: 50%; background: #ff2a32; color: #ffffff;
             font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;
             overflow: hidden;
         }
@@ -827,7 +832,7 @@ header('Pragma: no-cache');
             border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
         }
         .unmute-pill[hidden] { display: none; }
-        /* tap to pause / double-tap to like / progress bar / repeat toggle */
+        /* tap to pause / double-tap to like / progress bar */
         .short-card.slide-out-next { animation: slideOutUp .2s ease-in forwards; }
         .short-card.slide-out-prev { animation: slideOutDown .2s ease-in forwards; }
         .short-card.slide-in-next { animation: slideInUp .3s cubic-bezier(.2,.8,.2,1); }
@@ -853,7 +858,7 @@ header('Pragma: no-cache');
         @keyframes tapFlash { 0% { opacity: 0; transform: scale(.7); } 25% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.15); } }
         .short-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.22); z-index: 3; pointer-events: none; }
         .short-progress i { display: block; height: 100%; width: 0; background: #ff2d55; }
-        .actions-column .icon-btn.on .circle { color: #00b8e6; background: rgba(0,229,255,.16); border-color: rgba(0,229,255,.9) !important; }
+        .actions-column .icon-btn.on .circle { color: #ff2a32; background: rgba(255,42,50,.16); border-color: rgba(255,42,50,.9) !important; }
         .icon-btn.liked .circle svg { fill: #ff2d55; stroke: #ff2d55; }
         .icon-btn.liked .circle { animation: likePop 0.3s ease; }
         @keyframes likePop { 50% { transform: scale(1.22); } }
@@ -919,8 +924,8 @@ header('Pragma: no-cache');
         .vs-pop-title { padding: 4px 12px 6px; font-size: 12px; font-weight: 600; opacity: 0.7; }
         .vs-pop button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
         .vs-pop button:hover { background: rgba(127, 127, 127, 0.22); }
-        html:not([data-theme="light"]) .vs-pop { background: rgba(10,13,31,.94); border: 1px solid rgba(0,229,255,.45); box-shadow: 0 0 20px -6px rgba(0,229,255,.5); }
-        html[data-theme="light"] .vs-pop { background: #ffffff; color: #0b1030; border: 1px solid rgba(0,184,230,.45); box-shadow: 0 0 20px -6px rgba(0,184,230,.5); }
+        html:not([data-theme="light"]) .vs-pop { background: rgba(10,13,31,.94); border: 1px solid rgba(255,42,50,.45); box-shadow: 0 0 20px -6px rgba(255,42,50,.5); }
+        html[data-theme="light"] .vs-pop { background: #ffffff; color: #0b1030; border: 1px solid rgba(255,42,50,.45); box-shadow: 0 0 20px -6px rgba(255,42,50,.5); }
         .sidebar-overlay {
             position: fixed; top: var(--navbar-height); left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.55);
             opacity: 0; visibility: hidden; transition: opacity 0.25s ease, visibility 0.25s ease; z-index: 940;
@@ -1011,6 +1016,7 @@ header('Pragma: no-cache');
     </style>
     <link rel="stylesheet" href="sidebar.css">
     <link rel="stylesheet" href="theme.css?v=5">
+    <link rel="stylesheet" href="main-pages-theme.css?v=1">
     <link rel="stylesheet" href="navbar-fix.css?v=3">
     <link rel="stylesheet" href="comments.css?v=1">
     <!-- NEON THEME (dark + light). Stays after theme.css so it wins. -->
@@ -1018,105 +1024,106 @@ header('Pragma: no-cache');
 html:not([data-theme="light"]) {
             --bg: #05060f; --surface: #0a0d1f; --surface-2: #121634; --surface-3: #171c42;
             --text: #eaf0ff; --muted: #8f9bd0; --border: #1d2557;
-            --accent: #ff2e93; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #00e5ff;
-            --neon-cyan: #00e5ff; --neon-pink: #ff2e93; --neon-violet: #8a5cff;
+            --accent: #ff2a32; --accent-hover: #171c42; --accent-soft: rgba(255,46,147,.18); --blue: #ff2a32;
+            --neon-cyan: #ff2a32; --neon-pink: #ff2a32; --neon-violet: #b50d16;
         }
         html:not([data-theme="light"]) body { background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.16), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50,.10), transparent 70%),
                 radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.08), transparent 70%), #05060f; background-attachment: fixed; }
-        html:not([data-theme="light"]) .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(0,229,255,.35); box-shadow: 0 1px 24px -4px rgba(0,229,255,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
-        html:not([data-theme="light"]) .brand { background: linear-gradient(90deg, #00e5ff, #8a5cff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
-        html:not([data-theme="light"]) .nav-toggle span { background: #00e5ff; box-shadow: 0 0 6px rgba(0,229,255,.7); }
-        html:not([data-theme="light"]) .nav-toggle:hover, html:not([data-theme="light"]) .theme-toggle:hover { background: rgba(0,229,255,.14); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) .app-navbar { background: rgba(5,6,15,.82); border-bottom: 1px solid rgba(255,42,50,.35); box-shadow: 0 1px 24px -4px rgba(255,42,50,.35), 0 8px 30px -12px rgba(138,92,255,.4); }
+        html:not([data-theme="light"]) .brand { background: linear-gradient(90deg, #ff2a32, #b50d16 55%, #ff2a32); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 8px rgba(138,92,255,.65)); }
+        html:not([data-theme="light"]) .nav-toggle span { background: #ff2a32; box-shadow: 0 0 6px rgba(255,42,50,.7); }
+        html:not([data-theme="light"]) .nav-toggle:hover, html:not([data-theme="light"]) .theme-toggle:hover { background: rgba(255,42,50,.14); box-shadow: 0 0 14px rgba(255,42,50,.4); }
         html:not([data-theme="light"]) .theme-toggle svg { color: #ffe14d; filter: drop-shadow(0 0 5px rgba(138,92,255,.6)); }
         html:not([data-theme="light"]) .nav-link.active { background: rgba(255,46,147,.16); color: #ff7ac0; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
         html:not([data-theme="light"]) .create-btn, html:not([data-theme="light"]) .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
         html:not([data-theme="light"]) #search-input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.55); color: #eaf0ff; box-shadow: 0 0 10px -2px rgba(138,92,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
-        html:not([data-theme="light"]) #search-input:focus { outline: none; border-color: #00e5ff; box-shadow: 0 0 0 1px #00e5ff, 0 0 20px rgba(0,229,255,.55); }
+        html:not([data-theme="light"]) #search-input:focus { outline: none; border-color: #ff2a32; box-shadow: 0 0 0 1px #ff2a32, 0 0 20px rgba(255,42,50,.55); }
         html:not([data-theme="light"]) .user-badge-pill { background: linear-gradient(180deg, rgba(23,28,66,.9), rgba(10,13,31,.95)); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
-        html:not([data-theme="light"]) .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html:not([data-theme="light"]) .logout-link:hover { color: #ff2a32; text-shadow: 0 0 10px rgba(255,46,147,.7); }
         html:not([data-theme="light"]) .app-sidebar { background: linear-gradient(180deg, rgba(10,13,31,.97), rgba(5,6,15,.98)); border-right: 1px solid rgba(138,92,255,.4); box-shadow: 4px 0 28px -10px rgba(138,92,255,.45); }
         html:not([data-theme="light"]) .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
-        html:not([data-theme="light"]) .sidebar-link:hover { background: rgba(0,229,255,.10); box-shadow: inset 3px 0 0 #00e5ff, 0 0 16px -4px rgba(0,229,255,.5); }
-        html:not([data-theme="light"]) .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
-        html:not([data-theme="light"]) .sidebar-heading { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) .sidebar-link:hover { background: rgba(255,42,50,.10); box-shadow: inset 3px 0 0 #ff2a32, 0 0 16px -4px rgba(255,42,50,.5); }
+        html:not([data-theme="light"]) .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.22), rgba(138,92,255,.12)); color: #fff; box-shadow: inset 3px 0 0 #ff2a32, 0 0 18px -4px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) .sidebar-heading { color: #ff2a32; text-shadow: 0 0 8px rgba(255,42,50,.45); }
         html:not([data-theme="light"]) ::-webkit-scrollbar { width: 10px; height: 10px; }
         html:not([data-theme="light"]) ::-webkit-scrollbar-track { background: #05060f; }
-        html:not([data-theme="light"]) ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8a5cff, #ff2e93); border-radius: 8px; }
+        html:not([data-theme="light"]) ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #b50d16, #ff2a32); border-radius: 8px; }
         html:not([data-theme="light"]) ::selection { background: rgba(255,46,147,.4); color: #fff; }
 
         /* ---- shorts page ---- */
-        html:not([data-theme="light"]) .player-card { border: 1px solid rgba(138,92,255,.55); box-shadow: 0 0 30px -4px rgba(0,229,255,.5), 0 0 70px -16px rgba(255,46,147,.5); }
-        html:not([data-theme="light"]) .subscribe-btn { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 16px rgba(255,46,147,.55); }
-        html:not([data-theme="light"]) .subscribe-btn:hover { background: linear-gradient(90deg, #8a5cff, #ff2e93); }
-        html:not([data-theme="light"]) .subscribe-btn.on { background: rgba(10,13,31,.85); color: #fff; border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 14px rgba(0,229,255,.4); }
+        html:not([data-theme="light"]) .player-card { border: 1px solid rgba(138,92,255,.55); box-shadow: 0 0 30px -4px rgba(255,42,50,.5), 0 0 70px -16px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) .subscribe-btn { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; border: 0; box-shadow: 0 0 16px rgba(255,46,147,.55); }
+        html:not([data-theme="light"]) .subscribe-btn:hover { background: linear-gradient(90deg, #b50d16, #ff2a32); }
+        html:not([data-theme="light"]) .subscribe-btn.on { background: rgba(10,13,31,.85); color: #fff; border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 14px rgba(255,42,50,.4); }
         html:not([data-theme="light"]) .short-overlay .avatar { box-shadow: 0 0 0 2px rgba(255,46,147,.8), 0 0 12px rgba(255,46,147,.55); }
         html:not([data-theme="light"]) .short-title { text-shadow: 0 0 12px rgba(138,92,255,.8); }
         html:not([data-theme="light"]) .icon-btn .circle, html:not([data-theme="light"]) .nav-btn .circle, html:not([data-theme="light"]) .stat-item .circle { border: 1px solid rgba(138,92,255,.55); box-shadow: 0 0 12px -2px rgba(138,92,255,.55); transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease; }
-        html:not([data-theme="light"]) .icon-btn:hover .circle, html:not([data-theme="light"]) .nav-btn:hover .circle { border-color: #00e5ff; box-shadow: 0 0 18px rgba(0,229,255,.7); background: rgba(0,229,255,.16); }
-        html:not([data-theme="light"]) .icon-btn.liked .circle { border-color: #ff2e93; box-shadow: 0 0 20px rgba(255,46,147,.75); }
+        html:not([data-theme="light"]) .icon-btn:hover .circle, html:not([data-theme="light"]) .nav-btn:hover .circle { border-color: #ff2a32; box-shadow: 0 0 18px rgba(255,42,50,.7); background: rgba(255,42,50,.16); }
+        html:not([data-theme="light"]) .icon-btn.liked .circle { border-color: #ff2a32; box-shadow: 0 0 20px rgba(255,46,147,.75); }
         html:not([data-theme="light"]) .icon-btn.liked .circle svg { filter: drop-shadow(0 0 6px rgba(255,46,147,.9)); }
-        html:not([data-theme="light"]) .unmute-pill { border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 16px rgba(0,229,255,.45); }
-        html:not([data-theme="light"]) .comments-box { background: rgba(10,13,31,.88); border: 1px solid rgba(0,229,255,.5); box-shadow: 0 0 40px -6px rgba(0,229,255,.5), 0 0 80px -20px rgba(138,92,255,.6); }
+        html:not([data-theme="light"]) .unmute-pill { border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 16px rgba(255,42,50,.45); }
+        html:not([data-theme="light"]) .comments-box { background: rgba(10,13,31,.88); border: 1px solid rgba(255,42,50,.5); box-shadow: 0 0 40px -6px rgba(255,42,50,.5), 0 0 80px -20px rgba(138,92,255,.6); }
         html:not([data-theme="light"]) .comments-top h3 { text-shadow: 0 0 10px rgba(138,92,255,.6); }
         html:not([data-theme="light"]) .comment-send input { background: rgba(10,13,31,.9); border: 1px solid rgba(138,92,255,.5); color: #eaf0ff; }
-        html:not([data-theme="light"]) .comment-send input:focus { border-color: #00e5ff; box-shadow: 0 0 16px rgba(0,229,255,.5); outline: none; }
-        html:not([data-theme="light"]) .comment-send button { background: linear-gradient(90deg, #8a5cff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.5); }
-        html:not([data-theme="light"]) .toast { border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 22px rgba(0,229,255,.45); }
+        html:not([data-theme="light"]) .comment-send input:focus { border-color: #ff2a32; box-shadow: 0 0 16px rgba(255,42,50,.5); outline: none; }
+        html:not([data-theme="light"]) .comment-send button { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.5); }
+        html:not([data-theme="light"]) .toast { border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 22px rgba(255,42,50,.45); }
     </style>
     <style id="neon-light">
 html[data-theme="light"] {
             --bg: #f4f6ff; --surface: #ffffff; --surface-2: #eceffd; --surface-3: #e3e8fc;
             --text: #0b1030; --muted: #55608f; --border: #cfd6f7;
-            --accent: #ff2e93; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #00b8e6;
-            --neon-cyan: #00b8e6; --neon-pink: #ff2e93; --neon-violet: #7c4dff;
+            --accent: #ff2a32; --accent-hover: #e3e8fc; --accent-soft: rgba(255,46,147,.12); --blue: #ff2a32;
+            --neon-cyan: #ff2a32; --neon-pink: #ff2a32; --neon-violet: #b50d16;
         }
         html[data-theme="light"] body { background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.14), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.14), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50,.14), transparent 70%),
                 radial-gradient(700px 500px at 50% 110%, rgba(255,46,147,.10), transparent 70%), #f4f6ff; background-attachment: fixed; }
-        html[data-theme="light"] .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(0,184,230,.55); box-shadow: 0 1px 22px -4px rgba(0,184,230,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
-        html[data-theme="light"] .brand { background: linear-gradient(90deg, #00b8e6, #7c4dff 55%, #ff2e93); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
-        html[data-theme="light"] .nav-toggle span { background: #7c4dff; box-shadow: 0 0 6px rgba(124,77,255,.7); }
-        html[data-theme="light"] .nav-toggle:hover, html[data-theme="light"] .theme-toggle:hover { background: rgba(0,184,230,.14); box-shadow: 0 0 14px rgba(0,184,230,.4); }
-        html[data-theme="light"] .theme-toggle svg { color: #7c4dff; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
+        html[data-theme="light"] .app-navbar { background: rgba(255,255,255,.85); border-bottom: 1px solid rgba(255,42,50,.55); box-shadow: 0 1px 22px -4px rgba(255,42,50,.45), 0 8px 30px -12px rgba(124,77,255,.35); }
+        html[data-theme="light"] .brand { background: linear-gradient(90deg, #ff2a32, #b50d16 55%, #ff2a32); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; filter: drop-shadow(0 0 6px rgba(124,77,255,.45)); }
+        html[data-theme="light"] .nav-toggle span { background: #b50d16; box-shadow: 0 0 6px rgba(124,77,255,.7); }
+        html[data-theme="light"] .nav-toggle:hover, html[data-theme="light"] .theme-toggle:hover { background: rgba(255,42,50,.14); box-shadow: 0 0 14px rgba(255,42,50,.4); }
+        html[data-theme="light"] .theme-toggle svg { color: #b50d16; filter: drop-shadow(0 0 5px rgba(124,77,255,.6)); }
         html[data-theme="light"] .nav-link.active { background: rgba(255,46,147,.16); color: #d4147a; border-color: rgba(255,46,147,.55); box-shadow: 0 0 12px -2px rgba(255,46,147,.5); }
         html[data-theme="light"] .create-btn, html[data-theme="light"] .sign-in-btn { box-shadow: 0 0 16px -2px rgba(255,46,147,.55); }
         html[data-theme="light"] #search-input { background: #ffffff; border: 1px solid rgba(124,77,255,.55); color: #0b1030; box-shadow: 0 0 10px -2px rgba(124,77,255,.45); transition: box-shadow .2s ease, border-color .2s ease; }
-        html[data-theme="light"] #search-input:focus { outline: none; border-color: #00b8e6; box-shadow: 0 0 0 1px #00b8e6, 0 0 20px rgba(0,184,230,.55); }
+        html[data-theme="light"] #search-input:focus { outline: none; border-color: #ff2a32; box-shadow: 0 0 0 1px #ff2a32, 0 0 20px rgba(255,42,50,.55); }
         html[data-theme="light"] .user-badge-pill { background: linear-gradient(180deg, #ffffff, #f1f3ff); border: 1px solid rgba(255,46,147,.55); box-shadow: 0 0 14px -3px rgba(255,46,147,.45); }
-        html[data-theme="light"] .logout-link:hover { color: #ff2e93; text-shadow: 0 0 10px rgba(255,46,147,.7); }
+        html[data-theme="light"] .logout-link:hover { color: #ff2a32; text-shadow: 0 0 10px rgba(255,46,147,.7); }
         html[data-theme="light"] .app-sidebar { background: linear-gradient(180deg, #ffffff, #f4f6ff); border-right: 1px solid rgba(124,77,255,.35); box-shadow: 4px 0 28px -10px rgba(124,77,255,.45); }
         html[data-theme="light"] .sidebar-link { transition: background .15s ease, box-shadow .15s ease, color .15s ease; }
-        html[data-theme="light"] .sidebar-link:hover { background: rgba(0,184,230,.12); box-shadow: inset 3px 0 0 #00b8e6, 0 0 16px -4px rgba(0,184,230,.5); }
-        html[data-theme="light"] .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2e93, 0 0 18px -4px rgba(255,46,147,.55); }
-        html[data-theme="light"] .sidebar-heading { color: #7c4dff; text-shadow: 0 0 8px rgba(124,77,255,.45); }
+        html[data-theme="light"] .sidebar-link:hover { background: rgba(255,42,50,.12); box-shadow: inset 3px 0 0 #ff2a32, 0 0 16px -4px rgba(255,42,50,.5); }
+        html[data-theme="light"] .sidebar-link.active { background: linear-gradient(90deg, rgba(255,46,147,.16), rgba(124,77,255,.12)); color: #0b1030; box-shadow: inset 3px 0 0 #ff2a32, 0 0 18px -4px rgba(255,46,147,.55); }
+        html[data-theme="light"] .sidebar-heading { color: #b50d16; text-shadow: 0 0 8px rgba(124,77,255,.45); }
         html[data-theme="light"] ::-webkit-scrollbar { width: 10px; height: 10px; }
         html[data-theme="light"] ::-webkit-scrollbar-track { background: #eceffd; }
-        html[data-theme="light"] ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7c4dff, #ff2e93); border-radius: 8px; }
+        html[data-theme="light"] ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #b50d16, #ff2a32); border-radius: 8px; }
         html[data-theme="light"] ::selection { background: rgba(255,46,147,.4); color: #0b1030; }
 
         /* ---- shorts page ---- */
-        html[data-theme="light"] .player-card { border: 1px solid rgba(124,77,255,.55); box-shadow: 0 0 30px -4px rgba(0,184,230,.5), 0 0 70px -16px rgba(255,46,147,.5); }
-        html[data-theme="light"] .subscribe-btn { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 16px rgba(255,46,147,.55); }
-        html[data-theme="light"] .subscribe-btn:hover { background: linear-gradient(90deg, #7c4dff, #ff2e93); }
-        html[data-theme="light"] .subscribe-btn.on { background: rgba(10,13,31,.85); color: #fff; border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 14px rgba(0,184,230,.4); }
+        html[data-theme="light"] .player-card { border: 1px solid rgba(124,77,255,.55); box-shadow: 0 0 30px -4px rgba(255,42,50,.5), 0 0 70px -16px rgba(255,46,147,.5); }
+        html[data-theme="light"] .subscribe-btn { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; border: 0; box-shadow: 0 0 16px rgba(255,46,147,.55); }
+        html[data-theme="light"] .subscribe-btn:hover { background: linear-gradient(90deg, #b50d16, #ff2a32); }
+        html[data-theme="light"] .subscribe-btn.on { background: rgba(10,13,31,.85); color: #fff; border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 14px rgba(255,42,50,.4); }
         html[data-theme="light"] .short-overlay .avatar { box-shadow: 0 0 0 2px rgba(255,46,147,.8), 0 0 12px rgba(255,46,147,.55); }
         html[data-theme="light"] .short-title { text-shadow: 0 0 12px rgba(124,77,255,.8); }
         html[data-theme="light"] .icon-btn .circle, html[data-theme="light"] .nav-btn .circle, html[data-theme="light"] .stat-item .circle { border: 1px solid rgba(124,77,255,.55); box-shadow: 0 0 12px -2px rgba(124,77,255,.55); transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease; }
-        html[data-theme="light"] .icon-btn:hover .circle, html[data-theme="light"] .nav-btn:hover .circle { border-color: #00b8e6; box-shadow: 0 0 18px rgba(0,184,230,.7); background: rgba(0,184,230,.16); }
-        html[data-theme="light"] .icon-btn.liked .circle { border-color: #ff2e93; box-shadow: 0 0 20px rgba(255,46,147,.75); }
+        html[data-theme="light"] .icon-btn:hover .circle, html[data-theme="light"] .nav-btn:hover .circle { border-color: #ff2a32; box-shadow: 0 0 18px rgba(255,42,50,.7); background: rgba(255,42,50,.16); }
+        html[data-theme="light"] .icon-btn.liked .circle { border-color: #ff2a32; box-shadow: 0 0 20px rgba(255,46,147,.75); }
         html[data-theme="light"] .icon-btn.liked .circle svg { filter: drop-shadow(0 0 6px rgba(255,46,147,.9)); }
-        html[data-theme="light"] .unmute-pill { border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 16px rgba(0,184,230,.45); }
-        html[data-theme="light"] .comments-box { background: #ffffff; border: 1px solid rgba(0,184,230,.5); box-shadow: 0 0 40px -6px rgba(0,184,230,.5), 0 0 80px -20px rgba(124,77,255,.6); }
+        html[data-theme="light"] .unmute-pill { border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 16px rgba(255,42,50,.45); }
+        html[data-theme="light"] .comments-box { background: #ffffff; border: 1px solid rgba(255,42,50,.5); box-shadow: 0 0 40px -6px rgba(255,42,50,.5), 0 0 80px -20px rgba(124,77,255,.6); }
         html[data-theme="light"] .comments-top h3 { text-shadow: 0 0 10px rgba(124,77,255,.6); }
         html[data-theme="light"] .comment-send input { background: #ffffff; border: 1px solid rgba(124,77,255,.5); color: #0b1030; }
-        html[data-theme="light"] .comment-send input:focus { border-color: #00b8e6; box-shadow: 0 0 16px rgba(0,184,230,.5); outline: none; }
-        html[data-theme="light"] .comment-send button { background: linear-gradient(90deg, #7c4dff, #ff2e93); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.5); }
-        html[data-theme="light"] .toast { border: 1px solid rgba(0,184,230,.6); box-shadow: 0 0 22px rgba(0,184,230,.45); }
+        html[data-theme="light"] .comment-send input:focus { border-color: #ff2a32; box-shadow: 0 0 16px rgba(255,42,50,.5); outline: none; }
+        html[data-theme="light"] .comment-send button { background: linear-gradient(90deg, #b50d16, #ff2a32); color: #fff; border: 0; box-shadow: 0 0 14px rgba(255,46,147,.5); }
+        html[data-theme="light"] .toast { border: 1px solid rgba(255,42,50,.6); box-shadow: 0 0 22px rgba(255,42,50,.45); }
     </style>
     <link rel="stylesheet" href="sidebar-rail.css?v=1">
     <script src="sidebar-rail.js?v=1"></script>
     <link rel="stylesheet" href="context-notes.css?v=1">
+    <link rel="stylesheet" href="no-neon.css?v=2">
 </head>
 <body>
     <?php render_navbar('shorts'); ?>
@@ -1187,7 +1194,7 @@ html[data-theme="light"] {
                         </div>
                     </div>
 
-                    <!-- right of the short: like / comments / views -->
+                    <!-- right of the short: like / comments / views / share -->
                     <div class="actions-column">
                         <button class="icon-btn<?= $userLiked ? ' liked' : '' ?>" type="button" id="likeBtn" aria-label="Like this short" aria-pressed="<?= $userLiked ? 'true' : 'false' ?>"<?= $noVideo ? ' disabled' : '' ?>>
                             <span class="circle" id="likeIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg></span>
@@ -1207,11 +1214,6 @@ html[data-theme="light"] {
                             <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.7 10.7 6.6-4.4M8.7 13.3l6.6 4.4"/></svg></span>
                             <span>Share</span>
                         </a>
-                        <button class="icon-btn on" type="button" id="loopBtn" aria-pressed="true" title="Repeat this short, or go to the next one when it ends">
-                            <span class="circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg></span>
-                            <span id="loopLabel">Repeat</span>
-                        </button>
-                        <?php if (!$noVideo && !empty($video['id'])) { $reportContentId = (string)$video['id']; $reportKind = 'short'; if (is_file(__DIR__ . '/report-widget.php')) { include __DIR__ . '/report-widget.php'; } } ?>
                     </div>
 
                     <!-- far right: previous / next -->
@@ -1256,6 +1258,7 @@ html[data-theme="light"] {
     <script src="comments.js?v=1"></script>
     <script src="context-notes.js?v=1"></script>
     <script src="creator-analytics-tracking.js?v=1"></script>
+    <script src="quest-toast.js?v=1"></script>
     <script>
         const VIDEO_ID = <?= json_encode((string)($video['id'] ?? '')) ?>;
         const $ = id => document.getElementById(id);
@@ -1580,9 +1583,8 @@ html[data-theme="light"] {
                 nextBtn.click();
             };
 
-            // Repeat (default) or go to the next short when this one ends. The choice is remembered.
-            let loopOn = true;
-            try { loopOn = localStorage.getItem('vs-shorts-loop') !== '0'; } catch (e) {}
+            // Every short repeats automatically (no Repeat button any more).
+            const loopOn = true;
             let ytState = -1, ytCur = 0, ytDur = 0, ytStamp = 0, ytMuted = true;
             const NEXT_SRC = <?= json_encode(($nextYt || $nextSrc === '') ? '' : $nextSrc) ?>;
             const NEXT_YT = <?= json_encode((string)($nextYt ?: '')) ?>;
@@ -1709,22 +1711,8 @@ html[data-theme="light"] {
                 });
             }
 
-            // ----- repeat toggle -----
-            const loopBtn = document.getElementById('loopBtn');
-            const applyLoop = () => {
-                if (vid) vid.loop = loopOn;
-                if (!loopBtn) return;
-                loopBtn.classList.toggle('on', loopOn);
-                loopBtn.setAttribute('aria-pressed', String(loopOn));
-                const lbl = document.getElementById('loopLabel');
-                if (lbl) lbl.textContent = loopOn ? 'Repeat' : 'Auto-next';
-            };
-            applyLoop();
-            if (loopBtn) loopBtn.addEventListener('click', () => {
-                loopOn = !loopOn;
-                try { localStorage.setItem('vs-shorts-loop', loopOn ? '1' : '0'); } catch (e) {}
-                applyLoop();
-            });
+            // always repeat the current short
+            if (vid) vid.loop = true;
 
             // ----- tap = pause / play, double-tap = like -----
             const tap = document.getElementById('tapLayer');

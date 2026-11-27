@@ -1,3 +1,5 @@
+document.documentElement.classList.add('vs-neon-off');
+
 (function () {
   var storageKey = 'vs-theme';
   // Browser-bar colour per theme (dark uses the brand red, light is white).

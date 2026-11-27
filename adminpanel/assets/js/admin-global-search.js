@@ -117,7 +117,17 @@
     var q = query.toLowerCase();
     return pageLinks.filter(function (item) {
       return item.title.toLowerCase().indexOf(q) !== -1;
-    }).slice(0, 5);
+    }).slice(0, 5).map(function (item) {
+      if (item.title.toLowerCase() !== 'categories') { return item; }
+      var destination = new URL(item.href, window.location.href);
+      destination.searchParams.set('preset_search', query.trim());
+      return {
+        title: item.title,
+        subtitle: item.subtitle,
+        href: destination.pathname + destination.search + destination.hash,
+        icon: item.icon
+      };
+    });
   }
 
   function search(query) {

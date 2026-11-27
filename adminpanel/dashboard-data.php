@@ -386,15 +386,25 @@ if (isset($pdo) && $pdo instanceof PDO) {
             $tUser = vs_pick($tc, ['username', 'user_name', 'login', 'uname']);
             $tName = vs_pick($tc, ['name', 'full_name', 'fullname', 'display_name']);
             $tLast = vs_pick($tc, ['last_active', 'last_seen', 'last_login']);
+            $tAvatar = vs_pick($tc, ['avatar', 'profile_image', 'profile_picture', 'profile_pic', 'profile_photo', 'avatar_url', 'photo', 'picture', 'image', 'f_avatar']);
             $tShow = $tUser ?: $tName;
             if ($tRole && $tShow) {
-                $sel = vs_q($tShow) . ' AS n' . ($tLast ? ', ' . vs_q($tLast) . ' AS l' : '');
+                $sel = vs_q($tShow) . ' AS n'
+                    . ($tLast ? ', ' . vs_q($tLast) . ' AS l' : '')
+                    . ($tAvatar ? ', ' . vs_q($tAvatar) . ' AS av' : '');
                 $st = $pdo->prepare('SELECT ' . $sel . ' FROM ' . vs_q($USERS_TABLE) . ' WHERE LOWER(' . vs_q($tRole) . ') = :r'
                     . ($tLast ? ' ORDER BY ' . vs_q($tLast) . ' DESC' : '') . ' LIMIT 6');
                 $st->execute([':r' => mb_strtolower($ADMIN_ROLE)]);
                 foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $tr) {
                     $lts = !empty($tr['l']) ? strtotime((string)$tr['l']) : 0;
-                    $teamRows[] = ['name' => trim((string)$tr['n']) ?: 'Admin', 'last' => (string)($tr['l'] ?? ''), 'online' => $lts && $lts >= time() - 120];
+                    $adminName = trim((string)$tr['n']) ?: 'Admin';
+                    $adminAvatar = '';
+                    try {
+                        $adminAvatar = (string)avatar_url($adminName, (string)($tr['av'] ?? ''));
+                    } catch (Throwable $e) {
+                        $adminAvatar = '';
+                    }
+                    $teamRows[] = ['name' => $adminName, 'avatar' => $adminAvatar, 'last' => (string)($tr['l'] ?? ''), 'online' => $lts && $lts >= time() - 120];
                 }
             }
         }
@@ -437,7 +447,23 @@ if (isset($pdo) && $pdo instanceof PDO) {
 /* ---------- Neon dashboard: extra data for the redesigned layout ---------- */
 $vsdName  = trim((string)($_SESSION['AdminSession'] ?? '')) ?: 'Admin';
 $vsdHour  = (int)date('G');
-$vsdGreet = $vsdHour < 12 ? 'Good morning' : ($vsdHour < 18 ? 'Good afternoon' : 'Good evening');
+if ($vsdHour < 5 || $vsdHour >= 22) {
+    $vsdGreet = 'Still awake';
+    $vsdGreetingMessage = "It's late—here's a quick look at what's happening across your platform.";
+    $vsdGreetingQuestion = true;
+} elseif ($vsdHour < 12) {
+    $vsdGreet = 'Good morning';
+    $vsdGreetingMessage = "Hope your morning is off to a great start. Here's what's happening across your platform today.";
+    $vsdGreetingQuestion = false;
+} elseif ($vsdHour < 17) {
+    $vsdGreet = 'Good afternoon';
+    $vsdGreetingMessage = "Your day is in full swing. Here's the latest progress and activity across your platform.";
+    $vsdGreetingQuestion = false;
+} else {
+    $vsdGreet = 'Good evening';
+    $vsdGreetingMessage = "As the day winds down, here's what's happening across your platform.";
+    $vsdGreetingQuestion = false;
+}
 
 // 1.2K / 12K / 1.4M style numbers
 $vsdShort = static function (int $n): string {
@@ -560,7 +586,7 @@ $vsdChart = static function (array $g): string {
     if ($n < 2) { return '<div class="vsd-empty">Not enough data yet.</div>'; }
     $W = 640; $H = 260; $L = 46; $R = 14; $T = 12; $B = 28;
     $iw = $W - $L - $R; $ih = $H - $T - $B; $base = $T + $ih;
-    $series = [['users', 'Users', '#a855f7'], ['uploads', 'Uploads', '#3b82f6'], ['views', 'Views', '#22e58a']];
+    $series = [['users', 'Users', '#df171f'], ['uploads', 'Uploads', '#b50d16'], ['views', 'Views', '#ff6b73']];
     $pct = []; $mx = 1.0;
     foreach ($series as $s) {
         $b = max(1, (int)$g[$s[0]][0]);
@@ -849,25 +875,39 @@ $vsdRecent = [];
 foreach ($teamRows as $tmr) {
     $tts = $tmr['last'] !== '' ? strtotime((string)$tmr['last']) : 0;
     if ($tts) {
-        $vsdRecent[] = ['icon' => 'bi-person-fill', 'tone' => 'blue', 'title' => 'Admin logged in', 'sub' => '@' . $tmr['name'], 'ts' => $tts];
+        $vsdRecent[] = ['icon' => 'bi-person-fill', 'tone' => 'blue', 'title' => 'Admin logged in', 'sub' => '@' . $tmr['name'], 'avatar' => (string)($tmr['avatar'] ?? ''), 'ts' => $tts];
     }
 }
 foreach (array_slice($recentContent, 0, 4) as $rcr) {
     $isS = $rcr['type'] === 'Short';
+    $activityAvatar = '';
+    try {
+        $activityAvatar = (string)avatar_url((string)$rcr['author']);
+    } catch (Throwable $e) {
+        $activityAvatar = '';
+    }
     $vsdRecent[] = [
         'icon'  => $isS ? 'bi-lightning-charge-fill' : 'bi-play-fill',
         'tone'  => $isS ? 'green' : 'purple',
         'title' => 'New ' . ($isS ? 'short' : 'video') . ' uploaded',
         'sub'   => $rcr['title'] . ' - ' . $rcr['author'],
+        'avatar' => $activityAvatar,
         'ts'    => (int)strtotime($rcr['date']),
     ];
 }
 foreach (array_slice($latestComments, 0, 3) as $lcr) {
+    $activityAvatar = '';
+    try {
+        $activityAvatar = (string)avatar_url((string)$lcr['who']);
+    } catch (Throwable $e) {
+        $activityAvatar = '';
+    }
     $vsdRecent[] = [
         'icon'  => 'bi-chat-dots-fill',
         'tone'  => 'indigo',
         'title' => 'New comment',
         'sub'   => $lcr['who'] . ': ' . mb_substr($lcr['text'], 0, 40),
+        'avatar' => $activityAvatar,
         'ts'    => (int)strtotime($lcr['date']),
     ];
 }
@@ -910,8 +950,8 @@ if ($uploadFailureStats['available']) {
     $vsdStatus[] = [
         'name'  => 'Upload Service',
         'text'  => $uf === 0 ? 'Operational' : $uf . ' failed upload' . ($uf === 1 ? '' : 's') . ' this week',
-        'tone'  => $uf === 0 ? 'ok' : 'warn',
-        'badge' => $uf === 0 ? 'OK' : 'WARN',
+        'tone'  => $uf === 0 ? 'ok' : 'bad',
+        'badge' => $uf === 0 ? 'OK' : 'ERROR',
     ];
 } else {
     $vsdStatus[] = ['name' => 'Upload Service', 'text' => 'Not monitored', 'tone' => 'off', 'badge' => 'N/A'];

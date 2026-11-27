@@ -301,9 +301,16 @@ vs_admin_log_page_view(
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../search-suggest.css?v=<?php echo (int)@filemtime(__DIR__ . '/../search-suggest.css'); ?>">
   <link rel="stylesheet" href="./assets/css/admin-sidebar-rail.css?v=<?php echo (int)@filemtime(__DIR__ . '/assets/css/admin-sidebar-rail.css'); ?>">
+  <link rel="stylesheet" href="../no-neon.css?v=1">
+  <link rel="stylesheet" href="../page-loader.css?v=<?php echo (int)@filemtime(__DIR__ . '/../page-loader.css'); ?>">
+  <script>document.documentElement.classList.add('vs-page-loading');</script>
+  <script src="../page-loader.js?v=<?php echo (int)@filemtime(__DIR__ . '/../page-loader.js'); ?>" defer></script>
   <script src="./assets/js/admin-sidebar-rail.js?v=<?php echo (int)@filemtime(__DIR__ . '/assets/js/admin-sidebar-rail.js'); ?>" defer></script>
+  <script src="../announcement-popup.js?v=<?php echo (int)@filemtime(__DIR__ . '/../announcement-popup.js'); ?>" defer></script>
   <script src="../searchable-select.js?v=<?php echo (int)@filemtime(__DIR__ . '/../searchable-select.js'); ?>" defer></script>
-  <script src="../brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/../brain.js'); ?>" defer></script>
+  <?php if ($vsCurrent !== 'insights.php'): ?>
+    <script src="../brain.js?v=<?php echo (int)@filemtime(__DIR__ . '/../brain.js'); ?>" defer></script>
+  <?php endif; ?>
   <style id="vs-admin-theme-surfaces">
     html[data-theme="dark"] { color-scheme:dark; --vs-shell-bg:#050211; --vs-shell-panel:#0c071c; --vs-shell-soft:#160d2c; --vs-shell-text:#f5f1ff; --vs-shell-muted:#b9adcf; --vs-shell-line:rgba(157,85,255,.23); --vs-shell-active:linear-gradient(110deg,#9600ec,#6924e9); --vs-shell-accent:#cc94ff; }
     html[data-theme="light"] { color-scheme:light; --vs-shell-bg:#f6f4fc; --vs-shell-panel:#fff; --vs-shell-soft:#f2edfb; --vs-shell-text:#241b39; --vs-shell-muted:#6c607e; --vs-shell-line:rgba(112,67,166,.16); --vs-shell-active:linear-gradient(110deg,#7c3aed,#6322cf); --vs-shell-accent:#7230c2; }
@@ -321,7 +328,7 @@ vs_admin_log_page_view(
     .admin-shell .admin-navbar .icon-button,.admin-shell .admin-navbar .profile-button { background:var(--vs-shell-soft); color:var(--vs-shell-text); border:1px solid var(--vs-shell-line); border-radius:12px; }
     .admin-shell .admin-navbar .icon-button { position:relative; }
     .admin-shell .admin-navbar .sidebar-toggle { color:var(--vs-shell-text); }
-    .admin-shell .admin-navbar .sidebar-toggle span { background:var(--vs-shell-text); }
+    .admin-shell .admin-navbar .sidebar-toggle span { width:20px; height:2px; opacity:1!important; background-color:var(--vs-shell-text)!important; filter:none!important; }
     .admin-shell .admin-navbar .search-input { background:var(--vs-shell-soft); color:var(--vs-shell-text); border:1px solid var(--vs-shell-line); border-radius:12px; }
     .admin-shell .admin-navbar .search-input::placeholder { color:var(--vs-shell-muted); }
     .admin-shell .admin-navbar .dropdown-menu { background:var(--vs-shell-panel); color:var(--vs-shell-text); border:1px solid var(--vs-shell-line); box-shadow:0 18px 50px rgba(40,10,70,.16); }
@@ -372,12 +379,32 @@ vs_admin_log_page_view(
     })();
   </script>
   <style id="vs-admin-mockup">
-    /* Neon admin look: sidebar pills, brand card, round search, Create button */
-    html[data-theme="dark"] .admin-shell .admin-sidebar { background:linear-gradient(180deg,#0e0724,#070412)!important; }
-    .admin-shell .sidebar-nav .nav-link { display:flex; align-items:center; gap:14px; padding:11px 14px; font-size:15px; font-weight:500; border:1px solid transparent; }
-    .admin-shell .sidebar-nav .nav-link .nav-icon { flex:0 0 26px; width:26px; font-size:21px; text-align:center; }
-    .admin-shell .sidebar-nav .nav-link.active { background:linear-gradient(100deg,rgba(255,46,120,.3),rgba(150,0,236,.55))!important; border-color:rgba(255,70,140,.6); box-shadow:0 0 20px -4px rgba(190,40,255,.65); color:#fff; }
-    .admin-shell .sidebar-section-title { font-size:10.5px; letter-spacing:.14em; opacity:.55; }
+    /* Shared red-and-black admin sidebar */
+    .admin-shell .admin-sidebar {
+      background:radial-gradient(circle at 50% 0,rgba(255,26,26,.12),transparent 32%),#050505!important;
+      border-right:1px solid rgba(255,42,50,.38)!important;
+      box-shadow:10px 0 36px rgba(0,0,0,.38),4px 0 22px -14px rgba(255,26,26,.75)!important;
+    }
+    .admin-shell .admin-sidebar .sidebar-header,
+    .admin-shell .admin-sidebar .sidebar-user,
+    .admin-shell .admin-sidebar .sidebar-footer { border-color:rgba(255,42,50,.18)!important; }
+    .admin-shell .admin-sidebar .brand-icon {
+      background:linear-gradient(145deg,#ff454d,#a80810)!important;
+      border:1px solid rgba(255,100,100,.45);
+      box-shadow:0 0 18px rgba(255,26,26,.35);
+    }
+    .admin-shell .admin-sidebar .brand-title { color:#fff!important; }
+    .admin-shell .admin-sidebar .brand-subtitle,
+    .admin-shell .admin-sidebar .sidebar-section-title,
+    .admin-shell .admin-sidebar .sidebar-footer,
+    .admin-shell .admin-sidebar .sidebar-user small { color:#c6b6b6!important; }
+    .admin-shell .sidebar-nav .nav-link { display:flex; align-items:center; gap:14px; padding:11px 14px; font-size:15px; font-weight:600; border:1px solid transparent; color:#bdb3b3!important; }
+    .admin-shell .sidebar-nav .nav-link .nav-icon { flex:0 0 26px; width:26px; font-size:21px; text-align:center; background:transparent!important; color:#d89a9a!important; }
+    .admin-shell .sidebar-nav .nav-link:hover { background:rgba(255,42,50,.12)!important; border-color:rgba(255,42,50,.24); color:#fff!important; transform:none; box-shadow:inset 3px 0 0 #ff2a32!important; }
+    .admin-shell .sidebar-nav .nav-link.active { background:linear-gradient(135deg,#ff343c,#ad0c13)!important; border-color:#ff4d52; box-shadow:0 0 18px rgba(255,26,26,.32)!important; color:#fff!important; }
+    .admin-shell .sidebar-nav .nav-link.active .nav-icon,
+    .admin-shell .sidebar-nav .nav-link.active .nav-text { color:#fff!important; }
+    .admin-shell .sidebar-section-title { font-size:10.5px; letter-spacing:.14em; opacity:.72; }
     .admin-shell .admin-sidebar > .sidebar-header,
     .admin-shell .admin-sidebar > .vs-side-card,
     .admin-shell .admin-sidebar > .sidebar-user,
@@ -392,11 +419,389 @@ vs_admin_log_page_view(
     .admin-shell .admin-navbar .profile-button { padding:3px 8px 3px 3px; border-radius:999px; }
     .admin-shell .admin-navbar .profile-button .avatar-sm { width:38px; height:38px; border-radius:50%; }
     .admin-shell .admin-navbar .profile-name { display:none!important; }
+    .admin-shell .sidebar-user,
+    .admin-shell .sidebar-owner-card,
+    .admin-shell .vs-side-card {
+      background:linear-gradient(145deg,rgba(255,26,26,.09),rgba(12,12,12,.96))!important;
+      border-color:rgba(255,42,50,.22)!important;
+      box-shadow:none!important;
+    }
+    .admin-shell .sidebar-user strong,
+    .admin-shell .sidebar-owner-card strong,
+    .admin-shell .vs-side-card strong { color:#fff!important; }
+    .admin-shell .sidebar-user-avatar { border-color:#ff2a32!important; }
+    .admin-shell .admin-navbar.navbar {
+      background:linear-gradient(90deg,#050505,#120707 55%,#050505)!important;
+      border-bottom:1px solid rgba(255,42,50,.38)!important;
+      box-shadow:0 8px 28px -18px rgba(255,26,26,.65)!important;
+    }
+    .admin-shell .admin-navbar .icon-button,
+    .admin-shell .admin-navbar .profile-button,
+    .admin-shell .admin-navbar .sidebar-toggle,
+    .admin-shell .admin-navbar .search-input {
+      background:#0d0606!important;
+      color:#fff!important;
+      border:1px solid rgba(255,42,50,.28)!important;
+    }
+    .admin-shell .admin-navbar .icon-button:hover,
+    .admin-shell .admin-navbar .profile-button:hover,
+    .admin-shell .admin-navbar .sidebar-toggle:hover,
+    .admin-shell .admin-navbar .search-input:focus {
+      border-color:#ff343c!important;
+      box-shadow:0 0 14px rgba(255,26,26,.18)!important;
+    }
+    .admin-shell .admin-navbar .sidebar-toggle span { background:#fff!important; }
+    .admin-shell .admin-navbar .search-input { background-color:#0d0606!important; }
+    .admin-shell .admin-navbar .search-input::placeholder { color:#bcaeae!important; }
+    .admin-shell .admin-navbar .dropdown-menu {
+      background:#0b0505!important;
+      border:1px solid rgba(255,42,50,.38)!important;
+      box-shadow:0 18px 50px rgba(0,0,0,.48)!important;
+    }
+    .admin-shell .admin-navbar .dropdown-item { color:#f4eded!important; }
+    .admin-shell .admin-navbar .dropdown-item:hover,
+    .admin-shell .admin-navbar .dropdown-item:focus {
+      background:rgba(255,42,50,.14)!important;
+      color:#fff!important;
+    }
+    .admin-shell .admin-navbar .notification-dot,
+    .admin-shell .admin-navbar .badge { background:#ff2a32!important; }
+    .admin-shell .admin-navbar .profile-button .avatar-sm { border:2px solid rgba(255,42,50,.55); }
+    html[data-theme="dark"] .admin-shell .admin-main,
+    html[data-theme="dark"] .admin-shell .dashboard-content {
+      background:#090909!important;
+      color:#f1f3ff;
+    }
+    .admin-shell .admin-footer {
+      min-height:68px;
+      display:flex;
+      align-items:center;
+      background:#090909!important;
+      color:#ff5a62!important;
+      border-top:1px solid rgba(255,42,50,.28)!important;
+    }
+    .admin-shell .admin-footer .container-fluid {
+      width:100%;
+      padding-top:0;
+      padding-bottom:0;
+    }
+    .admin-shell .admin-footer a {
+      color:#ff5a62!important;
+      font-weight:600;
+      text-decoration:none;
+    }
+    html[data-theme="light"] .admin-shell .admin-main,
+    html[data-theme="light"] .admin-shell .dashboard-content {
+      background:#f6f4fc!important;
+    }
+    /* Shared red-and-black theme for every admin page */
+    .admin-shell .dashboard-content,
+    html[data-theme="dark"] .admin-shell .dashboard-content,
+    html[data-theme="light"] .admin-shell .dashboard-content {
+      background:
+        radial-gradient(850px 360px at 100% 0,rgba(255,26,26,.08),transparent 58%),
+        radial-gradient(700px 320px at 0 100%,rgba(255,26,26,.045),transparent 62%),
+        #090b18!important;
+      color:#f2efff;
+    }
+    .admin-shell .dashboard-content :is(.panel,.card,.stat-card,.metric-card,.table-card,.setting-card,.analytics-card,.activity-card,.profile-card,.form-card,.content-card,.data-card),
+    .admin-shell .dashboard-content :is(.panel,.card,.stat-card,.metric-card,.table-card,.setting-card,.analytics-card,.activity-card,.profile-card,.form-card,.content-card,.data-card) .card,
+    .admin-shell .dashboard-content .vs-card {
+      background:linear-gradient(145deg,#0d0606,#090909)!important;
+      border:1px solid rgba(255,42,50,.30)!important;
+      box-shadow:0 12px 36px rgba(0,0,0,.28),0 0 22px -16px rgba(255,26,26,.55)!important;
+      color:#f7f3ff!important;
+    }
+    .admin-shell .dashboard-content :is(h1,h2,h3,h4,h5,h6,.card-title,.panel-title) { color:#fff!important; }
+    .admin-shell .dashboard-content :is(p,small,.text-muted,.muted,.subtitle,.card-text) { color:#b9a8aa!important; }
+    .admin-shell .dashboard-content :is(table,.table) {
+      --bs-table-bg:transparent;
+      --bs-table-color:#f4efff;
+      --bs-table-border-color:rgba(255,42,50,.18);
+      color:#f4efff!important;
+    }
+    .admin-shell .dashboard-content :is(table,.table) :is(thead,tbody,tr) { color:inherit!important; }
+    .admin-shell .dashboard-content :is(table,.table) :is(th,td) {
+      border-color:rgba(255,42,50,.18)!important;
+      background:transparent;
+    }
+    .admin-shell .dashboard-content :is(.table-responsive,.data-table,.scroll-area) {
+      border-color:rgba(255,42,50,.24)!important;
+    }
+    .admin-shell .dashboard-content :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),textarea,select),
+    .admin-shell .dashboard-content .form-control,
+    .admin-shell .dashboard-content .form-select {
+      background:#0d0606!important;
+      color:#fff!important;
+      border-color:rgba(255,42,50,.30)!important;
+    }
+    .admin-shell .dashboard-content :is(input,textarea,select)::placeholder { color:#9f9292!important; }
+    .admin-shell .dashboard-content :is(.btn-primary,.btn-danger,.btn-success,.action-primary,.primary-button) {
+      background:linear-gradient(135deg,#ff343c,#ad0c13)!important;
+      border:1px solid #ff4d52!important;
+      color:#fff!important;
+      box-shadow:0 8px 20px rgba(255,26,26,.18);
+    }
+    .admin-shell .dashboard-content :is(.btn-secondary,.btn-outline-primary,.btn-outline-danger,.btn-light,.btn-default) {
+      background:#0d0606!important;
+      color:#f5eeee!important;
+      border:1px solid rgba(255,42,50,.38)!important;
+    }
+    .admin-shell .dashboard-content :is(.pagination,.pager) :is(a,button,span) {
+      background:#0d0606!important;
+      color:#eee!important;
+      border-color:rgba(255,42,50,.30)!important;
+    }
+    .admin-shell .dashboard-content :is(.pagination,.pager) .active,
+    .admin-shell .dashboard-content :is(.pagination,.pager) :is(.current,.is-current) {
+      background:#e5131b!important;
+      color:#fff!important;
+      border-color:#ff4d52!important;
+    }
+    .admin-shell .dashboard-content :is(.dropdown-menu,.modal-content,.offcanvas) {
+      background:#0b0505!important;
+      color:#fff!important;
+      border:1px solid rgba(255,42,50,.38)!important;
+    }
+    .admin-shell .dashboard-content :is(.dropdown-item,.modal-header,.modal-footer) {
+      color:#fff!important;
+      border-color:rgba(255,42,50,.18)!important;
+    }
+    .admin-shell .dashboard-content .dropdown-item:hover,
+    .admin-shell .dashboard-content .dropdown-item:focus {
+      background:rgba(255,42,50,.14)!important;
+      color:#fff!important;
+    }
+    .admin-shell .dashboard-content :is(.border,.border-top,.border-bottom,.border-start,.border-end) {
+      border-color:rgba(255,42,50,.18)!important;
+    }
+    html[data-theme="light"] .admin-shell .admin-sidebar {
+      background:radial-gradient(circle at 50% 0,rgba(255,42,50,.07),transparent 34%),#fff!important;
+      color:#271819!important;
+      border-right-color:rgba(205,24,32,.24)!important;
+      box-shadow:10px 0 30px rgba(40,12,12,.08)!important;
+    }
+    html[data-theme="light"] .admin-shell .admin-sidebar .sidebar-header,
+    html[data-theme="light"] .admin-shell .admin-sidebar .sidebar-user,
+    html[data-theme="light"] .admin-shell .admin-sidebar .sidebar-footer { border-color:rgba(205,24,32,.18)!important; }
+    html[data-theme="light"] .admin-shell .admin-sidebar .brand-title,
+    html[data-theme="light"] .admin-shell .admin-sidebar .sidebar-user strong,
+    html[data-theme="light"] .admin-shell .admin-sidebar .sidebar-owner-card strong,
+    html[data-theme="light"] .admin-shell .admin-sidebar .vs-side-card strong { color:#291a1a!important; }
+    html[data-theme="light"] .admin-shell .admin-sidebar .brand-subtitle,
+    html[data-theme="light"] .admin-shell .admin-sidebar .sidebar-section-title,
+    html[data-theme="light"] .admin-shell .admin-sidebar .sidebar-footer,
+    html[data-theme="light"] .admin-shell .admin-sidebar .sidebar-user small { color:#756464!important; }
+    html[data-theme="light"] .admin-shell .sidebar-nav .nav-link { color:#574848!important; }
+    html[data-theme="light"] .admin-shell .sidebar-nav .nav-link .nav-icon { color:#a51b22!important; }
+    html[data-theme="light"] .admin-shell .sidebar-nav .nav-link:hover {
+      background:rgba(255,42,50,.08)!important;color:#291a1a!important;border-color:rgba(205,24,32,.16);
+    }
+    html[data-theme="light"] .admin-shell .sidebar-nav .nav-link.active,
+    html[data-theme="light"] .admin-shell .sidebar-nav .nav-link.active .nav-icon,
+    html[data-theme="light"] .admin-shell .sidebar-nav .nav-link.active .nav-text { color:#fff!important; }
+    html[data-theme="light"] .admin-shell .sidebar-user,
+    html[data-theme="light"] .admin-shell .sidebar-owner-card,
+    html[data-theme="light"] .admin-shell .vs-side-card {
+      background:linear-gradient(145deg,#fff5f5,#fff)!important;
+      border-color:rgba(205,24,32,.2)!important;
+    }
+    html[data-theme="light"] .admin-shell .admin-navbar.navbar {
+      background:linear-gradient(90deg,#fff,#fff8f8 55%,#fff)!important;
+      color:#291a1a!important;border-bottom-color:rgba(205,24,32,.28)!important;
+      box-shadow:0 6px 24px rgba(50,15,15,.07)!important;
+    }
+    html[data-theme="light"] .admin-shell .admin-navbar .icon-button,
+    html[data-theme="light"] .admin-shell .admin-navbar .profile-button,
+    html[data-theme="light"] .admin-shell .admin-navbar .sidebar-toggle,
+    html[data-theme="light"] .admin-shell .admin-navbar .search-input {
+      background:#fff!important;color:#352727!important;border-color:rgba(205,24,32,.28)!important;
+    }
+    html[data-theme="light"] .admin-shell .admin-navbar .sidebar-toggle span { background-color:#352727!important; opacity:1!important; filter:none!important; }
+    html[data-theme="light"] .admin-shell .admin-navbar .search-input::placeholder { color:#827272!important; }
+    html[data-theme="light"] .admin-shell .admin-navbar .dropdown-menu {
+      background:#fff!important;color:#291a1a!important;border-color:rgba(205,24,32,.25)!important;
+      box-shadow:0 18px 50px rgba(40,12,12,.14)!important;
+    }
+    html[data-theme="light"] .admin-shell .admin-navbar .dropdown-item { color:#352727!important; }
+    html[data-theme="light"] .admin-shell .admin-navbar .dropdown-item:hover,
+    html[data-theme="light"] .admin-shell .admin-navbar .dropdown-item:focus { background:#fff0f0!important;color:#8f1018!important; }
+    html[data-theme="light"] .admin-shell .admin-main { background:#f7f5f5!important;color:#291a1a!important; }
+    html[data-theme="light"] .admin-shell .dashboard-content {
+      background:
+        radial-gradient(850px 360px at 100% 0,rgba(255,26,26,.055),transparent 58%),
+        radial-gradient(700px 320px at 0 100%,rgba(255,26,26,.03),transparent 62%),
+        #f7f5f5!important;
+      color:#291a1a!important;
+    }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(.panel,.card,.stat-card,.metric-card,.table-card,.setting-card,.analytics-card,.activity-card,.profile-card,.form-card,.content-card,.data-card),
+    html[data-theme="light"] .admin-shell .dashboard-content .vs-card {
+      background:linear-gradient(145deg,#fff,#fffafa)!important;
+      border-color:rgba(205,24,32,.24)!important;
+      box-shadow:0 8px 26px rgba(45,15,15,.07)!important;
+      color:#291a1a!important;
+    }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(h1,h2,h3,h4,h5,h6,.card-title,.panel-title) { color:#291a1a!important; }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(p,small,.text-muted,.muted,.subtitle,.card-text) { color:#766565!important; }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(table,.table) {
+      --bs-table-color:#352727;--bs-table-border-color:rgba(205,24,32,.17);color:#352727!important;
+    }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(table,.table) :is(th,td) { color:#352727!important; }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),textarea,select),
+    html[data-theme="light"] .admin-shell .dashboard-content .form-control,
+    html[data-theme="light"] .admin-shell .dashboard-content .form-select {
+      background:#fff!important;color:#291a1a!important;border-color:rgba(205,24,32,.28)!important;
+    }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(input,textarea,select)::placeholder { color:#8b7b7b!important; }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(.btn-secondary,.btn-outline-primary,.btn-outline-danger,.btn-light,.btn-default) {
+      background:#fff!important;color:#6b2024!important;border-color:rgba(205,24,32,.3)!important;
+    }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(.pagination,.pager) :is(a,button,span) {
+      background:#fff!important;color:#352727!important;border-color:rgba(205,24,32,.24)!important;
+    }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(.dropdown-menu,.modal-content,.offcanvas) {
+      background:#fff!important;color:#291a1a!important;border-color:rgba(205,24,32,.25)!important;
+    }
+    html[data-theme="light"] .admin-shell .dashboard-content :is(.dropdown-item,.modal-header,.modal-footer) {
+      color:#352727!important;border-color:rgba(205,24,32,.16)!important;
+    }
+    html[data-theme="light"] .admin-shell .dashboard-content .dropdown-item:hover,
+    html[data-theme="light"] .admin-shell .dashboard-content .dropdown-item:focus { background:#fff0f0!important;color:#8f1018!important; }
+    html[data-theme="light"] .admin-shell .admin-footer {
+      background:#f7f5f5!important;color:#795f60!important;border-top-color:rgba(205,24,32,.24)!important;
+    }
+    html[data-theme="light"] .admin-shell .admin-footer a { color:#be1e27!important; }
+    /* Red-and-black page surface overrides for all admin workspaces */
+    .admin-shell :is(.dashboard-content,.admin-content) {
+      background:
+        radial-gradient(850px 360px at 100% 0,rgba(255,26,32,.09),transparent 58%),
+        radial-gradient(700px 320px at 0 100%,rgba(255,26,32,.045),transparent 62%),
+        #090909!important;
+      color:#f7f3f3;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content)
+      :is(.rp-hero,.va-hero,.pa-hero,.fal-hero,.vsn-hero,.pp-hero,.page-heading,.mp-card,.msg-shell,.vs-card,.fal-panel,.fal-stat,.rp-card,.rp-stat,.va-panel,.va-stat,.va-card,.pa-card,.pa-stat,.pp-card,.pp-stat,.vx-card,.ps-sec,.ps-card) {
+      background:linear-gradient(145deg,#120707,#080808)!important;
+      border-color:rgba(255,42,50,.30)!important;
+      box-shadow:0 12px 36px rgba(0,0,0,.32),0 0 22px -16px rgba(255,26,26,.55)!important;
+      color:#f7f3f3!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content)
+      :is(.rp-hero,.va-hero,.pa-hero,.fal-hero,.vsn-hero,.pp-hero,.page-heading) {
+      background:
+        radial-gradient(520px 260px at 85% 0,rgba(255,26,32,.20),transparent 70%),
+        linear-gradient(120deg,#170506,#090909 62%,#150404)!important;
+      border:1px solid rgba(255,42,50,.38)!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(h1,h2,h3,h4,h5,h6,.card-title,.panel-title) { color:#fff!important; }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(p,small,.text-muted,.muted,.subtitle,.card-text) { color:#c1b0b0!important; }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),textarea,select,.form-control,.form-select,.pa-in,.pp-field) {
+      background:#0d0606!important;
+      color:#fff!important;
+      border-color:rgba(255,42,50,.38)!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(.btn-primary,.btn-danger,.btn-success,.action-primary,.primary-button,.pa-btn.pri,.pp-btn.pri) {
+      background:linear-gradient(135deg,#ff343c,#ad0c13)!important;
+      border:1px solid #ff4d52!important;
+      color:#fff!important;
+      box-shadow:0 8px 20px rgba(255,26,26,.20)!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(.btn-secondary,.btn-outline-primary,.btn-outline-danger,.btn-light,.btn-default,.pa-btn,.pp-btn) {
+      background:#0d0606!important;
+      color:#f7eeee!important;
+      border:1px solid rgba(255,42,50,.38)!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(table,.table) {
+      --bs-table-bg:transparent;--bs-table-color:#f4eeee;--bs-table-border-color:rgba(255,42,50,.18);
+      color:#f4eeee!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(table,.table) :is(th,td) {
+      border-color:rgba(255,42,50,.18)!important;
+      background:transparent;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(.pagination,.pager) .active,
+    .admin-shell :is(.dashboard-content,.admin-content) :is(.pagination,.pager) :is(.current,.is-current) {
+      background:#e5131b!important;border-color:#ff4d52!important;color:#fff!important;
+    }
+    html[data-theme="light"] .admin-shell :is(.dashboard-content,.admin-content) {
+      background:
+        radial-gradient(850px 360px at 100% 0,rgba(255,26,32,.055),transparent 58%),
+        radial-gradient(700px 320px at 0 100%,rgba(255,26,32,.03),transparent 62%),
+        #f7f5f5!important;
+      color:#291a1a;
+    }
+    html[data-theme="light"] .admin-shell :is(.dashboard-content,.admin-content)
+      :is(.rp-hero,.va-hero,.pa-hero,.fal-hero,.vsn-hero,.pp-hero,.page-heading,.mp-card,.msg-shell,.vs-card,.fal-panel,.fal-stat,.rp-card,.rp-stat,.va-panel,.va-stat,.va-card,.pa-card,.pa-stat,.pp-card,.pp-stat,.vx-card) {
+      background:linear-gradient(145deg,#fff,#fffafa)!important;
+      border-color:rgba(205,24,32,.24)!important;
+      box-shadow:0 8px 26px rgba(45,15,15,.07)!important;
+      color:#291a1a!important;
+    }
+    html[data-theme="light"] .admin-shell :is(.dashboard-content,.admin-content) :is(h1,h2,h3,h4,h5,h6,.card-title,.panel-title) { color:#291a1a!important; }
+    html[data-theme="light"] .admin-shell :is(.dashboard-content,.admin-content) :is(p,small,.text-muted,.muted,.subtitle,.card-text) { color:#766565!important; }
+    /* Shared theme fallback for every admin page: page-local styles keep their layout,
+       while these rules normalize surfaces, fields, text, borders and tables. */
+    html[data-theme="dark"] .admin-shell :is(.dashboard-content,.admin-content) {
+      --vs-page-card:#100d18;
+      --vs-page-field:#0b0812;
+      --vs-page-text:#f7f3f3;
+      --vs-page-muted:#bdb2b2;
+      --vs-page-line:rgba(255,42,50,.28);
+    }
+    html[data-theme="light"] .admin-shell :is(.dashboard-content,.admin-content) {
+      --vs-page-card:#fff;
+      --vs-page-field:#fff;
+      --vs-page-text:#291a1a;
+      --vs-page-muted:#766565;
+      --vs-page-line:rgba(205,24,32,.24);
+    }
+    html[data-theme="dark"] .admin-shell :is(.dashboard-content,.admin-content)
+      :is(.card,.panel,.settings-card,.stat-card,[class*="-panel"],[class*="-card"]) {
+      background:var(--vs-page-card)!important;
+      color:var(--vs-page-text)!important;
+      border-color:var(--vs-page-line)!important;
+    }
+    html[data-theme="light"] .admin-shell :is(.dashboard-content,.admin-content)
+      :is(.card,.panel,.settings-card,.stat-card,[class*="-panel"],[class*="-card"]) {
+      background:var(--vs-page-card)!important;
+      color:var(--vs-page-text)!important;
+      border-color:var(--vs-page-line)!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content)
+      :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),textarea,select,.form-control,.form-select) {
+      background:var(--vs-page-field)!important;
+      color:var(--vs-page-text)!important;
+      border-color:var(--vs-page-line)!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content)
+      :is(label,.form-label,.table th,.table td,th,td) {
+      color:var(--vs-page-text)!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(.text-muted,.muted,.subtitle,small) {
+      color:var(--vs-page-muted)!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(.table,.table-striped,.table-hover) {
+      --bs-table-bg:transparent;
+      --bs-table-color:var(--vs-page-text);
+      --bs-table-border-color:var(--vs-page-line);
+      color:var(--vs-page-text)!important;
+    }
+    .admin-shell :is(.dashboard-content,.admin-content) :is(.table th,.table td,table th,table td) {
+      border-color:var(--vs-page-line)!important;
+    }
     @media (max-width:700px) { .admin-shell .vs-create span { display:none; } }
   </style>
+  <link rel="stylesheet" href="./assets/css/admin-screenshot-theme.css?v=<?php echo (int)@filemtime(__DIR__ . '/assets/css/admin-screenshot-theme.css'); ?>">
 </head>
 
 <body>
+  <div class="vs-page-loader" id="vsPageLoader" role="status" aria-live="polite" aria-hidden="false">
+    <div class="vs-page-loader__mark">
+      <span class="vs-page-loader__ring" aria-hidden="true"></span>
+      <img src="<?php echo htmlspecialchars($adminLogoUrl, ENT_QUOTES, 'UTF-8'); ?>" alt="" onerror="this.onerror=null;this.src='<?php echo htmlspecialchars(vs_site_url(VS_DEFAULT_LOGO_PATH), ENT_QUOTES, 'UTF-8'); ?>';">
+    </div>
+    <span class="vs-page-loader__text">Loading <?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span>
+  </div>
   <div class="admin-shell">
     <div class="sidebar-backdrop" data-sidebar-close></div>
 
@@ -406,8 +811,9 @@ vs_admin_log_page_view(
           <span class="brand-icon" aria-hidden="true">
             <img src="<?php echo htmlspecialchars($adminLogoUrl, ENT_QUOTES, 'UTF-8'); ?>" alt="" width="42" height="42" onerror="this.parentNode.textContent='<?php echo htmlspecialchars(strtoupper(substr($siteName, 0, 1)), ENT_QUOTES, 'UTF-8'); ?>'">
           </span>
+          <?php $vsBrandParts = preg_match('/^(.{3,}?)([A-Z][a-z]{2,})$/u', $siteName, $bm) ? [$bm[1], $bm[2]] : [$siteName, '']; ?>
           <span class="brand-copy">
-            <span class="brand-title"><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span>
+            <span class="brand-title"><?php echo htmlspecialchars($vsBrandParts[0], ENT_QUOTES, 'UTF-8'); ?><?php if ($vsBrandParts[1] !== ''): ?><span class="vs-red"><?php echo htmlspecialchars($vsBrandParts[1], ENT_QUOTES, 'UTF-8'); ?></span><?php endif; ?></span>
             <span class="brand-subtitle">Admin Panel</span>
           </span>
         </a>
@@ -525,15 +931,27 @@ vs_admin_log_page_view(
 
         <?php if ($vsAcsbReady) { vs_acsb_render_builtin('users', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
         <div class="sidebar-section-title">SYSTEM</div>
+<?php if ($vsCanOpenAdminRoute('announcements.php')): ?>
+        <a class="nav-link<?php echo $vsCurrent === 'announcements.php' ? ' active' : ''; ?>" href="announcements.php"<?php echo $vsCurrent === 'announcements.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','announcements'); ?><i class="bi bi-megaphone" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">Announcements</span>
+        </a>
+<?php endif; ?>
         <a class="nav-link<?php echo $vsCurrent === 'profile.php' ? ' active' : ''; ?>" href="profile.php"<?php echo $vsCurrent === 'profile.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','profile'); ?><i class="bi bi-person-badge" aria-hidden="true"></i><?php vs_si_close(); ?></span>
           <span class="nav-text">Profile</span>
         </a>
-<?php if ($vsCanOpenAdminRoute('platform-settings.php')): ?>
-        <a class="nav-link<?php echo $vsCurrent === 'platform-settings.php' ? ' active' : ''; ?>" href="platform-settings.php"<?php echo $vsCurrent === 'platform-settings.php' ? ' aria-current="page"' : ''; ?>>
-          <span class="nav-icon"><?php vs_si_open('admin','settings'); ?><i class="bi bi-sliders" aria-hidden="true"></i><?php vs_si_close(); ?></span>
-          <span class="nav-text">App settings</span>
+<?php if ($vsCanOpenAdminRoute('app-settings.php')): ?>
+        <a class="nav-link<?php echo $vsCurrent === 'app-settings.php' ? ' active' : ''; ?>" href="app-settings.php"<?php echo $vsCurrent === 'app-settings.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','settings'); ?><i class="bi bi-gear-fill" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">App Settings</span>
         </a>
+        <?php if (!empty($isSiteOwner)): ?>
+        <a class="nav-link<?php echo $vsCurrent === 'platform-control.php' ? ' active' : ''; ?>" href="platform-control.php"<?php echo $vsCurrent === 'platform-control.php' ? ' aria-current="page"' : ''; ?>>
+          <span class="nav-icon"><?php vs_si_open('admin','maintenance'); ?><i class="bi bi-power" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">Maintenance</span>
+        </a>
+        <?php endif; ?>
 <?php endif; ?>
 <?php if ($vsCanOpenAdminRoute('owner-notices.php')): ?>
         <a class="nav-link<?php echo $vsCurrent === 'owner-notices.php' ? ' active' : ''; ?>" href="owner-notices.php"<?php echo $vsCurrent === 'owner-notices.php' ? ' aria-current="page"' : ''; ?>>
@@ -576,8 +994,8 @@ vs_admin_log_page_view(
           <span class="nav-text">System check</span>
         </a>
         <a class="nav-link<?php echo $vsCurrent === 'admin-activity.php' ? ' active' : ''; ?>" href="admin-activity.php"<?php echo $vsCurrent === 'admin-activity.php' ? ' aria-current="page"' : ''; ?>>
-          <span class="nav-icon"><?php vs_si_open('admin','activity'); ?><i class="bi bi-activity" aria-hidden="true"></i><?php vs_si_close(); ?></span>
-          <span class="nav-text">Admin activity</span>
+          <span class="nav-icon"><?php vs_si_open('admin','activity'); ?><i class="bi bi-clock-history" aria-hidden="true"></i><?php vs_si_close(); ?></span>
+          <span class="nav-text">Activity Log</span>
         </a>
         <a class="nav-link<?php echo $vsCurrent === 'failed-admin-logins.php' ? ' active' : ''; ?>" href="failed-admin-logins.php"<?php echo $vsCurrent === 'failed-admin-logins.php' ? ' aria-current="page"' : ''; ?>>
           <span class="nav-icon"><?php vs_si_open('admin','failedlogins'); ?><i class="bi bi-shield-exclamation" aria-hidden="true"></i><?php vs_si_close(); ?></span>
@@ -600,11 +1018,11 @@ vs_admin_log_page_view(
         <?php if ($vsAcsbReady) { vs_acsb_render_places('bottom', $vsCurrent, !empty($isSiteOwner), (string)($adminEmail ?? '')); } ?>
       </nav>
 
-      <div class="vs-side-card">
-        <svg viewBox="0 0 24 24" fill="#f5b942" aria-hidden="true"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg>
-        <strong><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></strong>
-        <strong style="font-weight:500">Admin Panel</strong>
-        <span>Powering the next era of entertainment.</span>
+      <div class="vs-pro">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg>
+        <strong><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?> Pro</strong>
+        <span>Unlock more features and grow your platform.</span>
+        <a href="premium.php">Upgrade Now &rarr;</a>
       </div>
       <div class="sidebar-user">
         <img class="avatar-img avatar-md sidebar-user-avatar" id="sidebarAvatar" src="<?php echo htmlspecialchars($adminAvatarPath); ?>" onerror="this.onerror=null;this.src='<?php echo htmlspecialchars($adminAvatarFallback, ENT_QUOTES); ?>';" alt="Admin Avatar">
@@ -718,7 +1136,7 @@ try {
                 .vs-an-foot form { margin: 0; }
                 .vs-an-foot .vs-an-btn { display: block; width: 100%; padding: 13px 8px; text-align: center; background: none; border: 0; color: inherit; font-size: 15px; font-weight: 500; text-decoration: none; cursor: pointer; }
                 .vs-an-foot .vs-an-btn:hover { background: rgba(128,128,128,.14); }
-                .vs-an-foot .vs-an-read { color: #3ea6ff; }
+                .vs-an-foot .vs-an-read { color: #ff2a32; }
                 .vs-an-foot > :last-child { border-left: 1px solid var(--bs-border-color, rgba(128,128,128,.3)); }
                 .vs-an-item { display: flex !important; align-items: flex-start; gap: 12px; }
                 .vs-an-av { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%; object-fit: cover; background: #4f6df5; }
@@ -920,8 +1338,8 @@ try {
               </button>
               <ul class="dropdown-menu dropdown-menu-end profile-menu">
                 <li><a class="dropdown-item" href="profile.php"><span class="menu-icon"><?php vs_si_open('admin','menu_profile'); ?><i class="bi bi-person-badge" aria-hidden="true"></i><?php vs_si_close(); ?></span><span>Profile</span></a></li>
-<?php if ($vsCanOpenAdminRoute('platform-settings.php')): ?>
-                <li><a class="dropdown-item" href="platform-settings.php"><span class="menu-icon"><?php vs_si_open('admin','menu_settings'); ?><i class="bi bi-sliders" aria-hidden="true"></i><?php vs_si_close(); ?></span><span>App settings</span></a></li>
+<?php if ($vsCanOpenAdminRoute('app-settings.php')): ?>
+                <li><a class="dropdown-item" href="app-settings.php"><span class="menu-icon"><?php vs_si_open('admin','menu_settings'); ?><i class="bi bi-sliders" aria-hidden="true"></i><?php vs_si_close(); ?></span><span>App settings</span></a></li>
 <?php endif; ?>
                 <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item" href="../index.php"><span class="menu-icon"><?php vs_si_open('admin','menu_mainsite'); ?><i class="bi bi-house" aria-hidden="true"></i><?php vs_si_close(); ?></span><span>Go to Main Site</span></a></li>
@@ -955,4 +1373,6 @@ try {
 if (function_exists('vs_syscheck_banner')) {
     vs_syscheck_banner(isset($pdo) && $pdo instanceof PDO ? $pdo : null);
 }
+require_once __DIR__ . '/../announcement-banner.php';
+vs_announcement_banner(isset($pdo) && $pdo instanceof PDO ? $pdo : null, '../');
 ?>

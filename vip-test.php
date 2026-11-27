@@ -14,6 +14,7 @@ if (!isset($_SESSION['AdminSession']) && strcasecmp((string)($_SESSION['role'] ?
 }
 require_once __DIR__ . '/connection.php';
 require_once __DIR__ . '/vip-badge.php';
+require_once __DIR__ . '/page-loader-render.php';
 
 $u = trim((string)($_GET['u'] ?? ($_SESSION['username'] ?? '')));
 $role = vs_vip_role($conn ?? null, $u);
@@ -22,8 +23,9 @@ $prem = vs_vip_premium_check($u);
 $is = vs_vip_is($u, $conn ?? null);
 $h = static fn($v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 $yn = static fn($v): string => $v === null ? 'could not read' : ($v ? 'YES' : 'no');
-?><!DOCTYPE html><meta charset="utf-8"><title>VIP test</title>
+?><!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>VIP test</title><?php vs_page_loader_assets(); ?></head>
 <body style="font-family:system-ui;background:#111;color:#eee;padding:30px;max-width:720px">
+<?php vs_page_loader_markup(); ?>
 <h2>VIP test for "<?php echo $h($u); ?>"</h2>
 <form><input name="u" value="<?php echo $h($u); ?>"> <button>Test</button></form>
 <table cellpadding="6" style="margin:16px 0;border-collapse:collapse">
@@ -40,4 +42,4 @@ Ring (80px): <?php echo vs_vip_ring_open($u, $conn ?? null, 80); ?><span style="
 <?php else: ?>
 <p style="opacity:.8">This member is not counted as VIP, so no ring or check is drawn. Check the table above: role must be Admin, or the member needs active Premium.</p>
 <?php endif; ?>
-</body>
+</body></html>

@@ -42,6 +42,28 @@
   overflow-wrap: anywhere;
 }
 
+.vs-searchable-select-option.has-icon {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+.vs-searchable-select-option-icon {
+  display: inline-grid;
+  flex: 0 0 1.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+}
+
+.vs-searchable-select-option-icon img,
+.vs-searchable-select-option-icon svg {
+  display: block;
+  width: 1.125rem;
+  height: 1.125rem;
+  object-fit: contain;
+}
+
 .vs-searchable-select-option:hover,
 .vs-searchable-select-option.is-active {
   background: var(--admin-primary, #6d5dfc);

@@ -9,7 +9,8 @@
  * The first time each day the brain reaches a new stage, a small notice pops up.
  * The popup also shows the last 7 days and a healthy streak, and a "Hide for today" link.
  * Click the pill for details.
- * On every page the pill sits just BELOW the navbar (top centre), never on it.
+ * On the Watch and Shorts pages the pill sits just BELOW the navbar (top centre), never on it.
+ * A video / short is counted after it has really played for WATCH_SECONDS (10 s), not when the page opens.
  * Replays count too (video ended then played again, or a looping short starting over).
  * Add <script src="brain.js" defer></script> to every page you want it on.
  * The count is kept in localStorage, one separate copy per signed-in account (brain-user.php says who is signed in),
@@ -34,10 +35,12 @@
   var ASH_START = 1000;    // at this many the brain crumbles to dust
   var GRAVE_START = 50000; // at this many only a grave (and a ghost brain) is left
   var DRY_JUMP = 0.4;      // how dried-out it already looks the moment it hits 100 (0 to 1)
+  var WATCH_SECONDS = 10;  // a video / short only counts after it has really played this long (0 = count as soon as the page opens)
   var DAILY_RESET = true;  // true = count starts again each day, false = lifetime count
   var RESET_HOUR = 7;      // the new day starts at this hour (7 = 7:00 am, in the visitor's own time)
   var IN_ADMIN = /\/adminpanel\//i.test(location.pathname); // the admin panel has its own shorts.php / watch.php pages: managing is not watching
   var IN_PLAYER = /\/(?:shorts|watch)\.php$/i.test(location.pathname) && !IN_ADMIN;
+  var IN_REWARDS = /\/(?:premium|premium-points)\.php$/i.test(location.pathname) && !IN_ADMIN;
   var KEY_CFG = 'vsBrain:cfg';       // site-wide settings from the admin panel (same for everyone)
   var KEY, KEY_SEEN, KEY_HIST, KEY_SNOOZE; // per-account keys, filled in by setWho()
   var SELF = (document.currentScript && document.currentScript.src) ? document.currentScript.src : '';
@@ -79,6 +82,7 @@
     RESET_HOUR = Math.max(0, Math.min(23, n(c.reset_hour, RESET_HOUR)));
     HEAL_MINUTES = Math.max(0, n(c.heal_minutes, HEAL_MINUTES));
     HEAL_AMOUNT = Math.max(0, n(c.heal_amount, HEAL_AMOUNT));
+    if (c.watch_seconds !== undefined) WATCH_SECONDS = Math.max(0, Math.min(120, n(c.watch_seconds, WATCH_SECONDS)));
     ENABLED = c.enabled !== false;
   }
   try { applyConfig(JSON.parse(localStorage.getItem(KEY_CFG) || 'null')); } catch (e) {} // last known settings, so there is no flash
@@ -229,11 +233,11 @@
   // ---------- styles ----------
   var css = '' +
   '.vsb{position:relative;display:inline-flex;align-items:center;vertical-align:middle;margin-left:12px;flex:0 0 auto;z-index:1100;font-family:Roboto,Arial,sans-serif;color:var(--text,#eaf0ff)}' +
-  '.vsb.float{position:fixed;top:10px;left:50%;margin-left:0;transform:translateX(-50%)}' +
-  '.vsb button.vsb-pill{display:flex;align-items:center;gap:8px;height:54px;padding:3px 22px 3px 12px!important;border-radius:999px!important;cursor:pointer;font:inherit;' +
-    'border:1px solid rgba(255,170,90,.4)!important;background:linear-gradient(180deg,#85502b,#5b3419)!important;color:#ffb23e!important;' +
+  '.vsb.float{position:fixed;top:max(var(--vsb-top,calc(var(--navbar-height,72px) + 12px)),calc(env(safe-area-inset-top,0px) + 8px));left:50%;margin-left:0;transform:translateX(-50%)}' +
+  '.vsb button.vsb-pill{display:flex;align-items:center;gap:8px;height:54px;padding:3px 22px 3px 12px!important;border-radius:999px!important;cursor:pointer;font:inherit;-webkit-tap-highlight-color:transparent;touch-action:manipulation;' +
+    'border:1px solid rgba(255,90,70,.5)!important;background:linear-gradient(180deg,#3d1114,#1d0a0c)!important;color:#ffb23e!important;' +
     'box-shadow:0 5px 18px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12);transition:transform .15s ease}' +
-  '.vsb button.vsb-pill:hover{transform:translateY(-1px)}' +
+  '@media (hover:hover){.vsb button.vsb-pill:hover{transform:translateY(-1px)}}' +
   '.vsb-num{font-size:26px;font-weight:800;line-height:1;color:var(--vsb-num,#ffb23e);font-variant-numeric:tabular-nums;text-shadow:0 1px 2px rgba(0,0,0,.4)}' +
   '.vsb-num.pop{animation:vsb-pop .35s ease}' +
   '.vsb-face{width:46px;height:42px;display:block;overflow:visible;animation:vsb-bob 2.6s ease-in-out infinite}' +
@@ -289,7 +293,7 @@
   '.vsb-tongue-dry{fill:#d27a82;stroke:#3a1d2b;stroke-width:.8;stroke-linejoin:round}' +
   '.vsb-tongue-line{fill:none;stroke:#3a1d2b;stroke-width:.6;stroke-linecap:round;opacity:.5}' +
   '.vsb[data-stage="3"] .vsb-dry-crack,.vsb[data-stage="4"] .vsb-dry-crack{display:inline;fill:none;stroke:var(--vsb-stroke,#d4527e);stroke-width:1.1;stroke-linecap:round;stroke-linejoin:round;opacity:calc(.5 + var(--vsb-dry,0) * .5)}' +
-  '.vsb-pop{display:none;position:absolute;left:50%;top:calc(100% + 10px);transform:translateX(-50%);width:250px;padding:14px 16px;text-align:center;border-radius:16px;' +
+  '.vsb-pop{display:none;position:absolute;left:50%;top:calc(100% + 10px);transform:translateX(-50%);width:min(250px,calc(100vw - 24px));max-height:calc(100vh - 100px);max-height:calc(100dvh - 100px);overflow-y:auto;overscroll-behavior:contain;padding:14px 16px;text-align:center;border-radius:16px;' +
     'background:var(--surface-2,#121634);border:1px solid var(--border,#1d2557);box-shadow:0 8px 28px rgba(0,0,0,.5);font-size:14px;line-height:1.3}' +
   '.vsb.open .vsb-pop{display:block}' +
   '.vsb-title{margin:0 0 8px;font-size:15px;font-weight:800}' +
@@ -308,7 +312,7 @@
   '.vsb button.vsb-snooze{display:block;margin:8px auto 0;padding:0!important;border:0!important;background:none!important;box-shadow:none!important;' +
     'color:var(--muted,#8f9bd0)!important;font:inherit;font-size:11px;text-decoration:underline;cursor:pointer}' +
   '.vsb-hint{margin:6px 0 0;font-size:11px;line-height:1.4;color:var(--muted,#8f9bd0)}' +
-  '.vsb-toast{display:none;position:absolute;left:50%;top:calc(100% + 10px);transform:translateX(-50%);width:230px;padding:10px 14px;text-align:center;cursor:pointer;border-radius:14px;' +
+  '.vsb-toast{display:none;position:absolute;left:50%;top:calc(100% + 10px);transform:translateX(-50%);width:min(230px,calc(100vw - 24px));padding:10px 14px;text-align:center;cursor:pointer;border-radius:14px;' +
     'background:var(--surface-2,#121634);border:1px solid var(--vsb-fill,#ff9fc0);box-shadow:0 8px 28px rgba(0,0,0,.5);line-height:1.3}' +
   '.vsb-toast b{display:block;font-size:14px;font-weight:800}' +
   '.vsb-toast span{display:block;margin-top:3px;font-size:12px;color:var(--muted,#8f9bd0)}' +
@@ -328,13 +332,23 @@
   '@keyframes vsb-crumb{0%{opacity:1;transform:translateY(0)}75%{opacity:1}100%{opacity:0;transform:translateY(4px)}}' +
   '@keyframes vsb-pop{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}' +
   /* Watch / Shorts pages: sit just BELOW the navbar (--vsb-top is measured from the real navbar in place()) */
-  '.vsb.float.vsb-player{top:var(--vsb-top,calc(var(--navbar-height,72px) + 8px))}' +
+  '.vsb.float.vsb-player{top:max(var(--vsb-top,calc(var(--navbar-height,72px) + 8px)),calc(env(safe-area-inset-top,0px) + 8px))}' +
+  /* Premium Rewards: sit below the navbar, never on or inside it */
+  '.vsb.float.vsb-rewards{top:max(var(--vsb-top,calc(var(--navbar-height,72px) + 18px)),calc(env(safe-area-inset-top,0px) + 8px))}' +
   /* phones: tuck it into the bottom-right corner so it does not cover the top bar */
   '@media (max-width:760px){' +
-    '.vsb.float{top:auto;bottom:14px;left:auto;right:14px;transform:none}' +
-    '.vsb.float.vsb-player{top:var(--vsb-top,calc(var(--navbar-height,72px) + 8px));bottom:auto;left:50%;right:auto;transform:translateX(-50%)}' +
-    '.vsb.float .vsb-pop,.vsb.float .vsb-toast{top:auto;bottom:calc(100% + 10px);left:auto;right:0;transform:none!important}' +
+    /* every page: below the actual navbar, centred under it */
+    '.vsb.float{top:max(var(--vsb-top,calc(var(--navbar-height,72px) + 12px)),calc(env(safe-area-inset-top,0px) + 8px));bottom:auto;left:50%;right:auto;transform:translateX(-50%)}' +
+    /* Watch / Shorts: top centre, below the navbar (or below the notch when the navbar is hidden); the popup opens DOWNWARD and stays centred */
+    '.vsb.float.vsb-player{top:max(var(--vsb-top,calc(var(--navbar-height,72px) + 8px)),calc(env(safe-area-inset-top,0px) + 8px));bottom:auto;left:50%;right:auto;transform:translateX(-50%)}' +
+    '.vsb.float.vsb-rewards{top:max(var(--vsb-top,calc(var(--navbar-height,72px) + 18px)),calc(env(safe-area-inset-top,0px) + 8px));bottom:auto;left:50%;right:auto;transform:translateX(-50%)}' +
+    '.vsb.float:not(.vsb-player):not(.vsb-rewards) .vsb-pop,.vsb.float:not(.vsb-player):not(.vsb-rewards) .vsb-toast{top:auto;bottom:calc(100% + 10px);left:auto;right:0;transform:none!important}' +
     '.vsb button.vsb-pill{height:46px;padding-right:16px!important}.vsb-num{font-size:21px}.vsb-face{width:38px;height:35px}' +
+  '}' +
+  /* phones held sideways: very little height, so a smaller pill and a scrolling popup */
+  '@media (max-height:480px) and (orientation:landscape){' +
+    '.vsb button.vsb-pill{height:38px;padding-right:14px!important}.vsb-num{font-size:18px}.vsb-face{width:32px;height:30px}' +
+    '.vsb-pop{max-height:calc(100vh - 70px);max-height:calc(100dvh - 70px)}' +
   '}' +
   '@media (prefers-reduced-motion:reduce){.vsb *{animation:none!important}}';
 
@@ -553,8 +567,26 @@
     var cur = currentKey();
     if (!cur || cur.key === lastKey) return;
     lastKey = cur.key;
-    if (initial && isReload()) return; // refreshing the page is not a new watch
-    add(cur.kind);
+    watchKind = cur.kind; watchMs = 0; ytPlaying = false;
+    // refreshing the page is not a new watch
+    watchDone = !!(initial && isReload());
+    if (!watchDone && WATCH_SECONDS <= 0) { watchDone = true; add(cur.kind); }
+  }
+
+  // ---------- real watch time: count only after the video has really played for a few seconds ----------
+  var watchKind = '', watchMs = 0, watchDone = true, ytPlaying = false;
+  function directPlaying() { // a big <video> that is really playing right now
+    var vs = document.querySelectorAll('video');
+    for (var i = 0; i < vs.length; i++) {
+      var v = vs[i];
+      if (!v.paused && !v.ended && v.readyState >= 3 && isMainBox(v)) return true;
+    }
+    return false;
+  }
+  function watchTick() { // runs every second
+    if (watchDone || !watchKind || document.hidden) return;
+    if (directPlaying() || ytPlaying) watchMs += 1000;
+    if (watchMs >= WATCH_SECONDS * 1000) { watchDone = true; add(watchKind); }
   }
 
   // ---------- count replays ----------
@@ -630,23 +662,20 @@
     else if (d.event === 'infoDelivery' && d.info && typeof d.info.playerState === 'number') st = d.info.playerState;
     if (st === null || st === undefined || st === f.__vsbS) return;
     f.__vsbS = st;
+    if (isMainBox(f)) ytPlaying = (st === 1);
     if (st === 0) f.__vsbEnded = true;                       // video finished
     else if (st === 1 && f.__vsbEnded) { f.__vsbEnded = false; if (isMainBox(f)) addReplay(); } // playing again
   }, false);
 
   // ---------- where the pill goes ----------
   function place() {
-    // Every page: float at the top centre, just BELOW the navbar (never on it).
-    // Phones (non-player pages) keep the bottom-right corner so the top bar stays free.
-    var phone = window.innerWidth <= 760;
-    if (IN_PLAYER || !phone) {
-      root.classList.add('vsb-player');
-      var nav = document.querySelector('.app-navbar, header.navbar, .navbar');
-      var bottom = (nav && nav.getClientRects().length) ? Math.round(nav.getBoundingClientRect().bottom) : 0; // 0 = navbar hidden
-      root.style.setProperty('--vsb-top', (Math.max(bottom, 0) + 8) + 'px');
-    } else {
-      root.classList.remove('vsb-player');
-    }
+    root.classList.remove('vsb-rewards');
+    root.classList.remove('vsb-player');
+    if (IN_PLAYER) root.classList.add('vsb-player');
+
+    var nav = document.querySelector('.app-navbar, .admin-navbar.navbar, header.navbar, .navbar');
+    var bottom = (nav && nav.getClientRects().length) ? Math.round(nav.getBoundingClientRect().bottom) : 72;
+    root.style.setProperty('--vsb-top', (bottom + 12) + 'px');
     if (root.parentNode !== document.body) document.body.appendChild(root);
     root.classList.add('float');
   }
@@ -676,8 +705,6 @@
     style.textContent = css;
     document.head.appendChild(style);
     place();
-    window.addEventListener('resize', place);
-    window.addEventListener('load', place);
     window.addEventListener('load', place);
     var rt = null;
     window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(place, 200); });
@@ -707,6 +734,12 @@
       render();
     });
     if (!ALLOW_SNOOZE) $('.vsb-snooze').style.display = 'none';
+    $('.vsb-toast').addEventListener('click', hideToast);   // tap / click a notice to dismiss it
+    document.addEventListener('keydown', function (e) {      // Esc closes the popup
+      if (e.key === 'Escape' && root.classList.contains('open')) {
+        root.classList.remove('open'); pill.setAttribute('aria-expanded', 'false'); pill.focus();
+      }
+    });
 
     var healed = healAfterBreak();   // before counting this page, so a break always comes first
     touchSeen();
@@ -725,6 +758,7 @@
     window.addEventListener('pagehide', function () { touchSeen(); if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; push(true); } });
     setInterval(function () { if (!document.hidden) touchSeen(); }, 30000); // proves the person is still here
     window.addEventListener('focus', dayCheck);
+    setInterval(watchTick, 1000);
     setInterval(function () { check(false); prepFrames(); }, 800); // new URL without page load + YouTube players
     window.addEventListener('storage', function (e) { if (e.key === KEY || e.key === KEY_SNOOZE) render(); }); // keep other tabs in sync
   }

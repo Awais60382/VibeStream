@@ -21,6 +21,7 @@ if (is_file(__DIR__ . '/premium-perks.php')) {
  */
 
 require_once __DIR__ . '/notifications-store.php';
+if (is_file(__DIR__ . '/premium-store.php')) { require_once __DIR__ . '/premium-store.php'; }
 
 if (!function_exists('vs_comments_esc')) {
     function vs_comments_esc($value): string
@@ -226,6 +227,7 @@ if (!function_exists('vs_comments_fetch')) {
         $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
 
+        if (function_exists('vs_rewards_level_prefetch')) { vs_rewards_level_prefetch(array_column($rows, 'username')); }
         foreach ($rows as &$row) {
             $author = trim((string)$row['username']);
             $row['id'] = (int)$row['id'];
@@ -294,7 +296,7 @@ if (!function_exists('vs_comments_item_html')) {
         $h .= vs_comments_avatar_html($user);
         $h .= '<div class="vs-cm-main">';
 
-        $h .= '<div class="vs-cm-meta"><span class="vs-cm-user">' . vs_comments_esc($user !== '' ? $user : 'Guest') . '</span>' . (function_exists('vs_vip_badge_html') ? vs_vip_badge_html($user) : '');
+        $h .= '<div class="vs-cm-meta"><span class="vs-cm-user">' . vs_comments_esc($user !== '' ? $user : 'Guest') . '</span>' . (function_exists('vs_vip_badge_html') ? vs_vip_badge_html($user) : '') . (function_exists('vs_rewards_user_level_html') ? vs_rewards_user_level_html($user) : '');
         $h .= '<span class="vs-cm-time">' . vs_comments_esc(vs_comments_time_ago($ts)) . '</span>';
         $h .= '<span class="vs-cm-hearted" title="Hearted by ' . vs_comments_esc($owner !== '' ? $owner : 'the creator') . '"' . ($hearted ? '' : ' hidden') . '>';
         $ownerAvatar = vs_comments_avatar($owner);

@@ -10,6 +10,7 @@ require_once __DIR__ . '/checkin-owner-names.php';
 require_once __DIR__ . '/checkin-insights.php';
 require_once __DIR__ . '/device-approval.php';
 require_once __DIR__ . '/work-hours.php';
+require_once __DIR__ . '/../page-loader-render.php';
 
 if (empty($_SESSION['vs_csrf'])) $_SESSION['vs_csrf'] = bin2hex(random_bytes(16));
 $isOwner = false;
@@ -285,6 +286,7 @@ $noteVal = (string)($_POST['note'] ?? ($mine['note'] ?? ''));
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<?php vs_page_loader_assets(); ?>
 <style>
   :root{--bg:#070914;--card:#0e1224;--line:rgba(139,111,255,.22);--txt:#f4f5ff;--mut:#9aa0c3;--pur:#8b3dff;--pur2:#5b3bff;--free:#22e08a;--busy:#ffb020;--mod:#1e9bff;--away:#b45cff;--break:#c9bbff}
   *{box-sizing:border-box}
@@ -430,6 +432,7 @@ $noteVal = (string)($_POST['note'] ?? ($mine['note'] ?? ''));
 </style>
 </head>
 <body>
+<?php vs_page_loader_markup(); ?>
 <main class="wrap">
   <header class="hero">
     <div class="hero-title">

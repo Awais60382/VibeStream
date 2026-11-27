@@ -1,0 +1,301 @@
+/*
+ * VibeStream admin sidebar - extras: menu search, collapsible sections, tidier rows.
+ * Flat on purpose (no glow/animation) so it works with no-neon.css.
+ */
+
+/* ---- menu search ---- */
+html body .admin-shell .admin-sidebar .vs-sbp-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 14px 2px;
+  flex: 0 0 auto;
+}
+html body .admin-shell .admin-sidebar .vs-sbp-field {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+html body .admin-shell .admin-sidebar .vs-sbp-field svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  color: var(--vs-shell-muted, #9aa0b5);
+  pointer-events: none;
+}
+html body .admin-shell .admin-sidebar .vs-sbp-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 34px 0 36px;
+  border: 1px solid var(--vs-shell-line, rgba(128,128,160,.3));
+  border-radius: 999px;
+  background: var(--vs-shell-soft, rgba(128,128,160,.12));
+  color: var(--vs-shell-text, inherit);
+  font-size: 13.5px;
+  outline: none;
+}
+html body .admin-shell .admin-sidebar .vs-sbp-input::placeholder { color: var(--vs-shell-muted, #9aa0b5); }
+html body .admin-shell .admin-sidebar .vs-sbp-input:focus { border-color: #ff2a32 !important; }
+html body .admin-shell .admin-sidebar .vs-sbp-key {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--vs-shell-line, rgba(128,128,160,.3));
+  border-radius: 5px;
+  color: var(--vs-shell-muted, #9aa0b5);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+html body .admin-shell .admin-sidebar .vs-sbp-input:focus + .vs-sbp-key,
+html body .admin-shell .admin-sidebar .vs-sbp-input:not(:placeholder-shown) + .vs-sbp-key { display: none; }
+html body .admin-shell .admin-sidebar .vs-sbp-all {
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--vs-shell-line, rgba(128,128,160,.3));
+  border-radius: 50%;
+  background: transparent;
+  color: var(--vs-shell-muted, #9aa0b5);
+  cursor: pointer;
+}
+html body .admin-shell .admin-sidebar .vs-sbp-all:hover { color: var(--vs-shell-text, inherit); background: var(--vs-shell-soft, rgba(128,128,160,.12)); }
+html body .admin-shell .admin-sidebar .vs-sbp-all svg { width: 16px; height: 16px; }
+html body .admin-shell .admin-sidebar .vs-sbp-empty {
+  display: none;
+  margin: 10px 18px;
+  color: var(--vs-shell-muted, #9aa0b5);
+  font-size: 13px;
+}
+html body .admin-shell .admin-sidebar .vs-sbp-empty.is-on { display: block; }
+
+/* ---- collapsible sections ---- */
+html body .admin-shell .admin-sidebar .sidebar-section-title.vs-sbp-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 2px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  opacity: .8;
+}
+html body .admin-shell .admin-sidebar .sidebar-section-title.vs-sbp-title:hover { opacity: 1; background: var(--vs-shell-soft, rgba(128,128,160,.12)); }
+html body .admin-shell .admin-sidebar .sidebar-section-title.vs-sbp-title:focus-visible { opacity: 1; }
+html body .admin-shell .admin-sidebar .sidebar-section-title.vs-sbp-title::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  opacity: .7;
+}
+html body .admin-shell .admin-sidebar .sidebar-section-title.vs-sbp-title.is-collapsed::after { transform: rotate(-45deg); }
+html body .admin-shell .admin-sidebar .sidebar-section-title.vs-sbp-title.has-alert::before {
+  content: "";
+  order: 1;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #ff2a32;
+}
+html body .admin-shell .admin-sidebar .sidebar-section-title.vs-sbp-title.has-alert::after { order: 2; }
+html body .admin-shell .admin-sidebar .vs-sbp-hidden,
+html body .admin-shell .admin-sidebar .vs-sbp-nomatch { display: none !important; }
+
+/* ---- compact layout: the menu gets the height, the extras take as little as possible ---- */
+html body .admin-shell .admin-sidebar .sidebar-nav {
+  gap: 2px;
+  padding: 0.35rem 0.7rem 0.4rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128,128,160,.45) transparent;
+}
+html body .admin-shell .admin-sidebar .sidebar-nav::-webkit-scrollbar { width: 6px; }
+html body .admin-shell .admin-sidebar .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+html body .admin-shell .admin-sidebar .sidebar-nav::-webkit-scrollbar-thumb { background: rgba(128,128,160,.45); border-radius: 6px; }
+html body .admin-shell .admin-sidebar .sidebar-nav .nav-link {
+  min-height: 40px;
+  gap: 12px;
+  padding: 0.4rem 0.75rem;
+  border-radius: 11px;
+  font-size: 0.9rem;
+}
+html body .admin-shell .admin-sidebar .sidebar-nav .nav-link .nav-icon { flex: 0 0 22px; width: 22px; font-size: 1.05rem; }
+html body .admin-shell .admin-sidebar .sidebar-nav .nav-link:not(.active):hover { background: var(--vs-shell-soft, rgba(128,128,160,.14)); }
+html body .admin-shell .admin-sidebar .sidebar-nav .nav-link .badge { margin-left: auto; }
+
+/* logo row: smaller, and the name is readable in the light theme too (it was white on white) */
+html body .admin-shell .admin-sidebar .sidebar-header { padding: 0.7rem 1rem; }
+html body .admin-shell .admin-sidebar .brand-icon { width: 38px; height: 38px; flex: 0 0 38px; }
+html body .admin-shell .admin-sidebar .brand-title { color: var(--vs-shell-text, #1d1b2e) !important; font-size: 1.15rem; }
+html body .admin-shell .admin-sidebar .brand-subtitle { color: var(--vs-shell-muted, #6c607e) !important; font-size: 0.74rem; }
+
+/* the branding card is only decoration: hide it unless the screen is really tall */
+html body .admin-shell .admin-sidebar .vs-side-card { display: none; }
+@media (min-height: 1000px) {
+  html body .admin-shell .admin-sidebar .vs-side-card { display: block; }
+}
+
+/* account + status: two slim rows instead of two big boxes */
+html body .admin-shell .admin-sidebar .sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0.3rem 0.7rem 0.3rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 12px;
+}
+html body .admin-shell .admin-sidebar .sidebar-user-avatar { width: 32px; height: 32px; flex: 0 0 32px; border-width: 2px; }
+html body .admin-shell .admin-sidebar .sidebar-user strong { font-size: 0.82rem; line-height: 1.15; }
+html body .admin-shell .admin-sidebar .sidebar-user small { font-size: 0.7rem; }
+html body .admin-shell .admin-sidebar .sidebar-footer {
+  margin: 0 0.7rem 0.4rem;
+  padding: 0.35rem 0.3rem 0;
+  font-size: 0.74rem;
+}
+html body .admin-shell .admin-sidebar .sidebar-footer-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* shorter windows: tighter rows, then drop the account box (it is in the top bar anyway) */
+@media (max-height: 800px) {
+  html body .admin-shell .admin-sidebar .sidebar-nav .nav-link { min-height: 36px; padding-top: 0.3rem; padding-bottom: 0.3rem; font-size: 0.86rem; }
+  html body .admin-shell .admin-sidebar .sidebar-header { padding: 0.5rem 1rem; }
+  html body .admin-shell .admin-sidebar .vs-sbp-filter { margin-top: 8px; }
+  html body .admin-shell .admin-sidebar .vs-sbp-input,
+  html body .admin-shell .admin-sidebar .vs-sbp-all { height: 34px; }
+  html body .admin-shell .admin-sidebar .vs-sbp-all { flex-basis: 34px; width: 34px; }
+  html body .admin-shell .admin-sidebar .sidebar-user small { display: none; }
+}
+@media (max-height: 640px) {
+  html body .admin-shell .admin-sidebar .sidebar-user { display: none; }
+  html body .admin-shell .admin-sidebar .sidebar-nav .nav-link { min-height: 34px; }
+}
+
+/* collapsed icon bar: none of the extras apply */
+html body .admin-shell .admin-sidebar.vs-sbp-narrow .vs-sbp-filter,
+html body .admin-shell .admin-sidebar.vs-sbp-narrow .vs-sbp-empty { display: none; }
+html body .admin-shell .admin-sidebar.vs-sbp-narrow .sidebar-section-title.vs-sbp-title::after,
+html body .admin-shell .admin-sidebar.vs-sbp-narrow .sidebar-section-title.vs-sbp-title::before { display: none; }
+
+/* =====================================================================
+   RED + BLACK theme for the admin sidebar (same in the light and dark theme)
+   Uses #adminSidebar so it wins over the older sidebar rules.
+   ===================================================================== */
+html body .admin-shell #adminSidebar {
+  --vs-shell-text: #f3f3f5;
+  --vs-shell-muted: #a1a1a9;
+  --vs-shell-soft: #18181b;
+  --vs-shell-line: rgba(255, 42, 50, 0.30);
+  background: #0a0a0c !important;
+  color: #ececee;
+  border-right: 1px solid rgba(255, 42, 50, 0.38) !important;
+}
+
+/* logo row */
+html body .admin-shell #adminSidebar .sidebar-header { border-bottom: 1px solid rgba(255, 42, 50, 0.28) !important; background: transparent !important; }
+html body .admin-shell #adminSidebar .brand-title { color: #ffffff !important; }
+html body .admin-shell #adminSidebar .brand-subtitle { color: #ff6a70 !important; }
+
+/* section titles */
+html body .admin-shell #adminSidebar .sidebar-section-title { color: #ff4b52 !important; opacity: .95; font-weight: 800; }
+html body .admin-shell #adminSidebar .sidebar-section-title.vs-sbp-title:hover { background: rgba(255, 42, 50, 0.12); }
+
+/* menu rows */
+html body .admin-shell #adminSidebar .sidebar-nav .nav-link { color: #d4d4d9; }
+html body .admin-shell #adminSidebar .nav-icon { color: #8f8f98; }
+html body .admin-shell #adminSidebar .sidebar-nav .nav-link:not(.active):hover,
+html body .admin-shell #adminSidebar .sidebar-nav .nav-link:not(.active):focus {
+  background: rgba(255, 42, 50, 0.14) !important;
+  color: #ffffff;
+}
+html body .admin-shell #adminSidebar .sidebar-nav .nav-link:not(.active):hover .nav-icon,
+html body .admin-shell #adminSidebar .sidebar-nav .nav-link:not(.active):focus .nav-icon { color: #ff5a60; }
+html body .admin-shell #adminSidebar .sidebar-nav .nav-link.active {
+  background: linear-gradient(90deg, #ff2a32, #c9141c) !important;
+  border-color: #ff2a32 !important;
+  color: #ffffff !important;
+}
+html body .admin-shell #adminSidebar .sidebar-nav .nav-link.active .nav-icon,
+html body .admin-shell #adminSidebar .sidebar-nav .nav-link.active .nav-text { color: #ffffff !important; }
+
+/* search box + fold button */
+html body .admin-shell #adminSidebar .vs-sbp-input {
+  background: #151518;
+  border-color: rgba(255, 255, 255, 0.10);
+  color: #f3f3f5;
+}
+html body .admin-shell #adminSidebar .vs-sbp-input:focus { border-color: #ff2a32 !important; }
+html body .admin-shell #adminSidebar .vs-sbp-key,
+html body .admin-shell #adminSidebar .vs-sbp-all { border-color: rgba(255, 255, 255, 0.14); color: #a1a1a9; }
+html body .admin-shell #adminSidebar .vs-sbp-all:hover { background: rgba(255, 42, 50, 0.16); border-color: #ff2a32; color: #ffffff; }
+html body .admin-shell #adminSidebar .vs-sbp-empty { color: #a1a1a9; }
+
+/* scrollbar */
+html body .admin-shell #adminSidebar .sidebar-nav { scrollbar-color: #7a1217 transparent; }
+html body .admin-shell #adminSidebar .sidebar-nav::-webkit-scrollbar-thumb { background: #7a1217; }
+html body .admin-shell #adminSidebar .sidebar-nav::-webkit-scrollbar-thumb:hover { background: #ff2a32; }
+
+/* account row, status line, branding card */
+html body .admin-shell #adminSidebar .sidebar-user {
+  background: #141416 !important;
+  border: 1px solid rgba(255, 42, 50, 0.28) !important;
+}
+html body .admin-shell #adminSidebar .sidebar-user strong { color: #ffffff; }
+html body .admin-shell #adminSidebar .sidebar-user small { color: #a1a1a9; }
+html body .admin-shell #adminSidebar .sidebar-user-avatar { border-color: #ff2a32 !important; }
+html body .admin-shell #adminSidebar .sidebar-footer { border-top: 1px solid rgba(255, 42, 50, 0.22) !important; color: #a1a1a9; }
+html body .admin-shell #adminSidebar .sidebar-footer a { color: #ffffff; }
+html body .admin-shell #adminSidebar .vs-side-card {
+  background: radial-gradient(circle at 50% 0, rgba(255, 42, 50, 0.30), transparent 70%), #141416;
+  border-color: rgba(255, 42, 50, 0.35);
+}
+html body .admin-shell #adminSidebar .vs-side-card strong { color: #ffffff; }
+html body .admin-shell #adminSidebar .vs-side-card span { color: #a1a1a9; }
+
+/* =====================================================================
+   VERY SHORT WINDOWS / ZOOMED-IN BROWSERS: the menu gets (almost) all the height.
+   The whole sidebar scrolls as one piece, so the account row and status line are
+   no longer pinned to the bottom taking space away from the menu.
+   ===================================================================== */
+@media (max-height: 760px) {
+  html body .admin-shell #adminSidebar { overflow-y: auto !important; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: #7a1217 transparent; }
+  html body .admin-shell #adminSidebar::-webkit-scrollbar { width: 6px; }
+  html body .admin-shell #adminSidebar::-webkit-scrollbar-thumb { background: #7a1217; border-radius: 6px; }
+  html body .admin-shell #adminSidebar .sidebar-nav { flex: 0 0 auto !important; overflow: visible !important; min-height: 0; }
+  html body .admin-shell #adminSidebar .sidebar-user { margin-top: 0.3rem; }
+  html body .admin-shell #adminSidebar .vs-side-card { display: none !important; }
+}
+@media (max-height: 700px) {
+  html body .admin-shell #adminSidebar .sidebar-header { padding: 0.4rem 0.9rem; }
+  html body .admin-shell #adminSidebar .brand-icon { width: 32px; height: 32px; flex-basis: 32px; }
+  html body .admin-shell #adminSidebar .brand-subtitle { display: none; }
+  html body .admin-shell #adminSidebar .brand-title { font-size: 1.05rem; }
+  html body .admin-shell #adminSidebar .vs-sbp-filter { margin: 6px 12px 0; }
+  html body .admin-shell #adminSidebar .vs-sbp-input,
+  html body .admin-shell #adminSidebar .vs-sbp-all { height: 32px; }
+  html body .admin-shell #adminSidebar .vs-sbp-all { flex-basis: 32px; width: 32px; }
+  html body .admin-shell #adminSidebar .sidebar-nav { padding-top: 0.15rem; padding-bottom: 0.2rem; }
+  html body .admin-shell #adminSidebar .sidebar-section-title { margin: 6px 0 1px; padding: 4px 10px; font-size: 0.62rem; }
+  html body .admin-shell #adminSidebar .sidebar-nav .nav-link { min-height: 33px; padding-top: 0.2rem; padding-bottom: 0.2rem; font-size: 0.84rem; gap: 10px; }
+  html body .admin-shell #adminSidebar .sidebar-nav .nav-link .nav-icon { flex-basis: 20px; width: 20px; font-size: 0.95rem; }
+  html body .admin-shell #adminSidebar .sidebar-user { display: none; }
+}
+@media (max-height: 520px) {
+  html body .admin-shell #adminSidebar .vs-sbp-filter { display: none; }
+  html body .admin-shell #adminSidebar .sidebar-footer { display: none; }
+}

@@ -9,6 +9,7 @@ $work = is_array($card) ? (int)($card['work'] ?? 0) : 0;
 $break = is_array($card) ? (int)($card['break'] ?? 0) : 0;
 $remaining = max(0, $until - time());
 $h = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+require_once __DIR__ . '/../page-loader-render.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -16,6 +17,7 @@ $h = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Break time · VibeStream</title>
+<?php vs_page_loader_assets(); ?>
 <style>
   :root{color-scheme:dark}
   *{box-sizing:border-box}
@@ -32,6 +34,7 @@ $h = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 </style>
 </head>
 <body>
+<?php vs_page_loader_markup(); ?>
 <main class="card">
   <div class="icon">&#9749;</div>
   <?php if ($until > 0): ?>

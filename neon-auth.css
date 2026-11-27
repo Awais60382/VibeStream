@@ -5,13 +5,13 @@
 html:not([data-theme="light"]) {
     --na-bg: #05060f; --na-card: rgba(10, 13, 31, 0.88); --na-field: rgba(10, 13, 31, 0.92);
     --na-text: #eaf0ff; --na-muted: #8f9bd0; --na-placeholder: #6f7bb0;
-    --na-cyan: #00e5ff; --na-pink: #ff2e93; --na-violet: #8a5cff;
+    --na-cyan: #ff2a32; --na-pink: #ff2a32; --na-violet: #b50d16;
     --na-line: rgba(138, 92, 255, 0.55);
 }
 html[data-theme="light"] {
     --na-bg: #f4f6ff; --na-card: rgba(255, 255, 255, 0.92); --na-field: #ffffff;
     --na-text: #0b1030; --na-muted: #55608f; --na-placeholder: #8a94c4;
-    --na-cyan: #00b8e6; --na-pink: #ff2e93; --na-violet: #7c4dff;
+    --na-cyan: #ff2a32; --na-pink: #ff2a32; --na-violet: #b50d16;
     --na-line: rgba(124, 77, 255, 0.5);
 }
 
@@ -19,7 +19,7 @@ html[data-theme="light"] {
 html:not([data-theme="light"]) body:has(.auth-layout) {
     background:
         radial-gradient(900px 480px at 8% -8%, rgba(138, 92, 255, 0.20), transparent 70%),
-        radial-gradient(800px 420px at 100% 0, rgba(0, 229, 255, 0.12), transparent 70%),
+        radial-gradient(800px 420px at 100% 0, rgba(255,42,50, 0.12), transparent 70%),
         radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
         #05060f;
     background-attachment: fixed;
@@ -27,7 +27,7 @@ html:not([data-theme="light"]) body:has(.auth-layout) {
 html[data-theme="light"] body:has(.auth-layout) {
     background:
         radial-gradient(900px 480px at 8% -8%, rgba(124, 77, 255, 0.14), transparent 70%),
-        radial-gradient(800px 420px at 100% 0, rgba(0, 184, 230, 0.14), transparent 70%),
+        radial-gradient(800px 420px at 100% 0, rgba(255,42,50, 0.14), transparent 70%),
         radial-gradient(700px 500px at 50% 110%, rgba(255, 46, 147, 0.10), transparent 70%),
         #f4f6ff;
     background-attachment: fixed;
@@ -40,7 +40,7 @@ html body .auth-card {
     color: var(--na-text);
     border: 1px solid var(--na-line);
     border-radius: 20px;
-    box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.10), 0 0 34px -6px rgba(138, 92, 255, 0.55), 0 0 70px -20px rgba(0, 229, 255, 0.45), inset 0 0 40px -24px rgba(0, 229, 255, 0.5);
+    box-shadow: 0 0 0 1px rgba(255,42,50, 0.10), 0 0 34px -6px rgba(138, 92, 255, 0.55), 0 0 70px -20px rgba(255,42,50, 0.45), inset 0 0 40px -24px rgba(255,42,50, 0.5);
     backdrop-filter: blur(10px);
 }
 html body .auth-card::before {            /* glowing top edge */
@@ -59,8 +59,8 @@ html body .auth-brand span {
     filter: drop-shadow(0 0 8px rgba(138, 92, 255, 0.6));
     font-weight: 800;
 }
-html body .site-brand-icon { filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.6)); }
-html body .auth-eyebrow { color: var(--na-cyan); text-shadow: 0 0 10px rgba(0, 229, 255, 0.6); letter-spacing: .12em; text-transform: uppercase; }
+html body .site-brand-icon { filter: drop-shadow(0 0 8px rgba(255,42,50, 0.6)); }
+html body .auth-eyebrow { color: var(--na-cyan); text-shadow: 0 0 10px rgba(255,42,50, 0.6); letter-spacing: .12em; text-transform: uppercase; }
 html body .auth-card h1 { color: var(--na-text); text-shadow: 0 0 18px rgba(138, 92, 255, 0.55); }
 html body .auth-description,
 html body .auth-card small { color: var(--na-muted); }
@@ -76,10 +76,10 @@ html[data-theme="light"] body .auth-error { color: #c4106b; text-shadow: none; }
 /* "Continue with Google" placeholder */
 html body .google-coming-soon {
     color: var(--na-text); background: rgba(23, 28, 66, 0.55);
-    border: 1px dashed rgba(0, 229, 255, 0.55); border-radius: 999px;
-    box-shadow: 0 0 18px -6px rgba(0, 229, 255, 0.5);
+    border: 1px dashed rgba(255,42,50, 0.55); border-radius: 999px;
+    box-shadow: 0 0 18px -6px rgba(255,42,50, 0.5);
 }
-html[data-theme="light"] body .google-coming-soon { background: rgba(0, 184, 230, 0.08); }
+html[data-theme="light"] body .google-coming-soon { background: rgba(255,42,50, 0.08); }
 html body .google-coming-soon-badge {
     color: #fff; background: linear-gradient(90deg, var(--na-violet), var(--na-pink)); border: 0;
     box-shadow: 0 0 12px rgba(255, 46, 147, 0.55);
@@ -90,7 +90,7 @@ html body .google-coming-soon-note { color: var(--na-muted); }
 html body .auth-divider { color: var(--na-muted); }
 html body .auth-divider::before,
 html body .auth-divider::after { background: linear-gradient(90deg, transparent, var(--na-violet), transparent); box-shadow: 0 0 8px rgba(138, 92, 255, 0.6); }
-html body .auth-divider span { color: var(--na-cyan); text-shadow: 0 0 8px rgba(0, 229, 255, 0.5); }
+html body .auth-divider span { color: var(--na-cyan); text-shadow: 0 0 8px rgba(255,42,50, 0.5); }
 
 /* fields */
 html body .auth-card label { color: var(--na-text); }
@@ -107,7 +107,7 @@ html body .auth-card input[type="text"]:focus,
 html body .auth-card input[type="email"]:focus,
 html body .auth-card input[type="password"]:focus {
     outline: none; border-color: var(--na-cyan);
-    box-shadow: 0 0 0 1px var(--na-cyan), 0 0 22px rgba(0, 229, 255, 0.55);
+    box-shadow: 0 0 0 1px var(--na-cyan), 0 0 22px rgba(255,42,50, 0.55);
 }
 html body .auth-card input:-webkit-autofill {
     -webkit-text-fill-color: var(--na-text);
@@ -127,14 +127,14 @@ html body .submit-btn {
 }
 html body .submit-btn:hover {
     transform: translateY(-1px); filter: brightness(1.08);
-    box-shadow: 0 0 28px rgba(255, 46, 147, 0.8), 0 0 60px -6px rgba(0, 229, 255, 0.55);
+    box-shadow: 0 0 28px rgba(255, 46, 147, 0.8), 0 0 60px -6px rgba(255,42,50, 0.55);
 }
 html body .submit-btn:focus-visible { outline: 2px solid var(--na-cyan); outline-offset: 3px; }
 html body .submit-btn:disabled { opacity: .7; transform: none; }
 
 /* links */
 html body .auth-footer { color: var(--na-muted); }
-html body .auth-footer a { color: var(--na-cyan); text-decoration: none; text-shadow: 0 0 10px rgba(0, 229, 255, 0.55); }
+html body .auth-footer a { color: var(--na-cyan); text-decoration: none; text-shadow: 0 0 10px rgba(255,42,50, 0.55); }
 html body .auth-footer a:hover { color: var(--na-pink); text-shadow: 0 0 12px rgba(255, 46, 147, 0.8); }
 
 ::selection { background: rgba(255, 46, 147, 0.45); color: #fff; }

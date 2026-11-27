@@ -23,14 +23,14 @@ html[data-theme="light"] body.vs-neon {
   --vap-violet: #7047df;
   --vap-cyan: #008daa;
   --vap-glow: 0 0 22px -10px rgba(124, 77, 255, .34);
-  --vap-cyan-glow: 0 0 20px -8px rgba(0, 184, 230, .42);
+  --vap-cyan-glow: 0 0 20px -8px rgba(255,42,50, .42);
 }
 
 body.vs-neon main.dashboard-content {
   color: var(--vap-text);
   background:
     radial-gradient(1000px 480px at 8% -8%, rgba(124, 77, 255, .13), transparent 70%),
-    radial-gradient(850px 440px at 100% 0, rgba(0, 184, 230, .09), transparent 70%),
+    radial-gradient(850px 440px at 100% 0, rgba(255,42,50, .09), transparent 70%),
     var(--vap-bg) !important;
 }
 

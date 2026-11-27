@@ -293,7 +293,7 @@ $iconTypes = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml';
         .ct-tabs{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:0 16px 14px;border-bottom:1px solid rgba(128,128,128,.22)}
         .ct-tab{border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;border-radius:10px;padding:8px 16px;font-size:.88rem;font-weight:600}
         .ct-tab:hover{background:rgba(128,128,128,.12)}
-        .ct-tab.on{background:#7c4dff;border-color:#7c4dff;color:#fff}
+        .ct-tab.on{background:#b50d16;border-color:#b50d16;color:#fff}
         .ct-tab:disabled{opacity:.45;cursor:not-allowed}
         .ct-max{margin-left:auto;font-size:.85rem;opacity:.75}
         .ct-grid{padding:16px}
@@ -329,30 +329,30 @@ $iconTypes = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml';
         .ct-presets{padding:16px}
         .ct-empty{padding:36px 16px;text-align:center;opacity:.75}
         .preset-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;cursor:pointer;border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font-weight:600;font-size:.9rem}
-        .preset-chip:hover{border-color:#7c4dff}
+        .preset-chip:hover{border-color:#b50d16}
         .preset-chip svg{width:20px;height:20px;flex:0 0 20px}
         .cat-preset-grid{display:flex;flex-wrap:wrap;gap:10px}
         .cat-preset-grid form{margin:0}
       
 
       </style>
-      <style data-vs-neon>
+      <style>
 /* ===== NEON THEME (dark + light) - same look as creator-analytics.php ===== */
 html:not([data-bs-theme="light"]):not([data-theme="light"]){
-  --nx-cyan:#00e5ff;--nx-pink:#ff2e93;--nx-violet:#8a5cff;--nx-green:#22e58a;--nx-amber:#ffd23f;--nx-red:#ff4d6d;
+  --nx-cyan:#ff2a32;--nx-pink:#ff2a32;--nx-violet:#b50d16;--nx-green:#22e58a;--nx-amber:#ffd23f;--nx-red:#ff4d6d;
   --nx-cyan-rgb:0,229,255;--nx-pink-rgb:255,46,147;--nx-violet-rgb:138,92,255;--nx-green-rgb:34,229,138;--nx-amber-rgb:255,210,63;--nx-red-rgb:255,77,109;
-  --nx-cyan-ink:#00e5ff;--nx-pink-ink:#ff7ac0;--nx-muted:#8f9bd0;
+  --nx-cyan-ink:#ff2a32;--nx-pink-ink:#ff7ac0;--nx-muted:#8f9bd0;
   --nx-text:#eaf0ff;--nx-card:rgba(10,13,31,.88);--nx-solid:#0a0d1f;--nx-field:rgba(10,13,31,.9);
   --nx-track:#05060f;--nx-soft:#121634;--nx-active:#fff;
-  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(138,92,255,.16),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,229,255,.10),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.08),transparent 70%),#05060f;
+  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(138,92,255,.16),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(255,42,50,.10),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.08),transparent 70%),#05060f;
 }
 html[data-bs-theme="light"],html[data-theme="light"]{
-  --nx-cyan:#00b8e6;--nx-pink:#ff2e93;--nx-violet:#7c4dff;--nx-green:#0fb86a;--nx-amber:#f59e0b;--nx-red:#e11d63;
+  --nx-cyan:#ff2a32;--nx-pink:#ff2a32;--nx-violet:#b50d16;--nx-green:#0fb86a;--nx-amber:#f59e0b;--nx-red:#e11d63;
   --nx-cyan-rgb:0,184,230;--nx-pink-rgb:255,46,147;--nx-violet-rgb:124,77,255;--nx-green-rgb:15,184,106;--nx-amber-rgb:245,158,11;--nx-red-rgb:225,29,99;
-  --nx-cyan-ink:#0086b3;--nx-pink-ink:#d4147a;--nx-muted:#55608f;
+  --nx-cyan-ink:#d80e18;--nx-pink-ink:#d4147a;--nx-muted:#55608f;
   --nx-text:#0b1030;--nx-card:#ffffff;--nx-solid:#ffffff;--nx-field:#ffffff;
   --nx-track:#eceffd;--nx-soft:#eceffd;--nx-active:#0b1030;
-  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(124,77,255,.14),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(0,184,230,.14),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.10),transparent 70%),#f4f6ff;
+  --nx-page:radial-gradient(900px 480px at 8% -8%,rgba(124,77,255,.14),transparent 70%),radial-gradient(800px 420px at 100% 0,rgba(255,42,50,.14),transparent 70%),radial-gradient(700px 500px at 50% 110%,rgba(255,46,147,.10),transparent 70%),#f4f6ff;
 }
 html body{background:var(--nx-page);background-attachment:fixed}
 html body ::-webkit-scrollbar{width:10px;height:10px}
@@ -533,7 +533,7 @@ html body .alert-danger{color:var(--nx-text);background:rgba(var(--nx-pink-rgb),
                   <h2>Category Stats</h2>
                 </div>
                 <div class="ct-stats">
-                  <div class="ct-stat"><i style="background:#7c4dff" class="bi bi-grid"></i><div><b><?php echo (int)$statTotal; ?></b><small>Total Categories</small></div></div>
+                  <div class="ct-stat"><i style="background:#b50d16" class="bi bi-grid"></i><div><b><?php echo (int)$statTotal; ?></b><small>Total Categories</small></div></div>
                   <div class="ct-stat"><i style="background:#2f8cff" class="bi bi-image"></i><div><b><?php echo (int)$statCustom; ?></b><small>With Custom Icons</small></div></div>
                   <div class="ct-stat"><i style="background:#27c77a" class="bi bi-stars"></i><div><b><?php echo (int)$statPreset; ?></b><small>Preset Categories</small></div></div>
                   <div class="ct-stat"><i style="background:#f5a623" class="bi bi-hourglass-split"></i><div><b><?php echo (int)$statLeft; ?></b><small>Remaining Slots</small></div></div>
@@ -678,6 +678,14 @@ html body .alert-danger{color:var(--nx-text);background:rgba(var(--nx-pink-rgb),
         if (empty) { empty.hidden = !(q !== '' && shown === 0); }
         if (hint) { hint.hidden = q !== ''; }
       });
+
+      var forwardedQuery = new URLSearchParams(window.location.search).get('preset_search');
+      if (forwardedQuery !== null) {
+        go('presets');
+        box.value = forwardedQuery.slice(0, 100);
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        box.focus();
+      }
     }
   })();
   </script>

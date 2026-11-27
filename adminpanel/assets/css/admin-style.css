@@ -1875,7 +1875,7 @@ html[data-theme="dark"] {
   --vs-hover: rgba(255, 255, 255, 0.06);
   --vs-accent-soft: rgba(138, 117, 255, 0.18);
   --vs-accent-text: #c7bcff;
-  --bs-link-color: #3ea6ff;
+  --bs-link-color: #ff2a32;
   --bs-link-hover-color: #7cc2ff;
 }
 
@@ -2321,13 +2321,13 @@ html body .admin-navbar .icon-button.vs-neon-toggle:focus {
   border-radius: 50% !important;
 }
 html body .admin-navbar .icon-button.vs-neon-toggle[aria-pressed="true"] {
-  color: #00e5ff;
-  border-color: #00e5ff !important;
-  box-shadow: 0 0 10px rgba(0, 229, 255, 0.45), inset 0 0 8px rgba(0, 229, 255, 0.18);
+  color: #ff2a32;
+  border-color: #ff2a32 !important;
+  box-shadow: 0 0 10px rgba(255,42,50, 0.45), inset 0 0 8px rgba(255,42,50, 0.18);
 }
 html[data-theme="light"] body .admin-navbar .icon-button.vs-neon-toggle[aria-pressed="true"] {
-  color: #0086b3;
-  border-color: #0086b3 !important;
+  color: #d80e18;
+  border-color: #d80e18 !important;
   box-shadow: 0 0 8px rgba(0, 134, 179, 0.3);
 }
 html body .admin-navbar .icon-button.vs-neon-toggle svg {

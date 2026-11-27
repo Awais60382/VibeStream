@@ -29,7 +29,7 @@ if (!function_exists('vs_creator_confetti')) {
     if (!canvas || !canvas.getContext) { return; }
     var ctx = canvas.getContext('2d');
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var colors = ['#8b5cf6', '#ec4899', '#f5b942', '#34d399', '#60a5fa', '#ff2e93', '#00e5ff', '#ffffff'];
+    var colors = ['#8b5cf6', '#ec4899', '#f5b942', '#34d399', '#60a5fa', '#ff2a32', '#ff2a32', '#ffffff'];
     var parts = [];
     var raf = 0, last = 0, started = 0, showerUntil = 0;
 

@@ -3,7 +3,7 @@
  * VibeStream admin panel - Site icons (OWNER ONLY).
  * The owner changes: the app logo, category icons, menu / explore / button icons,
  * the admin panel sidebar icons and the website sidebar icons.
- * Put this file in the adminpanel folder.
+ * Put this file in the adminpanel folder, together with site-icons-overview.php.
  */
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -371,53 +371,56 @@ $groupHelp = [
     'Explore' => 'The icons in the Explore list of the side menu.',
 ];
 ?>
-      <link rel="stylesheet" href="./assets/css/vs-neon.css?v=6">
       <style>
-        /* Neon look for this page. Works in dark mode (default look) and falls back to light colours. */
-        .si-page{--si-glow:rgba(70,110,255,.30);--si-ring:var(--vn-line,#1b3a8f)}
-        .si-page .panel,.si-page .page-heading{border-radius:12px;border:1px solid var(--si-ring)!important;box-shadow:0 0 0 1px rgba(80,120,255,.05),0 0 22px rgba(40,90,255,.16)}
+        /* Red-and-black dashboard styling, with a matching light palette. */
+        html[data-theme="dark"] .si-page{--si-glow:rgba(255,25,35,.28);--si-ring:rgba(255,42,50,.52);
+          --vn-card:#0c0a0a;--vn-card2:#120d0d;--vn-line:rgba(255,42,50,.48);--vn-line-soft:rgba(255,42,50,.25);
+          --vn-text:#f6f1f1;--vn-strong:#fff;--vn-muted:#b8a8aa;--vn-accent:#ff2b3a;--vn-accent2:#ff2b3a;
+          --vn-iconbox:rgba(255,42,50,.13);--vn-btn-bg:rgba(255,42,50,.10);--vn-btn-hover:rgba(255,42,50,.2);--vn-btn-text:#fff;--vn-input-bg:#100909;--vn-placeholder:#9d8587}
+        html[data-theme="light"] .si-page{--si-glow:rgba(205,24,32,.11);--si-ring:rgba(205,24,32,.32);
+          --vn-card:#fff;--vn-card2:#fff5f5;--vn-line:rgba(205,24,32,.3);--vn-line-soft:rgba(205,24,32,.18);
+          --vn-text:#291a1a;--vn-strong:#291a1a;--vn-muted:#766565;--vn-accent:#c91922;--vn-accent2:#e3262d;
+          --vn-iconbox:rgba(205,24,32,.08);--vn-btn-bg:rgba(205,24,32,.06);--vn-btn-hover:rgba(205,24,32,.12);--vn-btn-text:#4b3030;--vn-input-bg:#fff;--vn-placeholder:#897777}
+        .si-page{background:radial-gradient(850px 380px at 100% 0,rgba(255,26,32,.10),transparent 60%),var(--vn-bg,#090909)!important;color:var(--vn-text)}
+        .si-page .panel,.si-page .page-heading{border-radius:16px;border:1px solid var(--si-ring)!important;
+          box-shadow:0 12px 36px rgba(0,0,0,.24),0 0 22px var(--si-glow)!important}
+        html[data-theme="dark"] .admin-shell .si-page .panel{background:linear-gradient(145deg,#120909,#080808)!important;color:#f6f1f1!important}
+        html[data-theme="light"] .admin-shell .si-page .panel{background:linear-gradient(145deg,#fff,#fffafa)!important;color:#291a1a!important}
+        html[data-theme="dark"] .admin-shell .si-page .page-heading{background:radial-gradient(520px 230px at 84% 0,rgba(255,30,40,.22),transparent 72%),linear-gradient(115deg,#170506,#090909 62%,#180506)!important}
+        html[data-theme="light"] .admin-shell .si-page .page-heading{background:radial-gradient(520px 230px at 84% 0,rgba(255,30,40,.12),transparent 72%),linear-gradient(115deg,#fff,#fff8f8 62%,#fff0f0)!important}
+        .si-page .page-heading h1{color:var(--vn-strong)!important}
+        .si-page .page-heading .text-muted{color:var(--vn-muted)!important}
+        .si-page .page-heading .btn-outline-secondary{color:var(--vn-text)!important;border-color:var(--si-ring)!important;background:rgba(255,35,45,.06)!important}
         .si-page .vn-card-title{font-size:1.1rem}
         .si-page .vn-card-title .vn-ico{width:42px;height:42px;border-radius:12px;font-size:1.25rem}
-        .si-count-pill{font-size:.7rem;font-weight:700;padding:2px 9px;border-radius:999px;background:rgba(106,61,246,.3);color:#c8b8ff;border:1px solid rgba(138,92,255,.5)}
+        .si-page .vn-card-title .vn-ico{color:#fff;background:linear-gradient(145deg,#ff343c,#a50e16);border-color:rgba(255,70,76,.55);box-shadow:0 0 16px rgba(255,30,40,.24)}
+        .si-count-pill{font-size:.7rem;font-weight:700;padding:2px 9px;border-radius:999px;background:rgba(255,42,50,.14);color:#ff8589;border:1px solid rgba(255,70,76,.42)}
 
         /* Icon tiles */
-        .si-tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;padding:14px;border:1px solid var(--vn-line-soft,rgba(128,128,128,.25));border-radius:12px;background:rgba(10,20,60,.18)}
+        .si-tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;padding:14px;border:1px solid var(--vn-line-soft,rgba(128,128,128,.25));border-radius:14px;background:rgba(255,35,45,.035)}
         @media (max-width:1399px){.si-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
         @media (max-width:575px){.si-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
         .si-tile{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;min-width:0;color:inherit;text-decoration:none}
-        a.si-tile:hover .si-box{border-color:#6a3df6;box-shadow:0 0 18px rgba(106,61,246,.45)}
         .si-box{width:100%;aspect-ratio:1/0.82;max-width:130px;border-radius:12px;display:flex;align-items:center;justify-content:center;
-          background:var(--vn-card2,rgba(16,30,76,.75));border:1px solid var(--si-ring);box-shadow:0 0 14px var(--si-glow),inset 0 0 18px rgba(60,100,255,.08);
+          background:linear-gradient(145deg,var(--vn-card2),rgba(255,35,45,.025));border:1px solid var(--si-ring);box-shadow:0 0 14px var(--si-glow),inset 0 0 18px rgba(255,35,45,.06);
           overflow:hidden;transition:border-color .15s,box-shadow .15s}
         .si-box .si-round{width:64%;aspect-ratio:1/1;border-radius:50%;display:flex;align-items:center;justify-content:center;
-          background:var(--vn-iconbox,rgba(40,70,170,.4));color:var(--vn-accent2,#8a5cff);font-size:1.7rem;overflow:hidden}
+          background:var(--vn-iconbox,rgba(40,70,170,.4));color:var(--vn-accent2,#b50d16);font-size:1.7rem;overflow:hidden}
         .si-box img{max-width:70%;max-height:70%;object-fit:contain;display:block}
         .si-box .si-round img{max-width:64%;max-height:64%}
-        .si-box>i{font-size:2.2rem;color:var(--vn-accent2,#8a5cff)}
+        .si-box>i{font-size:2.2rem;color:var(--vn-accent2,#b50d16)}
         .si-name{font-weight:600;font-size:.86rem;color:var(--vn-strong,#fff);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .si-meta{font-size:.74rem;color:var(--vn-muted,#8fa3d6);margin-top:-3px}
-        .si-pill{font-size:.66rem;font-weight:700;padding:2px 12px;border-radius:5px;background:rgba(106,61,246,.35);color:#c8b8ff;border:1px solid rgba(138,92,255,.5)}
+        .si-pill{font-size:.66rem;font-weight:700;padding:2px 12px;border-radius:5px;background:rgba(255,42,50,.14);color:#ff8589;border:1px solid rgba(255,70,76,.42)}
         .si-tile .si-actions{display:flex;gap:6px;justify-content:center}
-
-        /* Upload bar */
-        .si-upload{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px;padding:14px 16px;border:1.5px dashed var(--si-ring);border-radius:12px}
-        .si-upload>i.si-cloud{font-size:2rem;color:var(--vn-accent2,#8a5cff)}
-        .si-upload .si-grow{flex:1;min-width:210px}
-        .si-upload .si-hint{font-size:.76rem;color:#4da3ff}
-        .si-upload .si-btns{display:flex;gap:10px;flex-wrap:wrap}
-        .si-btn-primary{display:inline-flex;align-items:center;gap:8px;padding:10px 26px;border-radius:9px;border:0;font-weight:600;cursor:pointer;color:#fff;
-          background:linear-gradient(135deg,#5b3df5,#7a4dff);box-shadow:0 2px 14px rgba(106,61,246,.5)}
-        .si-btn-outline{display:inline-flex;align-items:center;gap:8px;padding:10px 26px;border-radius:9px;font-weight:600;cursor:pointer;
-          color:var(--vn-btn-text,#dbe5ff);background:transparent;border:1px solid var(--si-ring)}
-        .si-btn-outline:hover{background:var(--vn-btn-hover,rgba(60,90,200,.45))}
-        .si-btn-outline[disabled]{opacity:.5;cursor:not-allowed}
-        .si-fname{font-size:.76rem;color:var(--vn-muted,#8fa3d6);display:block}
+        .si-btn-primary{display:inline-flex;align-items:center;gap:8px;padding:10px 26px;border-radius:9px;border:1px solid rgba(255,90,95,.55);font-weight:600;cursor:pointer;color:#fff;
+          background:linear-gradient(135deg,#ff343c,#ad0c13);box-shadow:0 4px 16px rgba(255,30,40,.24)}
 
         /* Detail grids (category / menu / button icons) */
         .vn-icontiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:10px}
         .vn-icontile{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:14px 8px;border-radius:12px;background:var(--vn-card2,rgba(128,128,128,.1));border:1px solid var(--vn-line-soft,rgba(128,128,128,.25));min-width:0}
-        .vn-icontile:hover{border-color:#6a3df6}
-        .vn-prev{width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:var(--vn-iconbox,rgba(106,61,246,.15));border:1px solid var(--vn-line,rgba(128,128,128,.3));color:var(--vn-accent,#6a3df6);font-size:1.6rem;overflow:hidden;flex:0 0 auto;box-shadow:0 0 14px rgba(70,110,255,.28)}
+        .vn-icontile:hover{border-color:#ff343c}
+        .vn-prev{width:64px;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:var(--vn-iconbox,rgba(106,61,246,.15));border:1px solid var(--vn-line,rgba(128,128,128,.3));color:var(--vn-accent,#6a3df6);font-size:1.6rem;overflow:hidden;flex:0 0 auto;box-shadow:0 0 14px rgba(255,40,50,.25)}
         .vn-prev img,.vn-pv img{display:block;width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;object-fit:contain}
         .vn-prev svg{max-width:100%;max-height:100%}
         .vn-t-name{font-weight:600;font-size:.86rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -425,33 +428,33 @@ $groupHelp = [
         .vn-icontile .vn-actions{display:flex;gap:6px;justify-content:center}
         .vn-iconbtn{width:30px;height:30px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer}
 
-        /* Right rail */
-        .si-strip{display:flex;gap:8px;flex-wrap:wrap;padding:10px;border-radius:12px;border:1px solid var(--si-ring);background:rgba(10,20,60,.25)}
-        .vn-pv{width:42px;height:42px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:var(--vn-iconbox,rgba(106,61,246,.15));border:1px solid var(--vn-line,rgba(128,128,128,.3));color:var(--vn-accent2,#8a5cff);overflow:hidden;box-shadow:0 0 10px rgba(70,110,255,.25)}
-        .si-rail-h{font-weight:600;color:var(--vn-accent2,#8a5cff);margin:10px 0 6px}
-        .si-qa form{margin:0}
+        /* Menu builders */
+        .vn-pv{width:42px;height:42px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:var(--vn-iconbox,rgba(106,61,246,.15));border:1px solid var(--vn-line,rgba(128,128,128,.3));color:var(--vn-accent2,#b50d16);overflow:hidden;box-shadow:0 0 10px rgba(255,40,50,.22)}
+        .si-rail-h{font-weight:600;color:var(--vn-accent2,#b50d16);margin:10px 0 6px}
         .si-forms{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-        .si-formbox{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--vn-line-soft,rgba(128,128,128,.25));border-radius:12px;background:rgba(10,20,60,.18)}
+        .si-formbox{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--vn-line-soft,rgba(128,128,128,.25));border-radius:12px;background:rgba(255,35,45,.04)}
         .si-h3{font-size:.95rem;font-weight:600;margin:0}
         .si-lab{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--vn-muted,#8fa3d6)}
         .si-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-        .si-tabbar{display:none;gap:6px;padding:8px;margin:16px 0 0;border:1px solid rgba(124,92,255,.35);border-radius:18px;background:linear-gradient(180deg,rgba(124,92,255,.10),rgba(124,92,255,.04));overflow-x:auto;white-space:nowrap;scrollbar-width:thin}
-        .si-js .si-tabbar{display:flex}
-        .si-tab{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;padding:10px 18px;border:0;border-radius:13px;background:transparent;color:inherit;font-weight:700;font-size:.95rem;cursor:pointer;transition:background .15s ease,box-shadow .15s ease}
-        .si-tab i{font-size:1rem;opacity:.85}
-        .si-tab:hover{background:rgba(124,92,255,.14)}
-        .si-tab:focus-visible{outline:2px solid #6a3df6;outline-offset:2px}
-        .si-tab.si-on{color:#fff;background:linear-gradient(135deg,#8a5cff,#5b2fd6);box-shadow:0 6px 18px rgba(106,61,246,.40),inset 0 0 0 1px rgba(255,255,255,.18)}
-        .si-tab.si-on i{opacity:1}
-        .si-js .si-pane:not(.si-on){display:none}
-        .si-pane>.panel{margin-bottom:16px}
         .si-row.si-drag{opacity:.45}
-        .si-js.si-notov .vn-rail{display:none}
-        .si-js.si-notov .vn-layout{display:block}
-        .si-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;border:1px solid var(--vn-line-soft,rgba(128,128,128,.25));background:rgba(10,20,60,.18)}
+        .si-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;border:1px solid var(--vn-line-soft,rgba(128,128,128,.25));background:rgba(255,35,45,.035)}
         .si-row-main{flex:1;min-width:0;display:flex;flex-direction:column}
         .si-row-main b{font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         .si-row-main small{font-size:.74rem;opacity:.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+        /* Tabs */
+        .si-tabbar{display:none;gap:6px;padding:8px;margin:16px 0 0;border:1px solid var(--si-ring);border-radius:14px;background:rgba(255,35,45,.04);overflow-x:auto;white-space:nowrap;scrollbar-width:thin}
+        .si-js .si-tabbar{display:flex}
+        .si-tab{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;padding:10px 18px;border:0;border-radius:13px;background:transparent;color:inherit;font-weight:700;font-size:.95rem;cursor:pointer;transition:background .15s ease,box-shadow .15s ease}
+        .si-tab i{font-size:1rem;opacity:.85}
+        .si-tab:hover{background:rgba(255,42,50,.10)}
+        .si-tab:focus-visible{outline:2px solid #ff343c;outline-offset:2px}
+        .si-tab.si-on{color:#fff;background:linear-gradient(135deg,#ff343c,#ad0c13);box-shadow:0 6px 18px rgba(255,30,40,.3),inset 0 0 0 1px rgba(255,255,255,.18)}
+        .si-tab.si-on i{opacity:1}
+        .si-js .si-pane:not(.si-on){display:none}
+        .si-pane>.panel{margin-bottom:16px;margin-top:16px}
+
+        /* Show more / less */
         .si-more-wrap{display:flex;justify-content:center;margin-top:12px}
         .si-more{display:inline-flex;align-items:center;gap:8px;padding:8px 22px;border-radius:9px;font-weight:600;font-size:.86rem;cursor:pointer;
           color:var(--vn-btn-text,#dbe5ff);background:transparent;border:1px solid var(--si-ring)}
@@ -463,14 +466,15 @@ $groupHelp = [
         <div class="container-fluid px-3 px-lg-4 py-4">
           <div class="page-heading d-flex flex-wrap align-items-center justify-content-between gap-3">
             <div class="page-heading-copy">
-              <span class="page-icon"><i class="bi bi-globe2" aria-hidden="true"></i></span>
+              <span class="page-icon"><i class="bi bi-palette-fill" aria-hidden="true"></i></span>
               <div>
-                <h1 class="h3 mb-1">Site Icons</h1>
-                <p class="text-muted mb-0">Manage your site icons for both the main website and the admin panel. (Owner only)</p>
+                <h1 class="h3 mb-1">Site <span class="si-red">Icons</span></h1>
+                <p class="text-muted mb-0">Customize your app, admin panel, website sidebar, category, menu, explore and button icons.</p>
               </div>
             </div>
             <div class="d-flex align-items-center gap-2">
               <span class="vn-owner-badge"><i class="bi bi-gem" aria-hidden="true"></i> Owner Only</span>
+              <a class="btn btn-outline-secondary btn-sm" href="site-icons.php?download=guide"><i class="bi bi-download" aria-hidden="true"></i> Download Guide</a>
               <a class="btn btn-outline-secondary btn-sm" href="index.php"><i class="bi bi-arrow-left" aria-hidden="true"></i> Dashboard</a>
             </div>
           </div>
@@ -488,87 +492,8 @@ $groupHelp = [
           <div class="vn-layout">
             <div class="vn-main">
 
-              <div class="si-pane si-on" id="si-pane-overview" role="tabpanel" data-pane="overview">
-              <!-- ================= MAIN SITE ICONS (overview) ================= -->
-              <section class="panel" aria-label="Main site icons">
-                <h2 class="vn-card-title"><span class="vn-ico"><i class="bi bi-globe2" aria-hidden="true"></i></span>Main Site Icons</h2>
-                <p class="vn-sub mb-3">These icons are visible to your visitors on the main website. Tap a tile to jump to its icons.</p>
-
-                <div class="si-tiles">
-                  <div class="si-tile">
-                    <div class="si-box"><?php if ($logoUrl !== ''): ?><img src="<?php echo vs_e($logoUrl); ?>?v=<?php echo $bust; ?>" alt="Current logo" style="max-width:78%;max-height:78%"><?php else: ?><i class="bi bi-image" aria-hidden="true"></i><?php endif; ?></div>
-                    <div class="si-name">App Logo</div>
-                    <div class="si-meta">128 &ndash; 2048 px</div>
-                    <span class="si-pill">PNG</span>
-                  </div>
-                  <div class="si-tile">
-                    <div class="si-box"><div class="si-round" style="background:#0a1230"><?php if ($logoUrl !== ''): ?><img src="<?php echo vs_e($logoUrl); ?>?v=<?php echo $bust; ?>" alt="Favicon preview"><?php else: ?><i class="bi bi-image" aria-hidden="true"></i><?php endif; ?></div></div>
-                    <div class="si-name">Favicon</div>
-                    <div class="si-meta">Same as the logo</div>
-                    <span class="si-pill">PNG</span>
-                  </div>
-                  <?php $firstCat = $categories ? (string)reset($categories) : ''; ?>
-                  <a class="si-tile" href="#sec-categories">
-                    <div class="si-box"><div class="si-round"><?php if ($firstCat !== ''): echo vs_category_icon_html($firstCat, 40, '../'); else: ?><i class="bi bi-tags" aria-hidden="true"></i><?php endif; ?></div></div>
-                    <div class="si-name">Category Icons</div>
-                    <div class="si-meta"><?php echo count($categories); ?> categor<?php echo count($categories) === 1 ? 'y' : 'ies'; ?></div>
-                    <span class="si-pill">PNG</span>
-                  </a>
-                  <?php foreach (vs_ui_icon_groups() as $group => $names):
-                      $firstName = array_key_first($names);
-                      $custom = $firstName !== null ? ($uiMap[$firstName] ?? null) : null;
-                      $gid = 'sec-' . strtolower(preg_replace('/[^a-z0-9]+/i', '-', (string)$group)); ?>
-                    <a class="si-tile" href="#<?php echo vs_e($gid); ?>">
-                      <div class="si-box"><div class="si-round"><?php if ($custom): ?><img src="../uploads/ui-icons/<?php echo vs_e($custom); ?>" alt=""><?php else: ?><i class="bi bi-grid" aria-hidden="true"></i><?php endif; ?></div></div>
-                      <div class="si-name"><?php echo vs_e($group); ?> Icons</div>
-                      <div class="si-meta"><?php echo count($names); ?> icon<?php echo count($names) === 1 ? '' : 's'; ?></div>
-                      <span class="si-pill">PNG</span>
-                    </a>
-                  <?php endforeach; ?>
-                  <a class="si-tile" href="#sec-website-sidebar">
-                    <div class="si-box"><div class="si-round"><i class="bi bi-layout-sidebar" aria-hidden="true"></i></div></div>
-                    <div class="si-name">Website Sidebar</div>
-                    <div class="si-meta"><?php echo count($siItems['site'] ?? []); ?> icons</div>
-                    <span class="si-pill">PNG</span>
-                  </a>
-                  <a class="si-tile" href="#sec-custom">
-                    <div class="si-box"><div class="si-round"><i class="bi bi-menu-button-wide" aria-hidden="true"></i></div></div>
-                    <div class="si-name">Custom Menu</div>
-                    <div class="si-meta"><?php echo count($csb['items']); ?> item<?php echo count($csb['items']) === 1 ? '' : 's'; ?></div>
-                    <span class="si-pill">PNG</span>
-                  </a>
-                  <a class="si-tile" href="#sec-admin">
-                    <div class="si-box"><div class="si-round"><i class="bi bi-shield-check" aria-hidden="true"></i></div></div>
-                    <div class="si-name">Admin Panel</div>
-                    <div class="si-meta"><?php echo count($siItems['admin'] ?? []); ?> icons</div>
-                    <span class="si-pill">PNG</span>
-                  </a>
-                  <a class="si-tile" href="#sec-admin-custom">
-                    <div class="si-box"><div class="si-round"><i class="bi bi-ui-checks-grid" aria-hidden="true"></i></div></div>
-                    <div class="si-name">Admin Menu</div>
-                    <div class="si-meta"><?php echo count($acsb['items']); ?> item<?php echo count($acsb['items']) === 1 ? '' : 's'; ?></div>
-                    <span class="si-pill">PNG</span>
-                  </a>
-                </div>
-
-                <div class="si-upload">
-                  <i class="bi bi-cloud-arrow-up si-cloud" aria-hidden="true"></i>
-                  <div class="si-grow">
-                    <div class="fw-semibold">Upload New App Logo</div>
-                    <div class="si-hint">PNG only &bull; square, 128 to 2048 px &bull; Max 4 MB &bull; used in the top bar, browser tab and phone home screen</div>
-                    <span class="si-fname" id="siLogoName"></span>
-                  </div>
-                  <form method="post" enctype="multipart/form-data" class="si-btns" id="siLogoForm">
-                    <input type="hidden" name="csrf" value="<?php echo vs_e($csrf); ?>">
-                    <input type="hidden" name="action" value="logo">
-                    <input type="file" name="icon" id="siLogoFile" accept="image/png" hidden>
-                    <button type="button" class="si-btn-primary" onclick="document.getElementById('siLogoFile').click()"><i class="bi bi-upload" aria-hidden="true"></i> Choose File</button>
-                    <button type="submit" class="si-btn-outline" id="siLogoGo" disabled><i class="bi bi-box-arrow-in-up" aria-hidden="true"></i> Upload</button>
-                  </form>
-                </div>
-              </section>
-
-              </div>
+              <!-- ================= OVERVIEW (new design) ================= -->
+              <?php include __DIR__ . '/site-icons-overview.php'; ?>
 
               <div class="si-pane" id="si-pane-admin" role="tabpanel" data-pane="admin">
               <!-- ================= ADMIN PANEL ICONS (all) ================= -->
@@ -677,7 +602,6 @@ $groupHelp = [
               <div class="si-pane" id="si-pane-website" role="tabpanel" data-pane="website">
               <!-- ================= WEBSITE SIDEBAR ICONS (all) ================= -->
               <?php vs_si_scope_section($csrf, $siMap, $siItems, 'site', 'sec-website-sidebar', 'Website Sidebar Icons', 'Every icon in the website sidebar and the website profile dropdown.', 'bi-layout-sidebar'); ?>
-
 
               <!-- ================= CUSTOM SIDEBAR MENU ================= -->
               <section class="panel" aria-label="Custom sidebar menu" id="sec-custom">
@@ -798,64 +722,6 @@ $groupHelp = [
               <?php endforeach; ?>
               </div>
             </div>
-
-            <!-- ================= RIGHT RAIL ================= -->
-            <aside class="vn-rail" aria-label="Side panel">
-              <section class="panel">
-                <h2 class="vn-card-title"><span class="vn-ico"><i class="bi bi-eye" aria-hidden="true"></i></span>Current Icons Preview</h2>
-                <p class="si-rail-h">Main Site</p>
-                <div class="si-strip">
-                  <?php if ($logoUrl !== ''): ?><span class="vn-pv"><img src="<?php echo vs_e($logoUrl); ?>?v=<?php echo $bust; ?>" alt=""></span><?php endif; ?>
-                  <?php $shown = 0; foreach ($siItems['site'] ?? [] as $key => [$label, $defClass]) {
-                      if ($shown >= 6) { break; } $shown++; ?>
-                    <span class="vn-pv" title="<?php echo vs_e($label); ?>"><?php echo vs_si_preview($siMap, 'site', (string)$key, $defClass); ?></span>
-                  <?php } ?>
-                </div>
-                <p class="si-rail-h">Admin Panel</p>
-                <div class="si-strip">
-                  <?php $shown = 0; foreach ($siItems['admin'] ?? [] as $key => [$label, $defClass]) {
-                      if ($shown >= 7) { break; } $shown++; ?>
-                    <span class="vn-pv" title="<?php echo vs_e($label); ?>"><?php echo vs_si_preview($siMap, 'admin', (string)$key, $defClass); ?></span>
-                  <?php } ?>
-                </div>
-              </section>
-
-              <section class="panel si-qa">
-                <h2 class="vn-card-title"><span class="vn-ico"><i class="bi bi-lightning-charge-fill" aria-hidden="true"></i></span>Quick Actions</h2>
-                <ul class="vn-list mt-2">
-                  <li>
-                    <form method="post" onsubmit="return confirm('Reset the app logo to the default one?');">
-                      <input type="hidden" name="csrf" value="<?php echo vs_e($csrf); ?>">
-                      <input type="hidden" name="action" value="logo_reset">
-                      <button type="submit" class="vn-row"><span class="vn-tile vn-t-blue"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></span><span class="vn-grow">Reset to Default<span class="vn-small">Restore the default app logo</span></span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
-                    </form>
-                  </li>
-                  <li><a href="site-icons.php?download=guide"><span class="vn-tile vn-t-blue"><i class="bi bi-download" aria-hidden="true"></i></span><span class="vn-grow">Download Icon Guide<span class="vn-small">Get size and format requirements</span></span><i class="bi bi-chevron-right" aria-hidden="true"></i></a></li>
-                  <li><a href="icons.php#tab-access"><span class="vn-tile vn-t-green"><i class="bi bi-key" aria-hidden="true"></i></span><span class="vn-grow">Icon Permissions<span class="vn-small">Approve or deny admin requests</span></span><i class="bi bi-chevron-right" aria-hidden="true"></i></a></li>
-                  <li><a href="#sec-custom"><span class="vn-tile vn-t-purple"><i class="bi bi-menu-button-wide" aria-hidden="true"></i></span><span class="vn-grow">Sidebar Menu<span class="vn-small">Add your own sections and links</span></span><i class="bi bi-chevron-right" aria-hidden="true"></i></a></li>
-                  <li><a href="#sec-admin-custom"><span class="vn-tile vn-t-purple"><i class="bi bi-ui-checks-grid" aria-hidden="true"></i></span><span class="vn-grow">Admin Sidebar Menu<span class="vn-small">Add your own admin pages</span></span><i class="bi bi-chevron-right" aria-hidden="true"></i></a></li>
-                  <li><a href="categories.php"><span class="vn-tile vn-t-purple"><i class="bi bi-tags" aria-hidden="true"></i></span><span class="vn-grow">Manage Categories<span class="vn-small">Add or rename categories</span></span><i class="bi bi-chevron-right" aria-hidden="true"></i></a></li>
-                </ul>
-              </section>
-
-              <section class="panel">
-                <h2 class="vn-card-title"><span class="vn-ico"><i class="bi bi-lightbulb" aria-hidden="true"></i></span>Tips</h2>
-                <ul class="vn-list vn-tip mt-2">
-                  <li><i class="bi bi-check-circle-fill" aria-hidden="true"></i>Use PNG format for best quality.</li>
-                  <li><i class="bi bi-check-circle-fill" aria-hidden="true"></i>Square images work best (1:1 ratio).</li>
-                  <li><i class="bi bi-check-circle-fill" aria-hidden="true"></i>One-colour icons follow the theme. Use the palette button to keep original colours.</li>
-                  <li><i class="bi bi-check-circle-fill" aria-hidden="true"></i>Use a consistent style and colors.</li>
-                  <li><i class="bi bi-check-circle-fill" aria-hidden="true"></i>Only the site owner can change these icons.</li>
-                </ul>
-              </section>
-
-              <section class="panel vn-ownercard">
-                <div class="d-flex gap-3 align-items-center">
-                  <span class="vn-tile vn-t-purple"><i class="bi bi-gem" aria-hidden="true"></i></span>
-                  <div><b>Owner Only</b><p class="vn-sub mb-0">Only the site owner can upload or change site icons.</p></div>
-                </div>
-              </section>
-            </aside>
           </div>
         </div>
       </main>
@@ -918,7 +784,6 @@ $groupHelp = [
           t.classList.toggle('si-on', on);
           t.setAttribute('aria-selected', on ? 'true' : 'false');
         });
-        page.classList.toggle('si-notov', name !== 'overview');
         if (remember) { try { sessionStorage.setItem(KEY, name); } catch (e) {} }
       }
       function paneOf(id) {
@@ -992,19 +857,6 @@ $groupHelp = [
             ul.insertBefore(dragEl, (e.clientY - r.top) > r.height / 2 ? li.nextSibling : li);
           });
         });
-      });
-    })();
-  </script>
-  <script>
-    (function () {
-      var f = document.getElementById('siLogoFile');
-      var go = document.getElementById('siLogoGo');
-      var nm = document.getElementById('siLogoName');
-      if (!f) { return; }
-      f.addEventListener('change', function () {
-        var has = f.files && f.files.length > 0;
-        go.disabled = !has;
-        nm.textContent = has ? f.files[0].name : '';
       });
     })();
   </script>

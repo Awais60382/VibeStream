@@ -38,7 +38,7 @@ if (!function_exists('vs_install_app_html')) {
     border: 1px solid var(--border, #303030); font-size: 14px; font-weight: 600; white-space: nowrap;
 }
 .nav-right .vs-install-btn:hover,
-.nav-right .vs-install-btn:focus { background: var(--surface-hover, #2a2a31); border-color: #5b8cff; color: var(--text, #f1f1f1); }
+.nav-right .vs-install-btn:focus { background: var(--surface-hover, #2a2a31); border-color: #ff2a32; color: var(--text, #f1f1f1); }
 .nav-right .vs-install-btn[hidden] { display: none; }
 .vs-install-btn svg { width: 20px; height: 20px; flex: 0 0 20px; display: block; }
 .vs-install-label { display: none; }

@@ -98,6 +98,74 @@ if (($_GET['live'] ?? '') === '1') {
         usort($liveFeed, static fn(array $a, array $b): int => $b['t'] <=> $a['t']);
         $liveFeed = array_slice($liveFeed, 0, 10);
     }
-    echo json_encode(['online' => $liveOnline, 'reports' => $liveReports, 'feed' => $liveFeed, 'ts' => time()], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
+    $liveHealth = null;
+    if (($_GET['health'] ?? '') === '1') {
+        $dbOk = false;
+        try {
+            $dbOk = isset($pdo) && $pdo instanceof PDO && $pdo->query('SELECT 1') !== false;
+        } catch (Throwable $e) {
+            $dbOk = false;
+        }
+        $liveHealth = [
+            ['name' => 'Database', 'text' => $dbOk ? 'Healthy' : 'Not reachable', 'tone' => $dbOk ? 'ok' : 'bad', 'badge' => $dbOk ? 'OK' : 'DOWN'],
+        ];
+
+        $diskTotal = @disk_total_space(__DIR__);
+        $diskFree = @disk_free_space(__DIR__);
+        if ($diskTotal && $diskFree !== false) {
+            $diskPct = round(($diskTotal - $diskFree) / $diskTotal * 100, 1);
+            $liveHealth[] = [
+                'name' => 'File Storage',
+                'text' => $diskPct < 85 ? 'Healthy' : ($diskPct < 95 ? 'Filling up (' . $diskPct . '% used)' : 'Almost full (' . $diskPct . '% used)'),
+                'tone' => $diskPct < 85 ? 'ok' : ($diskPct < 95 ? 'warn' : 'bad'),
+                'badge' => $diskPct < 85 ? 'OK' : ($diskPct < 95 ? 'WARN' : 'FULL'),
+            ];
+        } else {
+            $liveHealth[] = ['name' => 'File Storage', 'text' => 'Not available', 'tone' => 'off', 'badge' => 'N/A'];
+        }
+
+        $responseMs = max(0, (int)round((microtime(true) - (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true))) * 1000));
+        $liveHealth[] = [
+            'name' => 'Site Performance',
+            'text' => ($responseMs < 1000 ? 'Good' : ($responseMs < 2500 ? 'Fair' : 'Slow')) . ' (' . $responseMs . ' ms)',
+            'tone' => $responseMs < 1000 ? 'ok' : ($responseMs < 2500 ? 'warn' : 'bad'),
+            'badge' => $responseMs < 1000 ? 'OK' : ($responseMs < 2500 ? 'WARN' : 'SLOW'),
+        ];
+
+        $uploadAvailable = false;
+        $uploadFailures = 0;
+        if (isset($pdo) && $pdo instanceof PDO && function_exists('vs_upload_failure_ensure')) {
+            try {
+                $uploadAvailable = vs_upload_failure_ensure($pdo);
+                $failureCols = $uploadAvailable ? vs_cols($pdo, 'upload_failure_events') : [];
+                $requiredCols = ['username', 'content_type', 'upload_mode', 'failure_code', 'php_error_code', 'created_at'];
+                foreach ($requiredCols as $column) {
+                    if (!in_array($column, $failureCols, true)) {
+                        $uploadAvailable = false;
+                        break;
+                    }
+                }
+                if ($uploadAvailable) {
+                    $failureDate = vs_q(vs_pick($failureCols, ['created_at']));
+                    $st = $pdo->prepare('SELECT COUNT(*) FROM `upload_failure_events` WHERE ' . $failureDate . ' >= :since');
+                    $st->execute([':since' => date('Y-m-d H:i:s', strtotime('-7 days'))]);
+                    $uploadFailures = (int)$st->fetchColumn();
+                }
+            } catch (Throwable $e) {
+                error_log('Dashboard live upload status could not be read: ' . $e->getMessage());
+                $uploadAvailable = false;
+            }
+        }
+        $liveHealth[] = $uploadAvailable
+            ? [
+                'name' => 'Upload Service',
+                'text' => $uploadFailures === 0 ? 'Operational' : $uploadFailures . ' failed upload' . ($uploadFailures === 1 ? '' : 's') . ' this week',
+                'tone' => $uploadFailures === 0 ? 'ok' : 'bad',
+                'badge' => $uploadFailures === 0 ? 'OK' : 'ERROR',
+            ]
+            : ['name' => 'Upload Service', 'text' => 'Not monitored', 'tone' => 'off', 'badge' => 'N/A'];
+    }
+
+    echo json_encode(['online' => $liveOnline, 'reports' => $liveReports, 'feed' => $liveFeed, 'health' => $liveHealth, 'ts' => time()], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
     exit;
 }

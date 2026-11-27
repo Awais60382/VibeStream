@@ -94,9 +94,6 @@ if (!function_exists('render_navbar')) {
             </nav>
 
             <div class="nav-right">
-                <button type="button" class="vs-neon-toggle" data-vs-neon-toggle aria-label="Turn neon off" title="Turn neon off" aria-pressed="true">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M14 1 2 14h8l-1 9 13-15h-8z"/></svg>
-                </button>
                 <button class="vs-theme-toggle" type="button" data-vs-theme-toggle aria-label="Switch to light mode" title="Switch to light mode">
                     <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                 </button>
@@ -133,7 +130,7 @@ if (!function_exists('vs_base_css')) {
     --accent: #b02a2a;
     --accent-hover: #1f1f1f;
     --accent-soft: rgba(176, 42, 42, 0.18);
-    --blue: #3ea6ff;
+    --blue: #ff2a32;
     --navbar-height: 72px;
     --sidebar-width: 240px;
 }
@@ -201,7 +198,7 @@ button, input, textarea, select { font: inherit; }
 }
 .user-link { display: inline-flex; align-items: center; gap: 10px; }
 .user-avatar-circle {
-    width: 32px; height: 32px; border-radius: 50%; background: #3ea6ff; color: #ffffff;
+    width: 32px; height: 32px; border-radius: 50%; background: #ff2a32; color: #ffffff;
     font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;
 }
 .user-name { color: #ffffff; font-size: 14px; font-weight: 600; white-space: nowrap; }
@@ -302,6 +299,7 @@ JS;
 if (!function_exists('vs_page_start')) {
     function vs_page_start($title, $active = '', $extraCss = '') {
         $siteName = vs_branding_app_name();
+        $loaderLogoUrl = vs_branding_logo_url();
         $defaultTheme = vs_branding_default_theme();
         ?><!DOCTYPE html>
 <html lang="en">
@@ -315,27 +313,32 @@ if (!function_exists('vs_page_start')) {
     <link rel="apple-touch-icon" href="branding-icon.php">
     <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?> - <?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?></title>
     <script src="theme.js?v=3"></script>
-    <link rel="stylesheet" href="neon-off.css?v=7">
-    <script src="neon-switch.js?v=7"></script>
     <?php
-    // The page CSS is split where its "NEON THEME" section starts, so the neon on/off button can switch that part off.
-    $vsCssAll = (string)$extraCss;
-    $vsNeonAt = strpos($vsCssAll, '/* ===== NEON THEME (dark + light)');
-    $vsCssBase = $vsNeonAt === false ? $vsCssAll : substr($vsCssAll, 0, $vsNeonAt);
-    $vsCssNeon = $vsNeonAt === false ? '' : substr($vsCssAll, $vsNeonAt);
     ?>
     <style><?= vs_base_css() ?>
-<?= $vsCssBase ?></style>
-    <?php if ($vsCssNeon !== ''): ?><style data-vs-neon><?= $vsCssNeon ?></style><?php endif; ?>
+<?= (string)$extraCss ?></style>
     <link rel="stylesheet" href="sidebar.css">
     <link rel="stylesheet" href="theme.css?v=5">
+    <link rel="stylesheet" href="main-pages-theme.css?v=1">
+    <link rel="stylesheet" href="no-neon.css?v=1">
+    <link rel="stylesheet" href="red-theme.css?v=<?= (int)@filemtime(__DIR__ . '/red-theme.css') ?>">
     <link rel="stylesheet" href="sidebar-rail.css?v=1">
     <link rel="stylesheet" href="searchable-select.css?v=<?= (int)@filemtime(__DIR__ . '/searchable-select.css') ?>">
     <script src="searchable-select.js?v=<?= (int)@filemtime(__DIR__ . '/searchable-select.js') ?>" defer></script>
     <script src="sidebar-rail.js?v=1"></script>
     <script src="brain.js?v=<?= (int)@filemtime(__DIR__ . '/brain.js') ?>" defer></script>
+    <link rel="stylesheet" href="page-loader.css?v=<?= (int)@filemtime(__DIR__ . '/page-loader.css') ?>">
+    <script>document.documentElement.classList.add('vs-page-loading');</script>
+    <script src="page-loader.js?v=<?= (int)@filemtime(__DIR__ . '/page-loader.js') ?>" defer></script>
 </head>
 <body>
+    <div class="vs-page-loader" id="vsPageLoader" role="status" aria-live="polite" aria-hidden="false">
+        <div class="vs-page-loader__mark">
+            <span class="vs-page-loader__ring" aria-hidden="true"></span>
+            <img src="<?= htmlspecialchars($loaderLogoUrl, ENT_QUOTES, 'UTF-8') ?>" alt="" onerror="this.onerror=null;this.src='<?= htmlspecialchars(vs_site_url(VS_DEFAULT_LOGO_PATH), ENT_QUOTES, 'UTF-8') ?>';">
+        </div>
+        <span class="vs-page-loader__text">Loading <?= htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') ?></span>
+    </div>
     <?php render_navbar($active); ?>
 <?php
 $vsPromptUser = trim((string)($_SESSION['username'] ?? ''));

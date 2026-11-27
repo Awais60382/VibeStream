@@ -60,6 +60,10 @@ const VS_REWARDS_LEVELS = [
     ['Platinum', 2500, '#5ccbf5'], ['Diamond', 5000, '#c58bff'],
 ];
 
+// Streak freeze: costs points, covers ONE missed day, once per cooldown. Edit here to change.
+const VS_REWARDS_FREEZE_COST = 50;
+const VS_REWARDS_FREEZE_COOLDOWN_DAYS = 14;
+
 // Leaderboard names: true shows e.g. "aw***" instead of the full username (your own row is always shown in full).
 const VS_LEADERBOARD_MASK = false;
 
@@ -212,6 +216,126 @@ function vs_rewards_points(PDO $pdo, string $username): int
     return (int)($st->fetchColumn() ?: 0);
 }
 
+/** Can this member use a streak freeze right now? Returns ['cost', 'available', 'reason']. */
+function vs_rewards_freeze_status(PDO $pdo, string $username): array
+{
+    $out = ['cost' => VS_REWARDS_FREEZE_COST, 'available' => false, 'reason' => ''];
+    $today = new DateTimeImmutable((string)$pdo->query('SELECT CURDATE()')->fetchColumn());
+    $day = [];
+    foreach ([1, 2, 3, 4] as $n) {
+        $day[$n] = $today->modify("-$n day")->format('Y-m-d');
+    }
+    $st = $pdo->prepare(
+        'SELECT DATE_FORMAT(checkin_date, \'%Y-%m-%d\') FROM reward_points_daily_checkins WHERE username = :u AND checkin_date >= :f'
+    );
+    $st->execute([':u' => $username, ':f' => $day[4]]);
+    $set = array_fill_keys(array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN)), true);
+    if (isset($set[$day[1]])) {
+        $out['reason'] = 'You did not miss yesterday, so there is nothing to save.';
+        return $out;
+    }
+    if (!(isset($set[$day[2]]) && isset($set[$day[3]]) && isset($set[$day[4]]))) {
+        $out['reason'] = 'A freeze needs a 3-day streak right before the day you missed.';
+        return $out;
+    }
+    $recent = $pdo->prepare(
+        'SELECT COUNT(*) FROM reward_points_ledger WHERE username = :u AND reason = \'streak_freeze\'
+         AND created_at >= DATE_SUB(NOW(), INTERVAL ' . (int)VS_REWARDS_FREEZE_COOLDOWN_DAYS . ' DAY)'
+    );
+    $recent->execute([':u' => $username]);
+    if ((int)$recent->fetchColumn() > 0) {
+        $out['reason'] = 'You can use one freeze every ' . VS_REWARDS_FREEZE_COOLDOWN_DAYS . ' days.';
+        return $out;
+    }
+    $points = $pdo->prepare('SELECT points FROM reward_points_accounts WHERE username = :u');
+    $points->execute([':u' => $username]);
+    if ((int)$points->fetchColumn() < VS_REWARDS_FREEZE_COST) {
+        $out['reason'] = 'You need ' . VS_REWARDS_FREEZE_COST . ' points to use a freeze.';
+        return $out;
+    }
+    $out['available'] = true;
+    return $out;
+}
+
+/** Spends points to fill in yesterday's missed check-in so the streak continues. Returns an error message or null. */
+function vs_rewards_buy_streak_freeze(PDO $pdo, string $username): ?string
+{
+    if ($username === '') {
+        return 'Please sign in first.';
+    }
+    vs_premium_ensure($pdo);
+    $pdo->beginTransaction();
+    try {
+        $account = $pdo->prepare('INSERT IGNORE INTO reward_points_accounts (username, points, updated_at) VALUES (:u, 0, NOW())');
+        $account->execute([':u' => $username]);
+        $lock = $pdo->prepare('SELECT points FROM reward_points_accounts WHERE username = :u FOR UPDATE');
+        $lock->execute([':u' => $username]);
+        if ($lock->fetchColumn() === false) {
+            throw new RuntimeException('Could not lock the reward points account.');
+        }
+        $status = vs_rewards_freeze_status($pdo, $username);
+        if (!$status['available']) {
+            $pdo->rollBack();
+            return $status['reason'] !== '' ? $status['reason'] : 'A streak freeze is not available right now.';
+        }
+        $yesterday = (new DateTimeImmutable((string)$pdo->query('SELECT CURDATE()')->fetchColumn()))->modify('-1 day')->format('Y-m-d');
+        $checkin = $pdo->prepare('INSERT IGNORE INTO reward_points_daily_checkins (username, checkin_date, created_at) VALUES (:u, :d, NOW())');
+        $checkin->execute([':u' => $username, ':d' => $yesterday]);
+        if ($checkin->rowCount() !== 1) {
+            $pdo->rollBack();
+            return 'Yesterday is already covered.';
+        }
+        $entry = $pdo->prepare(
+            'INSERT INTO reward_points_ledger (username, amount, reason, reference_key, created_at)
+             VALUES (:u, :a, \'streak_freeze\', :r, NOW())'
+        );
+        $entry->execute([':u' => $username, ':a' => -VS_REWARDS_FREEZE_COST, ':r' => hash('sha256', "streak-freeze\0" . strtolower($username) . "\0" . $yesterday)]);
+        $update = $pdo->prepare('UPDATE reward_points_accounts SET points = points - :c, updated_at = NOW() WHERE username = :u AND points >= :c2');
+        $update->execute([':c' => VS_REWARDS_FREEZE_COST, ':u' => $username, ':c2' => VS_REWARDS_FREEZE_COST]);
+        if ($entry->rowCount() !== 1 || $update->rowCount() !== 1) {
+            throw new RuntimeException('Could not complete the streak freeze.');
+        }
+        $pdo->commit();
+        return null;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/** Achievements worked out from the points ledger (nothing extra is stored). */
+function vs_rewards_achievements(PDO $pdo, string $username, int $lifetime): array
+{
+    $st = $pdo->prepare('SELECT reason, COUNT(*) FROM reward_points_ledger WHERE username = :u GROUP BY reason');
+    $st->execute([':u' => $username]);
+    $c = [];
+    foreach ($st->fetchAll(PDO::FETCH_NUM) as $row) {
+        $c[(string)$row[0]] = (int)$row[1];
+    }
+    $n = static function (string $key) use ($c): int {
+        return $c[$key] ?? 0;
+    };
+    $redeems = $n('premium_monthly') + $n('premium_plus') + $n('premium_plus_3m');
+    $defs = [
+        ['first_points', 'First Steps', 'Earn your first points', $lifetime, 1],
+        ['creator', 'Creator', 'Publish your first video or Short', $n('upload'), 1],
+        ['prolific', 'Prolific', 'Publish 10 videos or Shorts', $n('upload'), 10],
+        ['regular', 'Regular', 'Check in 7 times', $n('daily_checkin'), 7],
+        ['on_fire', 'On Fire', 'Reach a 7-day check-in streak', $n('streak_bonus'), 1],
+        ['quest_master', 'Quest Master', 'Finish every daily quest', $n('quest_bonus'), 1],
+        ['chatterbox', 'Chatterbox', 'Earn quest points for 10 comments', $n('quest_comment'), 10],
+        ['gold_rank', 'Gold Rank', 'Earn 1,000 points in total', $lifetime, 1000],
+        ['collector', 'Collector', 'Redeem a reward', $redeems, 1],
+    ];
+    $out = [];
+    foreach ($defs as [$id, $title, $desc, $value, $target]) {
+        $out[] = ['id' => $id, 'title' => $title, 'desc' => $desc, 'progress' => min($target, $value), 'target' => $target, 'done' => $value >= $target];
+    }
+    return $out;
+}
+
 /** Awards one daily-quest completion (once per quest item per day, capped per day) plus the all-quests bonus. Returns points added. */
 function vs_rewards_award_quest(PDO $pdo, string $username, string $quest, string $refId): int
 {
@@ -326,6 +450,82 @@ function vs_rewards_quest_progress(PDO $pdo, string $username): array
     }
     $out['bonus'] = ['done' => $counts['quest_bonus'] > 0, 'points' => VS_REWARDS_QUEST_BONUS];
     return $out;
+}
+
+/** Builds the level pill for a total-earned amount. */
+function vs_rewards_level_pill_html(int $earned, int $fontPx = 10): string
+{
+    if ($earned <= 0) {
+        return '';
+    }
+    $level = VS_REWARDS_LEVELS[0];
+    foreach (VS_REWARDS_LEVELS as $candidate) {
+        if ($earned >= $candidate[1]) {
+            $level = $candidate;
+        }
+    }
+    return '<span class="vs-user-level" title="Rewards level: ' . htmlspecialchars($level[0], ENT_QUOTES, 'UTF-8')
+        . '" style="margin-left:6px;padding:1px 7px;border:1px solid ' . $level[2] . ';border-radius:999px;color:' . $level[2]
+        . ';font-size:' . max(8, $fontPx) . 'px;font-weight:800;vertical-align:middle;white-space:nowrap">'
+        . htmlspecialchars($level[0], ENT_QUOTES, 'UTF-8') . '</span>';
+}
+
+/** Per-request cache of total points earned, by lower-cased username. */
+function &vs_rewards_level_store(): array
+{
+    static $store = [];
+    return $store;
+}
+
+/** Loads the totals for many members in ONE query (call it with all comment authors before rendering). */
+function vs_rewards_level_prefetch(array $usernames): void
+{
+    $store = &vs_rewards_level_store();
+    $need = [];
+    foreach ($usernames as $name) {
+        $name = trim((string)$name);
+        if ($name !== '' && !array_key_exists(strtolower($name), $store)) {
+            $need[strtolower($name)] = $name;
+        }
+    }
+    if (!$need) {
+        return;
+    }
+    try {
+        $pdo = vs_premium_pdo();
+        if (!$pdo) {
+            return;
+        }
+        $names = array_values($need);
+        $marks = implode(',', array_fill(0, count($names), '?'));
+        $st = $pdo->prepare(
+            "SELECT username, COALESCE(SUM(amount), 0) FROM reward_points_ledger WHERE amount > 0 AND username IN ($marks) GROUP BY username"
+        );
+        $st->execute($names);
+        foreach ($need as $key => $unused) {
+            $store[$key] = 0;
+        }
+        foreach ($st->fetchAll(PDO::FETCH_NUM) as $row) {
+            $store[strtolower((string)$row[0])] = (int)$row[1];
+        }
+    } catch (Throwable $e) {
+        // badges are optional; never break a page
+    }
+}
+
+/** Level pill for any member (comments, profile pages). Empty until they have earned points. */
+function vs_rewards_user_level_html(string $username, int $fontPx = 10): string
+{
+    $username = trim($username);
+    if ($username === '') {
+        return '';
+    }
+    $store = &vs_rewards_level_store();
+    $key = strtolower($username);
+    if (!array_key_exists($key, $store)) {
+        vs_rewards_level_prefetch([$username]);
+    }
+    return vs_rewards_level_pill_html((int)($store[$key] ?? 0), $fontPx);
 }
 
 /** Small level pill (Bronze..Diamond) for the user menu; cached in the session for 2 minutes. */
@@ -874,6 +1074,8 @@ function vs_rewards_page_data(PDO $pdo, string $username): array
         'uploadsToday' => $uploadsToday,
         'uploadCap' => VS_REWARDS_UPLOAD_DAILY_CAP,
         'quests' => vs_rewards_quest_progress($pdo, $username),
+        'freeze' => vs_rewards_freeze_status($pdo, $username),
+        'achievements' => vs_rewards_achievements($pdo, $username, $lifetime),
         'activity' => $activity,
         'monthlySummary' => $monthlySummary,
     ];

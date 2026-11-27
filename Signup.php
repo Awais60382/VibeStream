@@ -16,7 +16,6 @@ $oldUsername = (string)($signupOld['username'] ?? '');
 $oldEmail = (string)($signupOld['email'] ?? '');
 include 'header.php';
 ?>
-<link rel="stylesheet" href="neon-auth.css?v=3" data-vs-neon>
 <main class="auth-layout">
     <section class="auth-card" aria-labelledby="signup-title">
         <a class="auth-brand" href="index.php">

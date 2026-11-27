@@ -24,6 +24,32 @@
     '.pq-item.is-bonus{border-style:dashed}',
     '.pq-foot{margin-top:10px}',
 
+    /* ---- streak freeze, activity, achievements, level-up ---- */
+    '.pq-freeze{margin-top:12px}',
+    '.pq-freeze .pq-item{border-style:dashed}',
+    '.pq-btn{grid-column:3;justify-self:end;border:0;border-radius:999px;padding:8px 16px;background:linear-gradient(90deg,#7c3aed,#a855f7);color:#fff;font:inherit;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;touch-action:manipulation}',
+    '.pq-btn:disabled{opacity:.5;cursor:default}',
+    '.pa-list{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}',
+    '.pa-item{display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--pp-line);border-radius:12px;background:var(--pp-row);font-size:13px}',
+    '.pa-ico{flex:0 0 34px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:rgba(168,85,247,.2);font-size:16px}',
+    '.pa-body{flex:1;min-width:0;display:flex;flex-direction:column}',
+    '.pa-body small{color:var(--pp-muted);font-size:11px}',
+    '.pa-amt{font-weight:800;color:var(--pp-green);white-space:nowrap}',
+    '.pa-amt.neg{color:var(--pp-pink)}',
+    '.pa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px}',
+    '.pa-tile{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--pp-line);border-radius:14px;background:var(--pp-row);opacity:.8}',
+    '.pa-tile.done{opacity:1;border-color:rgba(255,194,61,.7);background:radial-gradient(160px 70px at 0 0,rgba(255,194,61,.16),transparent 75%),var(--pp-row)}',
+    '.pa-tile .pa-ico{width:38px;height:38px;flex-basis:38px;font-size:19px}',
+    '.pa-tile strong{font-size:14px}',
+    '.pa-tile span{color:var(--pp-muted);font-size:12px;line-height:1.35}',
+    '.pa-tile .pp-bar{margin:2px 0 0}',
+    '.pl-overlay{position:fixed;inset:0;z-index:2500;display:grid;place-items:center;padding:16px;background:rgba(4,2,12,.78)}',
+    '.pl-box{position:relative;width:min(380px,100%);padding:28px 22px;border-radius:22px;text-align:center;border:1px solid rgba(255,194,61,.7);background:radial-gradient(260px 140px at 50% 0,rgba(255,194,61,.25),transparent 75%),var(--pp-surface,#120a2a);color:var(--pp-text);box-shadow:0 0 50px rgba(255,194,61,.3)}',
+    '.pl-box h2{margin:6px 0 4px;font-size:30px;letter-spacing:.04em}',
+    '.pl-box p{margin:6px 0 18px;color:var(--pp-muted)}',
+    '.pl-conf{position:fixed;top:-14px;z-index:2510;width:9px;height:14px;border-radius:2px;pointer-events:none;animation:plConf var(--d) cubic-bezier(.3,.6,.4,1) forwards}',
+    '@keyframes plConf{to{transform:translate(var(--x),105vh) rotate(var(--r));opacity:.9}}',
+    '@media(prefers-reduced-motion:reduce){.pl-conf{display:none}}',
     /* ---- leaderboard tabs ---- */
     '.pp-tabs{display:flex;gap:6px;margin:12px 0 0;padding:4px;border:1px solid var(--pp-line);border-radius:999px;background:var(--pp-row)}',
     '.pp-tab{flex:1;border:0;border-radius:999px;padding:7px 4px;background:transparent;color:var(--pp-muted);font:inherit;font-size:12px;font-weight:800;cursor:pointer;touch-action:manipulation}',
@@ -87,7 +113,7 @@
       { key: 'like', icon: '\uD83D\uDC4D', title: 'Like videos', sub: function (q) { return '+' + q.points + ' pt each \u00b7 your own videos don\u2019t count'; }, href: 'watch.php', link: 'Explore' },
       { key: 'comment', icon: '\uD83D\uDCAC', title: 'Leave a comment', sub: function (q) { return '+' + q.points + ' pts \u00b7 at least 10 characters'; }, href: 'watch.php', link: 'Watch' }
     ];
-    var card = null, list = null, chip = null, foot = null;
+    var card = null, list = null, chip = null, foot = null, freezeBox = null;
 
     function buildQuestCard() {
       var anchor = document.querySelector('.pp-vipbar');
@@ -108,7 +134,8 @@
       var loading = node('li', 'pp-note', 'Loading your quests\u2026');
       list.appendChild(loading);
       foot = node('p', 'pp-note pq-foot', 'Quests reset every day at midnight.');
-      card.appendChild(head); card.appendChild(list); card.appendChild(foot);
+      freezeBox = node('div', 'pq-freeze');
+      card.appendChild(head); card.appendChild(list); card.appendChild(freezeBox); card.appendChild(foot);
       row.appendChild(card);
       anchor.parentNode.insertBefore(row, anchor);
     }
@@ -156,6 +183,179 @@
       foot.textContent = 'Earn up to ' + maxPoints + ' points a day from quests. Quests reset every day at midnight.';
     }
 
+    /* ================= streak freeze, activity, achievements, level-up ================= */
+    function toastMsg(text) {
+      var t = $('ppToast');
+      if (!t) { window.alert(text); return; }
+      t.textContent = text;
+      t.classList.add('show');
+      setTimeout(function () { t.classList.remove('show'); }, 4500);
+    }
+
+    function renderFreeze(f) {
+      if (!freezeBox) return;
+      freezeBox.textContent = '';
+      if (!f) return;
+      var li = node('div', 'pq-item');
+      li.appendChild(node('span', 'pq-ico', '\u2744\uFE0F'));
+      var main = node('div', 'pq-main');
+      main.appendChild(node('strong', '', 'Streak Freeze'));
+      main.appendChild(node('span', 'pq-sub', f.available
+        ? 'You missed yesterday. Save your streak for ' + f.cost + ' points.'
+        : (f.reason || 'Missed a day? Save your streak for ' + f.cost + ' points.')));
+      li.appendChild(main);
+      var btn = node('button', 'pq-btn', f.available ? 'Use freeze \u00b7 ' + f.cost + ' pts' : 'Not available');
+      btn.type = 'button';
+      btn.disabled = !f.available;
+      btn.addEventListener('click', function () {
+        if (typeof VSPremium === 'undefined' || !window.confirm('Use a streak freeze for ' + f.cost + ' points? It fills in yesterday so your streak continues.')) return;
+        btn.disabled = true;
+        VSPremium.freeze().then(function () {
+          toastMsg('Streak saved! Your streak continues.');
+          setTimeout(function () { window.location.reload(); }, 900);
+        }, function (err) {
+          toastMsg((err && err.message) || 'Could not use the freeze.');
+          btn.disabled = false;
+        });
+      });
+      li.appendChild(btn);
+      freezeBox.appendChild(li);
+    }
+
+    var ACT = {
+      upload: ['\uD83C\uDFAC', 'Published a video or Short'],
+      daily_checkin: ['\uD83C\uDF81', 'Daily check-in'],
+      streak_bonus: ['\uD83D\uDD25', 'Streak bonus'],
+      streak_freeze: ['\u2744\uFE0F', 'Streak freeze'],
+      quest_watch: ['\uD83C\uDFAC', 'Quest: watched a video'],
+      quest_like: ['\uD83D\uDC4D', 'Quest: liked a video'],
+      quest_comment: ['\uD83D\uDCAC', 'Quest: commented'],
+      quest_bonus: ['\uD83C\uDF81', 'All daily quests done'],
+      premium_monthly: ['\uD83D\uDC51', 'Redeemed 31 days of Premium'],
+      premium_plus: ['\uD83D\uDC8E', 'Redeemed 31 days of Premium Plus'],
+      premium_plus_3m: ['\uD83C\uDF81', 'Redeemed 93 days of Premium Plus']
+    };
+    var actList = null, achGrid = null, achChip = null;
+
+    function buildInfoRow() {
+      var anchor = document.querySelector('.pp-vipbar');
+      if (!anchor || !anchor.parentNode) return;
+      var row = node('div', 'pp-row pp-row-2');
+
+      var a = node('section', 'pp-card');
+      var ah = node('div', 'pp-head');
+      var aIco = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      aIco.setAttribute('class', 'pp-head-ico'); aIco.setAttribute('viewBox', '0 0 24 24'); aIco.setAttribute('aria-hidden', 'true');
+      var aUse = document.createElementNS('http://www.w3.org/2000/svg', 'use'); aUse.setAttribute('href', '#ppCalendar');
+      aIco.appendChild(aUse);
+      ah.appendChild(aIco); ah.appendChild(node('h2', '', 'Recent Activity'));
+      actList = node('ul', 'pa-list');
+      actList.appendChild(node('li', 'pp-note', 'Sign in to see your activity.'));
+      a.appendChild(ah); a.appendChild(actList);
+
+      var b = node('section', 'pp-card');
+      var bh = node('div', 'pp-head');
+      var bIco = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      bIco.setAttribute('class', 'pp-head-ico'); bIco.setAttribute('viewBox', '0 0 24 24'); bIco.setAttribute('aria-hidden', 'true');
+      var bUse = document.createElementNS('http://www.w3.org/2000/svg', 'use'); bUse.setAttribute('href', '#ppTrophy');
+      bIco.appendChild(bUse);
+      achChip = node('span', 'pp-chip', '\u2014');
+      bh.appendChild(bIco); bh.appendChild(node('h2', '', 'Achievements')); bh.appendChild(achChip);
+      achGrid = node('div', 'pa-grid');
+      b.appendChild(bh); b.appendChild(achGrid);
+
+      row.appendChild(a); row.appendChild(b);
+      anchor.parentNode.insertBefore(row, anchor);
+    }
+
+    function renderActivity(rows) {
+      if (!actList) return;
+      actList.textContent = '';
+      rows = rows || [];
+      if (!rows.length) { actList.appendChild(node('li', 'pp-note', 'No activity yet. Check in or finish a quest!')); return; }
+      rows.slice(0, 8).forEach(function (row) {
+        var meta = ACT[row.reason] || ['\u2B50', String(row.reason || 'Points').replace(/_/g, ' ').replace(/^./, function (ch) { return ch.toUpperCase(); })];
+        var d = new Date(String(row.createdAt).replace(' ', 'T'));
+        var when = isNaN(d) ? '' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        var li = node('li', 'pa-item');
+        li.appendChild(node('span', 'pa-ico', meta[0]));
+        var body = node('span', 'pa-body');
+        body.appendChild(node('strong', '', meta[1]));
+        body.appendChild(node('small', '', when));
+        li.appendChild(body);
+        li.appendChild(node('span', 'pa-amt' + (row.amount < 0 ? ' neg' : ''), (row.amount > 0 ? '+' : '') + Number(row.amount).toLocaleString()));
+        actList.appendChild(li);
+      });
+    }
+
+    var ACH_ICON = { first_points: '\u2B50', creator: '\uD83C\uDFAC', prolific: '\uD83D\uDE80', regular: '\uD83D\uDCC5', on_fire: '\uD83D\uDD25', quest_master: '\uD83C\uDFAF', chatterbox: '\uD83D\uDCAC', gold_rank: '\uD83E\uDD47', collector: '\uD83D\uDC51' };
+    function renderAchievements(list) {
+      if (!achGrid) return;
+      achGrid.textContent = '';
+      list = list || [];
+      var done = 0;
+      list.forEach(function (a) {
+        if (a.done) done += 1;
+        var tile = node('div', 'pa-tile' + (a.done ? ' done' : ''));
+        tile.appendChild(node('span', 'pa-ico', a.done ? (ACH_ICON[a.id] || '\u2B50') : '\uD83D\uDD12'));
+        tile.appendChild(node('strong', '', a.title));
+        tile.appendChild(node('span', '', a.desc));
+        var bar = node('div', 'pp-bar'); var fill = document.createElement('span');
+        fill.style.width = Math.min(100, a.progress / a.target * 100) + '%'; bar.appendChild(fill);
+        tile.appendChild(bar);
+        if (!a.done && a.target > 1) tile.appendChild(node('span', '', a.progress.toLocaleString() + ' / ' + a.target.toLocaleString()));
+        achGrid.appendChild(tile);
+      });
+      achChip.textContent = list.length ? done + ' / ' + list.length : '\u2014';
+    }
+
+    var LEVEL_COLORS = ['#e79a62', '#aab3e8', '#ffc23d', '#5ccbf5', '#c58bff'];
+    function celebrate(idx) {
+      var overlay = node('div', 'pl-overlay');
+      overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-label', 'Level up');
+      var box = node('div', 'pl-box');
+      box.appendChild(node('div', '', '\uD83C\uDFC6'));
+      box.lastChild.style.fontSize = '54px';
+      box.appendChild(node('h2', '', 'LEVEL UP!'));
+      var name = node('p', '', 'You reached ' + LEVELS[idx][0] + ' level. Keep earning!');
+      box.appendChild(name);
+      var ok = node('button', 'pq-btn', 'Awesome!'); ok.type = 'button'; ok.style.justifySelf = 'auto';
+      box.appendChild(ok);
+      box.firstChild.style.filter = 'drop-shadow(0 0 14px ' + LEVEL_COLORS[idx] + ')';
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!reduce) {
+        var colors = [LEVEL_COLORS[idx], '#ffc23d', '#ff2e93', '#a855f7', '#2fe08a', '#ffffff'];
+        for (var i = 0; i < 48; i += 1) {
+          var piece = node('span', 'pl-conf');
+          piece.style.left = (Math.random() * 100) + 'vw';
+          piece.style.background = colors[i % colors.length];
+          piece.style.setProperty('--x', (Math.random() * 160 - 80) + 'px');
+          piece.style.setProperty('--r', (Math.random() * 900 - 450) + 'deg');
+          piece.style.setProperty('--d', (1.8 + Math.random() * 1.4) + 's');
+          piece.style.animationDelay = (Math.random() * .4) + 's';
+          piece.addEventListener('animationend', function () { this.remove(); });
+          document.body.appendChild(piece);
+        }
+      }
+      function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+      function onKey(e) { if (e.key === 'Escape') close(); }
+      ok.addEventListener('click', close);
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+      document.addEventListener('keydown', onKey);
+      ok.focus();
+    }
+    function checkLevelUp(lifetime) {
+      var idx = 0;
+      LEVELS.forEach(function (l, i) { if (lifetime >= l[1]) idx = i; });
+      var stored = null;
+      try { stored = window.localStorage.getItem('vs-rewards-level'); } catch (e) {}
+      var before = stored === null ? idx : (Number(stored) || 0);
+      try { window.localStorage.setItem('vs-rewards-level', String(Math.max(idx, before))); } catch (e) {}
+      if (stored !== null && idx > before) celebrate(idx);
+    }
+
     /* ================= rewards level (Lifetime Earned card) ================= */
     var LEVELS = [
       ['Bronze', 0], ['Silver', 250], ['Gold', 1000], ['Platinum', 2500], ['Diamond', 5000]
@@ -189,9 +389,14 @@
         if (!r) return;
         renderQuests(r.quests || null);
         renderLevel(Number(r.lifetimeEarned) || 0);
+        renderFreeze(r.freeze || null);
+        renderActivity(r.activity || []);
+        renderAchievements(r.achievements || []);
+        checkLevelUp(Number(r.lifetimeEarned) || 0);
       }, function () { fetching = false; });
     }
     buildQuestCard();
+    buildInfoRow();
     loadRewards();
     // Come back from watching a video: refresh the quest progress.
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') loadRewards(); });

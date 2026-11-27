@@ -21,7 +21,7 @@ $ccTiles = [
     ['title' => 'View Analytics',     'sub' => 'Check platform statistics',    'icon' => 'bi-bar-chart-fill',       'href' => 'analytics.php',         'c' => 'violet'],
     ['title' => 'View Comments',      'sub' => 'Moderate comments',            'icon' => 'bi-chat-square-text-fill','href' => 'comments.php',          'c' => 'green'],
     ['title' => 'Manage Likes',       'sub' => 'View liked content',           'icon' => 'bi-hand-thumbs-up-fill',  'href' => 'likes.php',             'c' => 'amber'],
-    ['title' => 'Platform Settings',  'sub' => 'Control site settings',        'icon' => 'bi-gear-fill',            'href' => 'platform-settings.php', 'c' => 'red'],
+    ['title' => 'App Settings',       'sub' => 'Control site settings',        'icon' => 'bi-gear-fill',            'href' => 'app-settings.php', 'c' => 'red'],
     ['title' => 'Support Center',     'sub' => 'Handle user support',          'icon' => 'bi-headset',              'href' => 'support.php',           'c' => 'violet'],
     ['title' => 'Reported Content',   'sub' => 'Review reported items',        'icon' => 'bi-shield-check',         'href' => 'reported.php',          'c' => 'cyan',  'badge' => (int)($dashboardOverview['reports'] ?? 0)],
     ['title' => 'Top Creators',       'sub' => 'See top contributors',         'icon' => 'bi-award-fill',           'href' => 'top-creators.php',      'c' => 'green'],
@@ -32,14 +32,14 @@ $ccImportant = [
     ['title' => 'Delete Video',       'desc' => 'Remove any video',                  'href' => 'videos.php'],
     ['title' => 'Send Notification',  'desc' => 'Notify all users',                  'href' => 'messages.php'],
     ['title' => 'Export Data',        'desc' => 'Download user data',                'href' => 'users.php'],
-    ['title' => 'Clear Cache',        'desc' => 'Refresh the platform',              'href' => 'platform-settings.php'],
+    ['title' => 'Clear Cache',        'desc' => 'Refresh the platform',              'href' => 'app-settings.php'],
 ];
 
 $ccQuick = [
     ['label' => 'Add New Video', 'icon' => 'bi-plus-lg',         'href' => 'videos.php',            'class' => 'qa-violet'],
     ['label' => 'Add New User',  'icon' => 'bi-person-plus-fill','href' => 'users.php',             'class' => 'qa-cyan'],
     ['label' => 'View Reports',  'icon' => 'bi-bar-chart-fill',  'href' => 'reported.php',          'class' => 'qa-green'],
-    ['label' => 'Settings',      'icon' => 'bi-gear-fill',       'href' => 'platform-settings.php', 'class' => 'qa-pink'],
+    ['label' => 'Settings',      'icon' => 'bi-gear-fill',       'href' => 'app-settings.php', 'class' => 'qa-pink'],
 ];
 
 $ccTiles     = array_values(array_filter($ccTiles, fn($t) => $ccAllowed($t['href'])));
@@ -49,9 +49,9 @@ $ccCount     = count($ccTiles);
 ?>
 <style>
   #ccPage {
-    --cc-cyan: #00e5ff;   --cc-cyan-rgb: 0, 229, 255;
-    --cc-pink: #ff2e93;   --cc-pink-rgb: 255, 46, 147;
-    --cc-violet: #8a5cff; --cc-violet-rgb: 138, 92, 255;
+    --cc-cyan: #ff2a32;   --cc-cyan-rgb: 0, 229, 255;
+    --cc-pink: #ff2a32;   --cc-pink-rgb: 255, 46, 147;
+    --cc-violet: #b50d16; --cc-violet-rgb: 138, 92, 255;
     --cc-green: #22e58a;  --cc-green-rgb: 34, 229, 138;
     --cc-amber: #ffb020;  --cc-amber-rgb: 255, 176, 32;
     --cc-red: #ff3d77;    --cc-red-rgb: 255, 61, 119;
@@ -61,14 +61,14 @@ $ccCount     = count($ccTiles);
     color: var(--cc-text);
     min-height: calc(100vh - 80px);
     background: radial-gradient(900px 480px at 8% -8%, rgba(138,92,255,.18), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,229,255,.10), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50,.10), transparent 70%),
                 #05060f;
   }
 
   html[data-theme="light"] #ccPage,
   html[data-bs-theme="light"] #ccPage {
     --cc-cyan: #00a9d6;  --cc-cyan-rgb: 0, 169, 214;
-    --cc-violet: #7c4dff; --cc-violet-rgb: 124, 77, 255;
+    --cc-violet: #b50d16; --cc-violet-rgb: 124, 77, 255;
     --cc-green: #0fb86a;  --cc-green-rgb: 15, 184, 106;
     --cc-amber: #f59e0b;  --cc-amber-rgb: 245, 158, 11;
     --cc-red: #e11d63;    --cc-red-rgb: 225, 29, 99;
@@ -76,7 +76,7 @@ $ccCount     = count($ccTiles);
     --cc-muted: #55608f;
     --cc-card: #ffffff;
     background: radial-gradient(900px 480px at 8% -8%, rgba(124,77,255,.12), transparent 70%),
-                radial-gradient(800px 420px at 100% 0, rgba(0,184,230,.12), transparent 70%),
+                radial-gradient(800px 420px at 100% 0, rgba(255,42,50,.12), transparent 70%),
                 #f4f6ff;
   }
 

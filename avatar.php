@@ -102,8 +102,8 @@ if (!function_exists('avatar_key')) {
         }
 
         global $pdo;
-        $avatarCandidates = ['avatar', 'profile_image', 'profile_picture', 'profile_pic', 'profile_photo', 'avatar_url', 'avatar_path', 'user_avatar', 'photo', 'picture', 'image'];
-        $usernameCandidates = ['username', 'user_name', 'login', 'uname'];
+        $avatarCandidates = ['avatar', 'profile_image', 'profile_picture', 'profile_pic', 'profile_photo', 'avatar_url', 'avatar_path', 'user_avatar', 'photo', 'picture', 'image', 'f_avatar'];
+        $usernameCandidates = ['username', 'user_name', 'login', 'uname', 'f_username', 'f_name'];
 
         if (isset($pdo) && $pdo instanceof PDO) {
             try {
@@ -230,7 +230,7 @@ if (!function_exists('avatar_key')) {
             return $currentAvatar;
         }
 
-        foreach (['avatar_url', 'profile_image', 'profile_picture', 'profile_pic', 'profile_photo', 'avatar', 'avatar_path', 'user_avatar', 'photo', 'picture', 'image'] as $column) {
+        foreach (['avatar_url', 'profile_image', 'profile_picture', 'profile_pic', 'profile_photo', 'avatar', 'avatar_path', 'user_avatar', 'photo', 'picture', 'image', 'f_avatar'] as $column) {
             if (!empty($record[$column])) {
                 $recordAvatar = avatar_stored_url((string)$record[$column]);
                 if ($recordAvatar !== '') {

@@ -293,7 +293,7 @@ html[data-theme] .user-badge-pill { background-image: none; }
   font: inherit;
 }
 .nav-bell:hover,
-.nav-bell[aria-expanded="true"] { border-color: #5b8cff; }
+.nav-bell[aria-expanded="true"] { border-color: #ff2a32; }
 .nav-bell svg { width: 20px; height: 20px; }
 .nav-bell-badge {
   position: absolute;
@@ -370,7 +370,7 @@ html[data-theme] .user-badge-pill { background-image: none; }
 .nav-right .nav-bell:focus,
 .nav-right .nav-bell:active {
   background: var(--surface-hover, var(--surface-3, #2a2a31));
-  border-color: #5b8cff;
+  border-color: #ff2a32;
   color: var(--text, #f1f1f1);
 }
 
@@ -394,7 +394,7 @@ html[data-theme] .user-badge-pill { background-image: none; }
 .nav-right .vs-user-toggle:active,
 .nav-right .vs-user-toggle[aria-expanded="true"] {
   background: var(--surface-hover, var(--surface-3, #2a2a31));
-  border-color: #5b8cff;
+  border-color: #ff2a32;
   color: var(--text, #f1f1f1);
 }
 .vs-user-avatar {
@@ -407,7 +407,7 @@ html[data-theme] .user-badge-pill { background-image: none; }
   flex: 0 0 32px;
   border-radius: 50%;
   overflow: hidden;
-  background: #3ea6ff;
+  background: #ff2a32;
   color: #fff;
   font-size: 14px;
   font-weight: 700;
@@ -455,7 +455,7 @@ html[data-theme] .user-badge-pill { background-image: none; }
 .vs-user-item:focus { background: var(--surface-hover, rgba(127, 127, 127, 0.14)); color: var(--text, #f1f1f1); }
 .vs-user-icon { display: inline-flex; width: 22px; height: 22px; flex: 0 0 22px; color: var(--muted, #aaaaaa); }
 .vs-user-icon svg { width: 20px; height: 20px; }
-.vs-user-item:hover .vs-user-icon { color: #5b8cff; }
+.vs-user-item:hover .vs-user-icon { color: #ff2a32; }
 .vs-user-divider { height: 1px; margin: 6px 4px; background: var(--border, #303030); }
 .vs-user-danger,
 .vs-user-danger .vs-user-icon { color: #e5484d; }
@@ -511,15 +511,15 @@ html.vs-neon-off .vs-neon-toggle svg {
 .nav-right .vs-neon-toggle:focus,
 .nav-right .vs-neon-toggle:active {
   background: var(--surface-hover, var(--surface-3));
-  border-color: #00e5ff;
+  border-color: #ff2a32;
 }
 .nav-right .vs-neon-toggle[aria-pressed="true"] {
-  color: #00e5ff;
-  border-color: rgba(0, 229, 255, 0.45);
+  color: #ff2a32;
+  border-color: rgba(255, 42, 50, 0.45);
 }
 html[data-theme="light"] .nav-right .vs-neon-toggle[aria-pressed="true"] {
-  color: #0086b3;
-  border-color: rgba(0, 134, 179, 0.45);
+  color: #d80e18;
+  border-color: #ff2a32;
 }
 .nav-right .vs-neon-toggle svg {
   width: 20px !important;

@@ -23,11 +23,11 @@ const VS_ADMIN_ACCESS_SECTIONS = [
     ],
     'analytics' => [
         'label' => 'Analytics',
-        'routes' => ['insights.php', 'insights-people.php', 'dashboard-insights-api.php', 'upload-failures.php', 'top-creators.php'],
+        'routes' => ['insights.php', 'insights-people.php', 'insights-stats.php', 'dashboard-insights-api.php', 'upload-failures.php', 'top-creators.php'],
     ],
     'admin_management' => [
         'label' => 'Admin management',
-        'routes' => ['admins.php'],
+        'routes' => ['admins.php', 'announcements.php'],
     ],
 ];
 

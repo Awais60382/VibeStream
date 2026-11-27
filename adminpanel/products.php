@@ -52,7 +52,7 @@ require_once __DIR__ . '/header.php';
   .admin-products-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1.25rem; }
   .admin-products-head h1 { margin:0; font-size:clamp(1.5rem,3vw,2rem); font-weight:750; color:var(--nx-text,#eaf0ff); }
   .admin-products-head p { margin:.35rem 0 0; color:var(--nx-muted,#8f9bd0); }
-  .admin-products-count { color:var(--nx-cyan-ink,#00e5ff); font-weight:700; white-space:nowrap; }
+  .admin-products-count { color:var(--nx-cyan-ink,#ff2a32); font-weight:700; white-space:nowrap; }
   .admin-products-tools { display:flex; flex-wrap:wrap; gap:.75rem; margin-bottom:1rem; }
   .admin-products-tools input,.admin-products-tools select { min-height:44px; padding:.55rem .8rem; color:var(--nx-text,#eaf0ff); background:var(--nx-field,#0a0d1f); border:1px solid rgba(var(--nx-violet-rgb,138,92,255),.35); border-radius:10px; }
   .admin-products-tools input { flex:1 1 260px; }
@@ -65,10 +65,10 @@ require_once __DIR__ . '/header.php';
   .admin-product-meta { display:flex; justify-content:space-between; gap:.5rem; color:var(--nx-muted,#8f9bd0); font-size:.8rem; }
   .admin-product-copy h2 { margin:.55rem 0; color:var(--nx-text,#eaf0ff); font-size:1.05rem; font-weight:700; }
   .admin-product-price { display:flex; align-items:baseline; gap:.55rem; }
-  .admin-product-price strong { color:var(--nx-cyan-ink,#00e5ff); font-size:1.1rem; }
+  .admin-product-price strong { color:var(--nx-cyan-ink,#ff2a32); font-size:1.1rem; }
   .admin-product-price del { color:var(--nx-muted,#8f9bd0); font-size:.85rem; }
   .admin-product-rating { margin-top:.5rem; color:var(--nx-muted,#8f9bd0); font-size:.85rem; }
-  .admin-product-badge { display:inline-block; margin-top:.65rem; padding:.2rem .55rem; border-radius:999px; background:rgba(var(--nx-cyan-rgb,0,229,255),.12); color:var(--nx-cyan-ink,#00e5ff); font-size:.75rem; font-weight:700; }
+  .admin-product-badge { display:inline-block; margin-top:.65rem; padding:.2rem .55rem; border-radius:999px; background:rgba(var(--nx-cyan-rgb,0,229,255),.12); color:var(--nx-cyan-ink,#ff2a32); font-size:.75rem; font-weight:700; }
   @media(max-width:600px) { .admin-products-head { flex-direction:column; } }
 </style>
 

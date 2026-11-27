@@ -102,6 +102,7 @@
     checkin: function () {
       return send('checkin').then(function () { return !!S.checkinAwarded; });
     },
+    freeze: function () { return send('freeze'); },
     leaderboard: function (period) {
       return Promise.resolve((period === 'week' ? S.leadersWeek : period === 'month' ? S.leadersMonth : S.leaders) || []);
     },

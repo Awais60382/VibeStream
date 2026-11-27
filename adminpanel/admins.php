@@ -372,7 +372,7 @@ vs_print_styles();
   .va-stat-ico { display: grid; place-items: center; width: 54px; height: 54px; flex: 0 0 54px; font-size: 2rem; color: #a78bfa; filter: drop-shadow(0 0 10px rgba(124,58,237,.7)); }
   .va-stat.ceo .va-stat-ico { color: #c084fc; }
   .va-stat.act .va-stat-ico { color: #8b5cf6; }
-  .va-stat.off .va-stat-ico { color: #5b8cff; filter: drop-shadow(0 0 10px rgba(59,130,246,.7)); }
+  .va-stat.off .va-stat-ico { color: #ff2a32; filter: drop-shadow(0 0 10px rgba(59,130,246,.7)); }
   .va-stat-text { position: relative; z-index: 1; min-width: 0; }
   .va-stat-text small { display: block; font-size: 15px; font-weight: 600; color: var(--va-text); }
   .va-stat-text b { display: inline-block; margin-top: 2px; font-size: 34px; line-height: 1.1; font-weight: 800; color: var(--va-text); font-variant-numeric: tabular-nums; }

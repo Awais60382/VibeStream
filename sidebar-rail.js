@@ -15,7 +15,8 @@
     'shorts.php': 'Shorts',
     'subscriptions.php': 'Subscriptions',
     'profile.php': 'You',
-    'premium.php': 'Premium'
+    'premium.php': 'Premium',
+    'announcements.php': 'Announcements',
   };
 
   function saved() {

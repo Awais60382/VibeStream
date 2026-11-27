@@ -328,7 +328,7 @@ if (!function_exists('vsr_spark')) {
             $pts[] = round($x, 1) . ',' . round($y, 1);
             $lx = round($x, 1); $ly = round($y, 1);
         }
-        return '<svg class="rp-spark" viewBox="0 0 ' . $w . ' ' . $hgt . '" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="' . $gid . '" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8a5cff"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>'
+        return '<svg class="rp-spark" viewBox="0 0 ' . $w . ' ' . $hgt . '" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="' . $gid . '" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b50d16"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>'
             . '<polyline fill="none" stroke="url(#' . $gid . ')" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="' . implode(' ', $pts) . '"/><circle cx="' . $lx . '" cy="' . $ly . '" r="3" fill="#22d3ee"/></svg>';
     }
 }
@@ -403,7 +403,7 @@ $typeUrls = ['all' => 'Type: All', 'video' => 'Type: Videos', 'short' => 'Type: 
   .rp-hero p{margin:0;color:rgba(255,255,255,.82)}
   html[data-theme="light"] .rp-hero{border-color:rgba(124,77,255,.28);background:linear-gradient(110deg,#f4efff 0%,#eee7ff 52%,#edf5ff 100%);color:#171b3b}
   html[data-theme="light"] .rp-hero h1{color:#171b3b}
-  html[data-theme="light"] .rp-hero h1 span{color:#7c4dff}
+  html[data-theme="light"] .rp-hero h1 span{color:#b50d16}
   html[data-theme="light"] .rp-hero p{color:#5d6688}
   html[data-theme="light"] .rp-back{border-color:rgba(124,77,255,.30);background:rgba(124,77,255,.08);color:#4b3d8f}
   html[data-theme="light"] .rp-back:hover{background:rgba(124,77,255,.14);color:#4b3d8f}
@@ -430,7 +430,7 @@ $typeUrls = ['all' => 'Type: All', 'video' => 'Type: Videos', 'short' => 'Type: 
   .rp-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:14px}
   .rp-stat{display:flex;align-items:center;gap:14px;padding:14px 18px;border-radius:16px;border:1px solid var(--rp-line);background:var(--rp-card);min-width:0;overflow:hidden}
   .rp-stat-ico{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:24px;flex:none;color:#fff}
-  .rp-stat-ico.open{background:linear-gradient(135deg,#8a5cff,#6d28d9)}
+  .rp-stat-ico.open{background:linear-gradient(135deg,#b50d16,#6d28d9)}
   .rp-stat-ico.video{background:rgba(124,77,255,.28);color:#a78bfa}
   .rp-stat-ico.short{background:rgba(138,92,255,.22);color:#a78bfa}
   .rp-stat-ico.total{background:rgba(124,77,255,.2);color:#a78bfa}
@@ -461,7 +461,7 @@ $typeUrls = ['all' => 'Type: All', 'video' => 'Type: Videos', 'short' => 'Type: 
   .rp-reason{display:inline-block;padding:3px 12px;border-radius:999px;font-size:.8rem;font-weight:600;border:1px solid;white-space:nowrap}
   .r-red{color:#ff6b7a;border-color:#ff4d6d;background:rgba(255,77,109,.14)}
   .r-amber{color:#ffb44a;border-color:#f59e0b;background:rgba(245,158,11,.16)}
-  .r-violet{color:#b79bff;border-color:#8a5cff;background:rgba(138,92,255,.16)}
+  .r-violet{color:#b79bff;border-color:#b50d16;background:rgba(138,92,255,.16)}
   .r-green{color:#34d399;border-color:#10b981;background:rgba(16,185,129,.14)}
   .r-cyan{color:#38d5f5;border-color:#22d3ee;background:rgba(34,211,238,.12)}
   .r-pink{color:#f472b6;border-color:#ec4899;background:rgba(236,72,153,.13)}
@@ -499,7 +499,7 @@ $typeUrls = ['all' => 'Type: All', 'video' => 'Type: Videos', 'short' => 'Type: 
   .rp-pager{display:flex;gap:6px;flex-wrap:wrap}
   .rp-pager button{min-width:36px;height:36px;padding:0 12px;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--rp-text);font-weight:600}
   .rp-pager button:hover:not(:disabled){border-color:var(--rp-line)}
-  .rp-pager button.on{background:#7c4dff;border-color:#7c4dff;color:#fff}
+  .rp-pager button.on{background:#b50d16;border-color:#b50d16;color:#fff}
   .rp-pager button:disabled{opacity:.4;cursor:default}
   .rp-empty{padding:40px 16px;text-align:center;color:var(--rp-muted)}
   .rp-alert{margin-top:14px;padding:12px 16px;border-radius:12px;border:1px solid var(--rp-line);background:var(--rp-card)}
@@ -507,10 +507,10 @@ $typeUrls = ['all' => 'Type: All', 'video' => 'Type: Videos', 'short' => 'Type: 
   @media (max-width:1199.98px){.rp-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.rp-controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.rp-search{grid-column:1/-1}.rp-detail-grid{grid-template-columns:minmax(0,1fr)}}
   @media (max-width:575.98px){.rp-hero{padding:18px}.rp-hero-ico{width:56px;height:56px}.rp-hero-right{margin-left:0}.rp-stats,.rp-controls{grid-template-columns:minmax(0,1fr)}}
 </style>
-<style data-vs-neon>
+<style>
   /* neon glow layer: the lightning button switches this block off */
-  .rp-hero{box-shadow:0 0 38px -10px rgba(138,92,255,.75),inset 0 0 60px -30px rgba(0,229,255,.35)}
-  .rp-hero:before{content:"";position:absolute;inset:0;background:radial-gradient(520px 220px at 84% 20%,rgba(255,46,147,.26),transparent 70%),radial-gradient(420px 200px at 6% 100%,rgba(0,229,255,.16),transparent 70%);pointer-events:none}
+  .rp-hero{box-shadow:0 0 38px -10px rgba(138,92,255,.75),inset 0 0 60px -30px rgba(255,42,50,.35)}
+  .rp-hero:before{content:"";position:absolute;inset:0;background:radial-gradient(520px 220px at 84% 20%,rgba(255,46,147,.26),transparent 70%),radial-gradient(420px 200px at 6% 100%,rgba(255,42,50,.16),transparent 70%);pointer-events:none}
   .rp-hero-ico svg{filter:drop-shadow(0 0 14px rgba(124,77,255,.95))}
   .rp-hero h1 span{background:linear-gradient(90deg,#a78bfa,#e879f9);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;filter:drop-shadow(0 0 12px rgba(192,132,252,.65))}
   .rp-safe{box-shadow:0 0 22px -8px rgba(34,211,238,.55)}
@@ -519,7 +519,7 @@ $typeUrls = ['all' => 'Type: All', 'video' => 'Type: Videos', 'short' => 'Type: 
   .rp-sel:focus-within,.rp-search:focus-within{box-shadow:0 0 0 1px #22d3ee,0 0 18px rgba(34,211,238,.4)}
   .rp-stat{transition:border-color .18s ease,box-shadow .18s ease}
   .rp-stat:hover{border-color:#22d3ee;box-shadow:0 0 24px -6px rgba(34,211,238,.55)}
-  .rp-stat-ico{box-shadow:0 0 18px -4px #8a5cff}
+  .rp-stat-ico{box-shadow:0 0 18px -4px #b50d16}
   .rp-stat strong{text-shadow:0 0 14px rgba(167,139,250,.4)}
   .rp-spark{filter:drop-shadow(0 0 5px rgba(124,77,255,.8))}
   .rp-status.open{box-shadow:0 0 12px -3px rgba(255,77,109,.7)}
@@ -557,12 +557,12 @@ $typeUrls = ['all' => 'Type: All', 'video' => 'Type: Videos', 'short' => 'Type: 
 
           <section class="rp-controls" aria-label="Filters">
             <div class="rp-sel"><i class="bi bi-funnel-fill" aria-hidden="true"></i>
-              <select aria-label="Status" onchange="window.location.href=this.value">
+              <select aria-label="Status" data-vs-no-search onchange="window.location.href=this.value">
                 <?php foreach ($statusUrls as $sk => $sl): ?><option value="<?php echo vs_e($qs(['status' => $sk])); ?>"<?php echo $status === $sk ? ' selected' : ''; ?>><?php echo vs_e($sl); ?></option><?php endforeach; ?>
               </select>
             </div>
             <div class="rp-sel"><i class="bi bi-play-btn-fill" aria-hidden="true"></i>
-              <select aria-label="Type" onchange="window.location.href=this.value">
+              <select aria-label="Type" data-vs-no-search onchange="window.location.href=this.value">
                 <?php foreach ($typeUrls as $tk => $tl): ?><option value="<?php echo vs_e($qs(['type' => $tk])); ?>"<?php echo $type === $tk ? ' selected' : ''; ?>><?php echo vs_e($tl); ?></option><?php endforeach; ?>
               </select>
             </div>

@@ -37,7 +37,6 @@ try {
 }
 include "header.php";
 ?>
-<link rel="stylesheet" href="neon-auth.css?v=2">
 <main class="auth-layout">
     <section class="auth-card" aria-labelledby="verify-title">
         <a class="auth-brand" href="index.php"><img class="site-brand-icon" src="<?php echo htmlspecialchars($siteLogoUrl, ENT_QUOTES, 'UTF-8'); ?>" alt=""><span><?php echo htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8'); ?></span></a>

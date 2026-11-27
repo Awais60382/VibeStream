@@ -27,6 +27,89 @@ if (is_file($vsBrandingFile)) {
     require_once $vsBrandingFile;
 }
 
+/**
+ * Premium status for the sidebar card: ['active' => bool, 'ends' => unix time or 0, 'plan' => string].
+ * It reads the site's own Premium helpers (premium-store.php / premium-perks.php) and looks for an end date
+ * in what they return, so it keeps working whatever the exact field is called.
+ */
+if (!function_exists('vs_sidebar_premium_info')) {
+    function vs_sidebar_premium_info(string $username): array
+    {
+        $info = ['active' => false, 'ends' => 0, 'plan' => ''];
+        if ($username === '') {
+            return $info;
+        }
+        try {
+            foreach (['premium-store.php', 'premium-perks.php'] as $file) {
+                if (is_file(__DIR__ . '/' . $file)) {
+                    require_once __DIR__ . '/' . $file;
+                }
+            }
+            $db = $GLOBALS['pdo'] ?? null;
+            $db = ($db instanceof PDO) ? $db : null;
+            $sources = [];
+            if (function_exists('vs_premium_state')) {
+                $sources[] = (array)vs_premium_state($db, $username);
+            }
+            $limits = function_exists('vs_premium_user_limits') ? (array)vs_premium_user_limits($db, $username) : [];
+            if ($limits) {
+                $sources[] = $limits;
+            }
+            $tier = strtolower((string)($limits['tier'] ?? ''));
+            if (in_array($tier, ['premium', 'plus'], true)) {
+                $info['active'] = true;
+                $info['plan'] = $tier;
+            }
+            $now = time();
+            foreach ($sources as $src) {
+                foreach (['active', 'is_active', 'is_premium', 'isPremium', 'premium', 'premium_active'] as $flag) {
+                    if (isset($src[$flag]) && is_scalar($src[$flag]) && !empty($src[$flag])
+                        && !in_array(strtolower((string)$src[$flag]), ['free', 'none', 'false', 'no', '0'], true)) {
+                        $info['active'] = true;
+                    }
+                }
+                if ($info['plan'] === '') {
+                    foreach (['plan', 'tier', 'plan_name'] as $k) {
+                        $v = strtolower(trim((string)($src[$k] ?? '')));
+                        if ($v !== '' && $v !== 'free' && $v !== 'none') { $info['plan'] = $v; break; }
+                    }
+                }
+                $stack = [$src];
+                while ($stack && $info['ends'] <= $now) {
+                    $cur = array_pop($stack);
+                    foreach ($cur as $key => $val) {
+                        if (is_array($val)) { $stack[] = $val; continue; }
+                        if ($val === null || $val === '' || $val === false || is_bool($val)) { continue; }
+                        $k = strtolower((string)$key);
+                        $ts = 0;
+                        if (preg_match('/(days_left|days_remaining|remaining_days)/', $k) && is_numeric($val)) {
+                            $ts = $now + (int)round((float)$val * 86400);
+                        } elseif (preg_match('/(seconds_left|remaining_seconds|seconds_remaining)/', $k) && is_numeric($val)) {
+                            $ts = $now + (int)$val;
+                        } elseif (preg_match('/(expire|expiry|expires|(^|_)ends?(_at|_date|_on|_time)?$|until|valid_?(to|until)|renew)/', $k)
+                                  && !preg_match('/(ended|is_ended|has_ended|alert|seen|notified)/', $k)) {
+                            if (is_numeric($val)) {
+                                $n = (float)$val;
+                                $ts = (int)($n > 1e12 ? $n / 1000 : $n);
+                            } else {
+                                $ts = (int)strtotime((string)$val);
+                            }
+                        }
+                        if ($ts > $now && $ts < $now + 20 * 365 * 86400) {
+                            $info['ends'] = $ts;
+                            $info['active'] = true;   // a future end date means a running subscription
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable $premiumError) {
+            error_log('Sidebar premium status failed: ' . $premiumError->getMessage());
+        }
+        return $info;
+    }
+}
+
 function vs_render_sidebar(string $active = 'home'): void
 {
     $svg = static fn(string $inner): string =>
@@ -138,6 +221,7 @@ function vs_render_sidebar(string $active = 'home'): void
                 ['key' => 'home', 'label' => 'Home', 'href' => 'index.php', 'icon' => 'home'],
                 ['key' => 'shorts', 'label' => 'Shorts', 'href' => 'shorts.php', 'icon' => 'shorts'],
                 ['key' => 'watch', 'label' => 'Watch', 'href' => 'watch.php', 'icon' => 'watch'],
+                ['key' => 'announcements', 'label' => 'Announcements', 'href' => 'announcements.php', 'icon' => 'news'],
             ],
         ],
         ['id' => 'subscriptions-list'],
@@ -153,7 +237,7 @@ function vs_render_sidebar(string $active = 'home'): void
                 ['key' => 'liked', 'label' => 'Liked videos', 'href' => 'liked.php', 'icon' => 'liked'],
                 ['key' => 'subscriptions', 'label' => 'All subscriptions', 'href' => 'subscriptions.php', 'icon' => 'subscriptions'],
                 ['key' => 'live', 'label' => 'Live streams', 'href' => 'live.php', 'icon' => 'live'],
-                ['key' => 'membership', 'label' => 'Channel memberships', 'href' => 'memberships.php', 'icon' => 'membership'],
+                ['key' => 'membership', 'label' => 'Memberships', 'href' => 'memberships.php', 'icon' => 'membership'],
                 ['key' => 'creator-analytics', 'label' => 'Creator Analytics', 'href' => 'creator-analytics.php', 'icon' => 'analytics'],
                 ['key' => 'premium', 'label' => 'Premium', 'href' => 'premium.php', 'icon' => 'premium', 'color' => '#f5b942'],
             ],
@@ -213,8 +297,6 @@ function vs_render_sidebar(string $active = 'home'): void
             'id' => 'admin',
             'items' => [
                 ['key' => 'adminpanel', 'label' => 'Admin Panel', 'href' => 'adminpanel/index.php', 'icon' => 'admin'],
-                ['key' => 'adminpremium', 'label' => 'Premium members', 'href' => 'adminpanel/premium.php', 'icon' => 'premium'],
-                ['key' => 'adminreports', 'label' => 'Reported content', 'href' => 'adminpanel/reported.php', 'icon' => 'flag'],
             ],
         ];
     }
@@ -226,6 +308,7 @@ function vs_render_sidebar(string $active = 'home'): void
     $selectedTrend = $searchTerm !== '' ? $searchTerm : strtolower(trim((string)($_GET['category'] ?? '')));
     $isTrendingFilter = !$canFilterCategories
         && in_array($selectedTrend, array_column($exploreItems, 'category'), true);
+    $premiumInfo = vs_sidebar_premium_info($username);
     ?>
     <aside class="app-sidebar" id="appSidebar" aria-label="Main navigation">
         <div class="sidebar-top">
@@ -312,12 +395,27 @@ function vs_render_sidebar(string $active = 'home'): void
                 <?php endif; ?>
             </nav>
         <?php endforeach; ?>
+        <?php if (!empty($premiumInfo['active'])): ?>
+        <div class="sidebar-premiumstatus" role="complementary" aria-label="Your Premium plan">
+            <a class="gp-crown-link" href="<?php echo htmlspecialchars(vs_sidebar_url('premium.php')); ?>" aria-label="Go Premium" title="Go Premium">            <svg class="gp-crown" viewBox="0 0 64 54" aria-hidden="true"><defs><linearGradient id="gpGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#f29a0d"/></linearGradient></defs><path d="M6 44 2 14l16 14L32 6l14 22L62 14l-4 30z" fill="url(#gpGold)" stroke="#fff3b0" stroke-width="1.5" stroke-linejoin="round"/><rect x="8" y="46" width="48" height="7" rx="2.5" fill="url(#gpGold)"/></svg></a>
+            <strong>Premium Active</strong>
+            <?php if ($premiumInfo['ends'] > 0): ?>
+                <span class="ps-label">Ends in</span>
+                <span class="ps-time" data-vs-ends="<?php echo (int)$premiumInfo['ends']; ?>" data-vs-now="<?php echo time(); ?>">&hellip;</span>
+                <span class="ps-date"><?php echo htmlspecialchars(date('M j, Y', (int)$premiumInfo['ends'])); ?></span>
+            <?php else: ?>
+                <p>Thank you for supporting <?php echo htmlspecialchars(function_exists('vs_branding_app_name') ? vs_branding_app_name() : 'VibeStream'); ?>!</p>
+            <?php endif; ?>
+            <a class="gp-btn" href="<?php echo htmlspecialchars(vs_sidebar_url('premium.php')); ?>">Manage Premium</a>
+        </div>
+        <?php else: ?>
         <div class="sidebar-gopremium" role="complementary" aria-label="Go Premium">
-            <svg class="gp-crown" viewBox="0 0 64 54" aria-hidden="true"><defs><linearGradient id="gpGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#f29a0d"/></linearGradient></defs><path d="M6 44 2 14l16 14L32 6l14 22L62 14l-4 30z" fill="url(#gpGold)" stroke="#fff3b0" stroke-width="1.5" stroke-linejoin="round"/><rect x="8" y="46" width="48" height="7" rx="2.5" fill="url(#gpGold)"/></svg>
+<a class="gp-crown-link" href="<?php echo htmlspecialchars(vs_sidebar_url('premium.php')); ?>" aria-label="Go Premium" title="Go Premium">            <svg class="gp-crown" viewBox="0 0 64 54" aria-hidden="true"><defs><linearGradient id="gpGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#f29a0d"/></linearGradient></defs><path d="M6 44 2 14l16 14L32 6l14 22L62 14l-4 30z" fill="url(#gpGold)" stroke="#fff3b0" stroke-width="1.5" stroke-linejoin="round"/><rect x="8" y="46" width="48" height="7" rx="2.5" fill="url(#gpGold)"/></svg></a>
             <strong>Go Premium</strong>
             <p>Unlock premium features and enjoy an ad-free experience!</p>
             <a class="gp-btn" href="<?php echo htmlspecialchars(vs_sidebar_url('premium.php')); ?>">Get Premium</a>
         </div>
+        <?php endif; ?>
     </aside>
     <?php
     vs_sidebar_extras($icons['chevron-down']);
@@ -364,16 +462,29 @@ function vs_sidebar_extras(string $chevron): void
     .vs-premium .sp-pro { display: inline; }
     .vs-premium .sp-crown { color: #f5b942; }
     .app-sidebar .sidebar-gopremium { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 18px 8px 8px; padding: 18px 14px 16px; border: 1px solid rgba(138,92,255,.55); border-radius: 18px; background: radial-gradient(circle at 50% 125%, rgba(255,46,147,.38), transparent 62%), linear-gradient(160deg, rgba(48,20,110,.92), rgba(18,10,50,.96)); color: #fff; text-align: center; text-decoration: none; box-shadow: 0 0 26px -8px rgba(138,92,255,.7); }
+    .app-sidebar .sidebar-gopremium .gp-crown-link { display: flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; }
     .app-sidebar .sidebar-gopremium .gp-crown { width: 40px; height: 34px; flex: 0 0 auto; filter: drop-shadow(0 0 8px rgba(255,201,51,.55)); }
     .app-sidebar .sidebar-gopremium strong { font-size: 19px; line-height: 1.1; color: #ffc933; }
     .app-sidebar .sidebar-gopremium p { margin: 0; font-size: 13.5px; line-height: 1.45; color: #e7defe; }
-    .app-sidebar .sidebar-gopremium .gp-btn { display: block; width: 100%; margin-top: 6px; padding: 10px 14px; border-radius: 999px; background: linear-gradient(90deg, #ff2e93, #8a5cff); color: #fff; font-size: 14.5px; font-weight: 700; text-decoration: none; box-shadow: 0 0 16px -2px rgba(255,46,147,.6); }
+    .app-sidebar .sidebar-gopremium .gp-btn { display: block; width: 100%; margin-top: 6px; padding: 10px 14px; border-radius: 999px; background: linear-gradient(90deg, #ff2a32, #b50d16); color: #fff; font-size: 14.5px; font-weight: 700; text-decoration: none; box-shadow: 0 0 16px -2px rgba(255,46,147,.6); }
     .app-sidebar .sidebar-gopremium .gp-btn:hover { filter: brightness(1.1); }
     .vs-premium .sidebar-gopremium { display: none; }
 
+    /* Premium members: how long their plan has left */
+    .app-sidebar .sidebar-premiumstatus { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 18px 8px 8px; padding: 18px 14px 16px; border: 1px solid rgba(255,201,51,.5); border-radius: 18px; background: radial-gradient(circle at 50% 125%, rgba(255,201,51,.28), transparent 62%), linear-gradient(160deg, rgba(48,20,110,.92), rgba(18,10,50,.96)); color: #fff; text-align: center; box-shadow: 0 0 26px -8px rgba(255,201,51,.45); }
+    .app-sidebar .sidebar-premiumstatus .gp-crown-link { display: flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; }
+    .app-sidebar .sidebar-premiumstatus .gp-crown { width: 40px; height: 34px; flex: 0 0 auto; filter: drop-shadow(0 0 8px rgba(255,201,51,.55)); }
+    .app-sidebar .sidebar-premiumstatus strong { font-size: 19px; line-height: 1.1; color: #ffc933; }
+    .app-sidebar .sidebar-premiumstatus p { margin: 4px 0 0; font-size: 13.5px; line-height: 1.45; color: #e7defe; }
+    .app-sidebar .sidebar-premiumstatus .ps-label { margin-top: 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #cdbdf5; }
+    .app-sidebar .sidebar-premiumstatus .ps-time { font-size: 21px; font-weight: 800; line-height: 1.2; color: #fff; font-variant-numeric: tabular-nums; }
+    .app-sidebar .sidebar-premiumstatus .ps-date { font-size: 13px; color: #cdbdf5; }
+    .app-sidebar .sidebar-premiumstatus .gp-btn { display: block; width: 100%; margin-top: 10px; padding: 9px 14px; border: 1px solid rgba(255,255,255,.35); border-radius: 999px; background: rgba(255,255,255,.08); color: #fff; font-size: 14px; font-weight: 700; text-decoration: none; }
+    .app-sidebar .sidebar-premiumstatus .gp-btn:hover { background: rgba(255,255,255,.16); }
+
     /* Current section: neon pink -> violet pill */
     .app-sidebar .sidebar-link.active {
-        background: linear-gradient(90deg, #ff2e93, #8a5cff) !important;
+        background: linear-gradient(90deg, #ff2a32, #b50d16) !important;
         color: #fff !important;
         font-weight: 700;
         position: relative;
@@ -381,7 +492,7 @@ function vs_sidebar_extras(string $chevron): void
     }
     .app-sidebar .sidebar-link.active .sidebar-label { font-weight: 700; }
     .app-sidebar .sidebar-link.active::before { display: none; }
-    :root[data-theme="light"] .app-sidebar .sidebar-link.active { background: linear-gradient(90deg, #ff2e93, #8a5cff) !important; color: #fff !important; }
+    :root[data-theme="light"] .app-sidebar .sidebar-link.active { background: linear-gradient(90deg, #ff2a32, #b50d16) !important; color: #fff !important; }
     .app-sidebar .sidebar-link.active .sidebar-icon { color: #fff !important; }
     </style>
     <script>
@@ -425,6 +536,23 @@ function vs_sidebar_extras(string $chevron): void
           if (b) { b.setAttribute('aria-expanded', 'true'); b.querySelector('.sidebar-label').textContent = 'Show less'; }
         }
       });
+      // Premium members: live "Ends in ..." countdown (uses the server clock, not the browser's)
+      var psEls = document.querySelectorAll('[data-vs-ends]');
+      if (psEls.length) {
+        var psOffset = parseInt(psEls[0].getAttribute('data-vs-now'), 10) - Math.floor(Date.now() / 1000);
+        var psPaint = function () {
+          var nowSec = Math.floor(Date.now() / 1000) + psOffset;
+          psEls.forEach(function (el) {
+            var left = parseInt(el.getAttribute('data-vs-ends'), 10) - nowSec, d, h, m;
+            if (left <= 0) { el.textContent = 'Ended'; return; }
+            d = Math.floor(left / 86400); h = Math.floor((left % 86400) / 3600); m = Math.floor((left % 3600) / 60);
+            el.textContent = d > 0 ? d + (d === 1 ? ' day ' : ' days ') + h + 'h'
+                           : (h > 0 ? h + 'h ' + m + 'm' : Math.max(1, m) + ' min');
+          });
+        };
+        psPaint();
+        setInterval(psPaint, 30000);
+      }
       if (window.__vsMoreBound) { return; }
       window.__vsMoreBound = true;
       document.addEventListener('click', function (e) {

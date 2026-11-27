@@ -94,8 +94,8 @@
     s.textContent =
       '.vs-neon-toggle{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer;flex:0 0 auto}' +
       '.vs-neon-toggle:hover{background:rgba(138,92,255,.18)}' +
-      '.vs-neon-toggle[aria-pressed="true"]{color:#00e5ff}' +
-      '.vs-neon-toggle[aria-pressed="true"] svg,.vs-neon-toggle[aria-pressed="true"] i{filter:drop-shadow(0 0 6px #00e5ff)}' +
+      '.vs-neon-toggle[aria-pressed="true"]{color:#ff2a32}' +
+      '.vs-neon-toggle[aria-pressed="true"] svg,.vs-neon-toggle[aria-pressed="true"] i{filter:drop-shadow(0 0 6px #ff2a32)}' +
       '.vs-neon-toggle[aria-pressed="false"]{opacity:.65}' +
       '.vs-neon-toggle[aria-pressed="false"] svg{opacity:.7}' +
       '.vs-neon-toggle svg{display:block;width:24px!important;height:24px!important;flex:0 0 24px}' +

@@ -1893,7 +1893,7 @@ html[data-theme="dark"] {
   --vs-hover: rgba(255, 255, 255, 0.06);
   --vs-accent-soft: rgba(138, 117, 255, 0.18);
   --vs-accent-text: #c7bcff;
-  --bs-link-color: #3ea6ff;
+  --bs-link-color: #ff2a32;
   --bs-link-hover-color: #7cc2ff;
 }
 
@@ -2134,7 +2134,7 @@ html[data-theme="dark"] body {
 }
 .admin-sidebar .brand-icon {
   overflow: hidden;
-  background: linear-gradient(135deg, #0878f9, #a32bd2);
+  background: linear-gradient(135deg, #ff2a32, #b50d16);
 }
 .admin-sidebar .brand-subtitle { color: #9ba8bb; }
 .admin-sidebar .sidebar-nav {
@@ -2174,10 +2174,10 @@ html[data-theme="dark"] body {
 }
 .admin-sidebar .sidebar-nav .nav-link.active,
 html:not([data-theme="dark"]) .admin-sidebar .sidebar-nav .nav-link.active {
-  border-color: rgba(119, 108, 255, 0.28);
-  background: linear-gradient(100deg, #0878f9 0%, #7152eb 56%, #a32bd2 100%);
+  border-color: #ff2a32;
+  background: #ff2a32;
   color: #ffffff;
-  box-shadow: 0 6px 18px rgba(56, 79, 211, 0.24);
+  box-shadow: none;
 }
 .admin-sidebar .sidebar-nav .nav-link.active::before {
   position: absolute;
@@ -2186,7 +2186,7 @@ html:not([data-theme="dark"]) .admin-sidebar .sidebar-nav .nav-link.active {
   left: -13px;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: #91c6ff;
+  background: #ffffff;
   content: "";
 }
 .admin-sidebar .nav-icon {

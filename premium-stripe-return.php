@@ -8,6 +8,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 require_once __DIR__ . '/connection.php';
 require_once __DIR__ . '/stripe-lib.php';
+require_once __DIR__ . '/page-loader-render.php';
 
 $me = trim((string)($_SESSION['username'] ?? ''));
 $sid = (string)($_GET['session_id'] ?? '');
@@ -36,6 +37,7 @@ if ($error === null) {
     header('Location: premium.php?paid=1');
     exit;
 }
-?><!DOCTYPE html><meta charset="utf-8"><body style="font-family:system-ui;background:#111;color:#eee;padding:40px">
+?><!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Payment</title><?php vs_page_loader_assets(); ?></head><body style="font-family:system-ui;background:#111;color:#eee;padding:40px">
+<?php vs_page_loader_markup(); ?>
 <h2>Payment</h2><p><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></p>
-<p><a style="color:#f9433f" href="premium.php">Back to Premium</a></p></body>
+<p><a style="color:#f9433f" href="premium.php">Back to Premium</a></p></body></html>

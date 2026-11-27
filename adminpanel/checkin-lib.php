@@ -88,7 +88,7 @@ function vs_checkin_online_count() {
 }
 
 function vs_checkin_color($status) {
-    $map = ['Available' => '#2ecc71', 'Busy' => '#e74c3c', 'Moderating' => '#3ea6ff',
+    $map = ['Available' => '#2ecc71', 'Busy' => '#e74c3c', 'Moderating' => '#ff2a32',
             'On break' => '#f39c12', 'Away' => '#95a5a6', 'Offline' => '#555555'];
     return $map[$status] ?? '#95a5a6';
 }

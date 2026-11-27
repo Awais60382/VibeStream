@@ -70,7 +70,7 @@ $vsh_rows = [
   .vsh-top .ic{width:38px;height:38px;border:1px solid var(--e);border-radius:9px;display:grid;place-items:center;background:#0b1a55;font-size:18px}
   .vsh-top h2{font-size:18px;margin:0;color:#fff;flex:1}
   .vsh-top small{color:var(--m);font-weight:400;font-size:12px;margin-left:6px}
-  .vsh-all{padding:7px 14px;border-radius:8px;background:linear-gradient(90deg,#5b34ef,#7c4dff);color:#fff;font-size:12px;font-weight:600;text-decoration:none;box-shadow:0 0 14px #6d3df57a}
+  .vsh-all{padding:7px 14px;border-radius:8px;background:linear-gradient(90deg,#5b34ef,#b50d16);color:#fff;font-size:12px;font-weight:600;text-decoration:none;box-shadow:0 0 14px #6d3df57a}
   .vsh-all:hover{color:#fff}
   .vsh-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
   .vsh-grid.s{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}

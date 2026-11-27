@@ -20,13 +20,16 @@ if (!isset($_SESSION['AdminSession']) && (!isset($_SESSION['role']) || strcasecm
 include_once "../connection.php";
 include_once "ui_helpers.php";
 require_once __DIR__ . '/owner-guard.php';
+require_once __DIR__ . '/../page-loader-render.php';
 
 // Only the owner (VS_OWNER_EMAIL in owner-guard.php) may run this installer.
 if (!isset($pdo) || !($pdo instanceof PDO) || !vs_is_owner($pdo)) {
     http_response_code(403);
-    echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Owner only</title></head>'
-        . '<body style="font-family:Arial,sans-serif;padding:40px;background:#f4f5f7">'
-        . '<h2>Owner only</h2><p>Only the owner account can run this page.</p>'
+    echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Owner only</title>';
+    vs_page_loader_assets();
+    echo '</head><body style="font-family:Arial,sans-serif;padding:40px;background:#f4f5f7">';
+    vs_page_loader_markup();
+    echo '<h2>Owner only</h2><p>Only the owner account can run this page.</p>'
         . '<p><a href="admins.php">Back to the admin panel</a></p></body></html>';
     exit;
 }
@@ -133,6 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lock admin accounts</title>
+  <?php vs_page_loader_assets(); ?>
   <style>
     body{font-family:system-ui,sans-serif;background:#12121a;color:#eee;margin:0;padding:40px 16px}
     .box{max-width:560px;margin:0 auto;background:#1c1c28;border:1px solid #333;border-radius:16px;padding:28px}
@@ -145,6 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </style>
 </head>
 <body>
+  <?php vs_page_loader_markup(); ?>
   <div class="box">
     <h1>Lock admin accounts</h1>
     <?php if ($done): ?>

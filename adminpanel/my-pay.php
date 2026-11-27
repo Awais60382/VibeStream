@@ -281,7 +281,6 @@ if ($c && $c['wstart'] !== '' && $c['wend'] !== '') {
 }
 $stBadge = ['paid' => ['Paid', 'ok'], 'pending' => ['Pending', 'warn'], 'nopay' => ['Not paid', 'bad']];
 ?>
-<link rel="stylesheet" href="./assets/css/neon-theme.css?v=1">
 <style>
   .mp-page{--mp-card:rgba(14,22,62,.62);--mp-line:rgba(110,130,255,.28);--mp-soft:rgba(130,150,255,.10);--mp-text:#eef2ff;--mp-muted:#93a4d6;
            --mp-blue:#3b82f6;--mp-green:#10b981;--mp-violet:#8b5cf6;--mp-pink:#d946ef;--mp-amber:#fbbf24;--mp-red:#fb7185;color:var(--mp-text)}

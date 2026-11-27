@@ -835,7 +835,7 @@ function vs_notification_css(): string
 .vs-n-item.unread:hover { background: rgba(62,166,255,.14); }
 .vs-n-link { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 12px 0 12px 6px; color: inherit; text-decoration: none; }
 .vs-n-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: transparent; }
-.vs-n-item.unread .vs-n-dot { background: var(--blue, #3ea6ff); }
+.vs-n-item.unread .vs-n-dot { background: var(--blue, #ff2a32); }
 .vs-n-av { position: relative; width: 48px; height: 48px; flex: 0 0 48px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 18px; }
 .vs-n-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .vs-n-av.is-app { background: #fff; border-radius: 12px; }
@@ -854,7 +854,7 @@ function vs_notification_css(): string
 .vs-n-menu button:hover { background: var(--surface-hover, rgba(127,127,127,.18)); }
 .vs-n-foot { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border, #303030); }
 .vs-n-foot .nav-notif-all { flex: 1; border-top: 0; padding: 14px 16px; text-align: center; font-size: 14px; font-weight: 500; }
-.vs-n-readall { flex: 1; background: none; border: 0; border-right: 1px solid var(--border, #303030); cursor: pointer; font: inherit; font-size: 14px; font-weight: 500; color: var(--blue, #3ea6ff); padding: 14px 16px; }
+.vs-n-readall { flex: 1; background: none; border: 0; border-right: 1px solid var(--border, #303030); cursor: pointer; font: inherit; font-size: 14px; font-weight: 500; color: var(--blue, #ff2a32); padding: 14px 16px; }
 .vs-n-readall:hover { background: var(--surface-hover, rgba(127,127,127,.14)); }
 .vs-n-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 48px 24px 56px; color: var(--muted, #aaaaaa); font-size: 14px; line-height: 20px; }
 .vs-n-empty svg { width: 56px; height: 56px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }

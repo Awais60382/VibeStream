@@ -34,7 +34,7 @@
 .vs-suggest .vs-s-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
 .vs-suggest .vs-s-text b { font-weight: 700; }
 .vs-suggest .vs-s-del {
-  flex: 0 0 auto; border: 0; background: transparent; color: #3ea6ff; font: inherit; font-size: 13px; cursor: pointer;
+  flex: 0 0 auto; border: 0; background: transparent; color: #ff2a32; font: inherit; font-size: 13px; cursor: pointer;
   padding: 6px 4px; visibility: hidden;
 }
 .vs-suggest li:hover .vs-s-del, .vs-suggest li.is-active .vs-s-del { visibility: visible; }

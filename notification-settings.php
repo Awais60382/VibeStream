@@ -231,7 +231,7 @@ $css = <<<'CSS'
     --yt-bg: #0f0f0f;
     --yt-text: #f1f1f1;
     --yt-muted: #aaaaaa;
-    --yt-blue: #3ea6ff;
+    --yt-blue: #ff2a32;
     --yt-switch-off: #383838;
 }
 

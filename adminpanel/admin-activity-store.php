@@ -34,7 +34,8 @@ function vs_activity_ensure(PDO $pdo): void
 /** The name of the admin who is logged in right now (as stored in the session). */
 function vs_activity_session_name(): string
 {
-    return trim((string)($_SESSION['username'] ?? $_SESSION['AdminSession'] ?? ''));
+    $admin = trim((string)($_SESSION['AdminSession'] ?? ''));
+    return $admin !== '' ? $admin : trim((string)($_SESSION['username'] ?? ''));
 }
 
 /**
@@ -81,7 +82,7 @@ function vs_activity_page_label(string $file): string
         'reported.php' => 'Reported content', 'users.php' => 'Users', 'admins.php' => 'Admins',
         'user_profile.php' => 'Users profile', 'messages.php' => 'Messages', 'premium.php' => 'Premium',
         'notifications.php' => 'Notifications', 'profile.php' => 'Profile',
-        'platform-settings.php' => 'App settings',
+        'app-settings.php' => 'App settings',
     ];
     $k = strtolower($file);
     return $map[$k] ?? $file;

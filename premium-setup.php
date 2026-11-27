@@ -17,6 +17,7 @@ if (!in_array($addr, ['127.0.0.1', '::1'], true)) {
 }
 
 require_once __DIR__ . '/premium-store.php';
+require_once __DIR__ . '/page-loader-render.php';
 
 if (empty($_SESSION['premium_setup_csrf'])) {
     $_SESSION['premium_setup_csrf'] = bin2hex(random_bytes(32));
@@ -54,7 +55,7 @@ textarea{width:100%;box-sizing:border-box;min-height:110px;padding:10px;border-r
 button{margin-top:10px;border:0;border-radius:10px;background:#f9433f;color:#fff;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
 .flash{background:#2a2410;border:1px solid #f5b942;border-radius:10px;padding:10px 14px;margin-bottom:16px}
 small{color:#aaa}
-</style></head><body><div class="box">
+</style><?php vs_page_loader_assets(); ?></head><body><?php vs_page_loader_markup(); ?><div class="box">
 <h1>Premium payment setup</h1>
 <?php if ($flash !== ''): ?><div class="flash"><?php echo $h($flash); ?></div><?php endif; ?>
 <table>
